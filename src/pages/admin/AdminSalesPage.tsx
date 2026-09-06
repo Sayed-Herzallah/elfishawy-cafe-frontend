@@ -316,31 +316,32 @@ export const AdminSalesPage: React.FC = () => {
         />
       </DashboardFilterBar>
 
-      {/* ✅ فلتر حالة اكتمال المكونات عند البيع (كامل أم به نقص في سكر/لبن) */}
-      <div className="flex flex-wrap items-center gap-2 bg-gray-50/70 p-2.5 rounded-xl border border-gray-200/60">
-        <span className="text-xs font-bold text-gray-600 ml-1">حالة مكونات المشروب:</span>
-        {[
-          { id: 'all', label: `الكل (${formatNumber(orders.length)})` },
-          { id: 'clean', label: `✅ مكتمل المكونات (${formatNumber(orders.filter((o) => getOrderShortageItems(o).length === 0).length)})` },
-          { id: 'shortage', label: `⚠️ كان به عجز ثانوي (سكر/لبن) (${formatNumber(orders.filter((o) => getOrderShortageItems(o).length > 0).length)})` },
-        ].map((opt) => (
-          <button
-            key={opt.id}
-            type="button"
-            onClick={() => { setStockQualityFilter(opt.id as any); setCurrentPage(1); }}
-            className={`py-1.5 px-3 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer ${
-              stockQualityFilter === opt.id
-                ? opt.id === 'shortage'
-                  ? 'bg-amber-600 text-white shadow-xs'
-                  : opt.id === 'clean'
-                  ? 'bg-emerald-600 text-white shadow-xs'
-                  : 'bg-[#2e5b9f] text-white shadow-xs'
-                : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-100'
-            }`}
-          >
-            {opt.label}
-          </button>
-        ))}
+      {/* ✅ فلتر لمبيعات العجز الثانوي فقط أو الكل */}
+      <div className="flex flex-wrap items-center gap-2 bg-amber-50/60 p-2.5 rounded-xl border border-amber-200/60">
+        <span className="text-xs font-bold text-amber-900 ml-1">تصفية المبيعات حسب حالة المكونات:</span>
+        <button
+          type="button"
+          onClick={() => { setStockQualityFilter('shortage'); setCurrentPage(1); }}
+          className={`py-1.5 px-3.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+            stockQualityFilter === 'shortage'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-100'
+          }`}
+        >
+          <AlertTriangle className="w-3.5 h-3.5" />
+          <span>المبيعات التي كان بها عجز فقط ({formatNumber(orders.filter((o) => getOrderShortageItems(o).length > 0).length)})</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => { setStockQualityFilter('all'); setCurrentPage(1); }}
+          className={`py-1.5 px-3.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+            stockQualityFilter === 'all'
+              ? 'bg-[#2e5b9f] text-white shadow-xs'
+              : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-100'
+          }`}
+        >
+          كل المبيعات ({formatNumber(orders.length)})
+        </button>
       </div>
 
       {/* Orders as Cards (clickable) */}
