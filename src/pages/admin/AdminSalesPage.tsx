@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { orderService } from '../../services/opsService';
-import { productService } from '../../services/catalogService';
+import { productService, recipeService } from '../../services/catalogService';
 import { Order, OrderStatus, Product } from '../../types';
 import { Badge } from '../../components/ui/Badge';
 import { StatCard } from '../../components/ui/StatCard';
@@ -31,6 +31,7 @@ import {
   CheckCircle2,
   XCircle,
   X,
+  AlertTriangle,
 } from 'lucide-react';
 
 export const AdminSalesPage: React.FC = () => {
@@ -39,8 +40,10 @@ export const AdminSalesPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<'all' | OrderStatus>('all');
+  const [stockQualityFilter, setStockQualityFilter] = useState<'all' | 'clean' | 'shortage'>('all');
   const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null, preset: 'custom' });
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<Order | null>(null);
+  const [productDepletedSecondaryMap, setProductDepletedSecondaryMap] = useState<Record<string, string[]>>({});
   
   // --- Pagination ---
   const [itemsPerPage] = useState<number>(10);
@@ -76,11 +79,34 @@ export const AdminSalesPage: React.FC = () => {
     productService.listProducts()
       .then((res) => { if (res.success && res.data) setProducts(res.data); })
       .catch(() => { /* تجاهل — الأسماء هتفضل من الطلب نفسه */ });
+
+    // ✅ خريطة الخامات الثانوية النافذة لكل منتج لمعرفة نواقص المشروبات وقت البيع
+    recipeService.listRecipes()
+      .then((res) => {
+        if (res && res.success && res.data) {
+          const depMap: Record<string, string[]> = {};
+          res.data.forEach((r: any) => {
+            const pId = typeof r.product === 'string' ? r.product : r.product?._id;
+            if (!pId || !r.ingredients) return;
+            const depletedSec: string[] = [];
+            r.ingredients.forEach((ing: any) => {
+              const inv = ing.inventoryItem;
+              const qty = Number(inv?.quantity) || 0;
+              if (qty <= 0 && ing.isPrimary === false) {
+                depletedSec.push(inv?.name || 'خامة ثانوية');
+              }
+            });
+            if (depletedSec.length > 0) depMap[pId] = depletedSec;
+          });
+          setProductDepletedSecondaryMap(depMap);
+        }
+      })
+      .catch(() => { /* صامت */ });
   }, []);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, statusFilter, dateRange]);
+  }, [searchQuery, statusFilter, stockQualityFilter, dateRange]);
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
@@ -132,10 +158,30 @@ export const AdminSalesPage: React.FC = () => {
     }
   };
 
+  // ✅ فحص هل الطلب كان به عجز في أي خامة ثانوية (مثل السكر أو اللبن)
+  const getOrderShortageItems = (o: Order): string[] => {
+    const names = new Set<string>();
+    (o.items || []).forEach((item) => {
+      const pId = typeof item.product === 'object' && item.product
+        ? (item.product as any)._id
+        : String(item.product || '');
+      if (pId && productDepletedSecondaryMap[pId]) {
+        productDepletedSecondaryMap[pId].forEach((n) => names.add(n));
+      }
+    });
+    return Array.from(names);
+  };
+
   // --- Filtered Orders (memoized) ---
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
       const matchesStatus = statusFilter === 'all' || o.status === statusFilter;
+
+      // فلتر جودة المخزون (كامل بدون عجز / به عجز ثانوي)
+      const shortageItems = getOrderShortageItems(o);
+      const hasShortage = shortageItems.length > 0;
+      if (stockQualityFilter === 'clean' && hasShortage) return false;
+      if (stockQualityFilter === 'shortage' && !hasShortage) return false;
 
       let matchesDate = true;
       const orderDate = new Date(o.createdAt);
@@ -168,7 +214,7 @@ export const AdminSalesPage: React.FC = () => {
 
       return matchesStatus && matchesDate && matchesSearch;
     });
-  }, [orders, statusFilter, dateRange, searchQuery]);
+  }, [orders, statusFilter, stockQualityFilter, dateRange, searchQuery, productDepletedSecondaryMap]);
 
   // --- Pagination Logic ---
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage) || 1;
@@ -250,10 +296,12 @@ export const AdminSalesPage: React.FC = () => {
         activeCount={
           (searchQuery ? 1 : 0) +
           (statusFilter !== 'all' ? 1 : 0) +
+          (stockQualityFilter !== 'all' ? 1 : 0) +
           (dateRange.from || dateRange.to ? 1 : 0)
         }
         onReset={() => {
           setStatusFilter('all');
+          setStockQualityFilter('all');
           setDateRange({ from: null, to: null, preset: 'custom' });
           setSearchQuery('');
           setCurrentPage(1);
@@ -268,6 +316,32 @@ export const AdminSalesPage: React.FC = () => {
         />
       </DashboardFilterBar>
 
+      {/* ✅ فلتر حالة اكتمال المكونات عند البيع (كامل أم به نقص في سكر/لبن) */}
+      <div className="flex flex-wrap items-center gap-2 bg-gray-50/70 p-2.5 rounded-xl border border-gray-200/60">
+        <span className="text-xs font-bold text-gray-600 ml-1">حالة مكونات المشروب:</span>
+        {[
+          { id: 'all', label: `الكل (${formatNumber(orders.length)})` },
+          { id: 'clean', label: `✅ مكتمل المكونات (${formatNumber(orders.filter((o) => getOrderShortageItems(o).length === 0).length)})` },
+          { id: 'shortage', label: `⚠️ كان به عجز ثانوي (سكر/لبن) (${formatNumber(orders.filter((o) => getOrderShortageItems(o).length > 0).length)})` },
+        ].map((opt) => (
+          <button
+            key={opt.id}
+            type="button"
+            onClick={() => { setStockQualityFilter(opt.id as any); setCurrentPage(1); }}
+            className={`py-1.5 px-3 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer ${
+              stockQualityFilter === opt.id
+                ? opt.id === 'shortage'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : opt.id === 'clean'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-[#2e5b9f] text-white shadow-xs'
+                : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-100'
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
 
       {/* Orders as Cards (clickable) */}
       <div className="bg-white rounded-2xl border border-gray-200/80 p-6 shadow-2xs">
@@ -289,7 +363,7 @@ export const AdminSalesPage: React.FC = () => {
           <>
           {/* جدول سريع على سطح المكتب — نفس أسلوب جدول المخزون */}
           <div className="hidden md:block overflow-x-auto -mx-6 px-6 pb-3 border-b border-gray-100">
-            <table className="w-full text-right border-collapse text-xs min-w-[820px]">
+            <table className="w-full text-right border-collapse text-xs min-w-[880px]">
               <thead>
                 <tr className="border-b border-gray-100 text-gray-400 font-semibold">
                   <th className="pb-3 px-3">رقم الفاتورة</th>
@@ -297,6 +371,7 @@ export const AdminSalesPage: React.FC = () => {
                   <th className="pb-3 px-3">الأصناف</th>
                   <th className="pb-3 px-3">الطاولة</th>
                   <th className="pb-3 px-3">المبلغ</th>
+                  <th className="pb-3 px-3">حالة المكونات</th>
                   <th className="pb-3 px-3">الحالة</th>
                   <th className="pb-3 px-3 text-left">الإجراء</th>
                 </tr>
@@ -315,6 +390,10 @@ export const AdminSalesPage: React.FC = () => {
                       .map((it) => resolveName(it))
                       .join('، ') +
                     (safeItems.length > 2 ? ` +${safeItems.length - 2}` : '');
+
+                  const shortageItems = getOrderShortageItems(order);
+                  const hasShortage = shortageItems.length > 0;
+
                   return (
                     <tr
                       key={order._id}
@@ -337,6 +416,22 @@ export const AdminSalesPage: React.FC = () => {
                       </td>
                       <td className="py-3 px-3 font-bold font-mono text-gray-900">
                         {formatPrice(order.totalAmount)}
+                      </td>
+                      <td className="py-3 px-3">
+                        {hasShortage ? (
+                          <span
+                            className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md"
+                            title={`نواقص ثانوية: ${shortageItems.join('، ')}`}
+                          >
+                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                            عجز: {shortageItems.join('، ')}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                            <CheckCircle2 className="w-3 h-3" />
+                            مكتمل
+                          </span>
+                        )}
                       </td>
                       <td className="py-3 px-3">
                         <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -372,6 +467,8 @@ export const AdminSalesPage: React.FC = () => {
                 order.status === 'pending' ? 'pending' : 'cancelled';
 
               const safeItems = Array.isArray(order.items) ? order.items : [];
+              const shortageItems = getOrderShortageItems(order);
+              const hasShortage = shortageItems.length > 0;
               const itemsPreview = safeItems.slice(0, 3).map((item, idx) => {
                 const pName =
                   item && typeof item.product === 'object' && (item.product as any)?.name
@@ -475,6 +572,20 @@ export const AdminSalesPage: React.FC = () => {
                         {order.status === 'completed' ? 'مكتمل' :
                          order.status === 'pending' ? 'قيد التحضير' : 'ملغي'}
                       </Badge>
+                    </div>
+                    {/* ✅ حالة المكونات للموبايل */}
+                    <div className="sm:col-span-2 flex items-center gap-1">
+                      {hasShortage ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                          <AlertTriangle className="w-3 h-3" />
+                          عجز ثانوي: {shortageItems.join('، ')}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                          <CheckCircle2 className="w-3 h-3" />
+                          مكتمل المكونات
+                        </span>
+                      )}
                     </div>
                     <div className="sm:col-span-2 flex flex-wrap gap-1">
                       {itemsPreview}

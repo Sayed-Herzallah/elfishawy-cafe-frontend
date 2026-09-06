@@ -30,6 +30,7 @@ import {
   FlaskConical,
   Info,
   CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 
 /** تحويل الكمية لأصغر وحدة أساس (GRAM / ML / PIECE) لحساب دقيق */
@@ -43,6 +44,8 @@ export const AdminProductsPage: React.FC = () => {
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
+  const [recipeDepletedMap, setRecipeDepletedMap] = useState<Record<string, string[]>>({});
+  const [primaryDepletedMap, setPrimaryDepletedMap] = useState<Record<string, string[]>>({});
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   // Modal State
@@ -90,15 +93,42 @@ export const AdminProductsPage: React.FC = () => {
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const [prodRes, catRes, invRes] = await Promise.all([
+      const [prodRes, catRes, invRes, recRes] = await Promise.all([
         productService.listProducts(),
         categoryService.listCategories(),
         inventoryService.listInventory(),
+        recipeService.listRecipes().catch(() => null),
       ]);
 
       if (prodRes.success && prodRes.data) setProducts(prodRes.data);
       if (catRes.success && catRes.data) setCategories(catRes.data);
       if (invRes.success && invRes.data) setInventoryItems(invRes.data);
+
+      if (recRes && recRes.success && recRes.data) {
+        const secMap: Record<string, string[]> = {};
+        const priMap: Record<string, string[]> = {};
+        recRes.data.forEach((r: any) => {
+          const pId = typeof r.product === 'string' ? r.product : r.product?._id;
+          if (!pId || !r.ingredients) return;
+          const depletedSec: string[] = [];
+          const depletedPri: string[] = [];
+          r.ingredients.forEach((ing: any) => {
+            const inv = ing.inventoryItem;
+            const qty = Number(inv?.quantity) || 0;
+            if (qty <= 0) {
+              if (ing.isPrimary === false) {
+                depletedSec.push(inv?.name || 'خامة ثانوية');
+              } else {
+                depletedPri.push(inv?.name || 'خامة أساسية');
+              }
+            }
+          });
+          if (depletedSec.length > 0) secMap[pId] = depletedSec;
+          if (depletedPri.length > 0) priMap[pId] = depletedPri;
+        });
+        setRecipeDepletedMap(secMap);
+        setPrimaryDepletedMap(priMap);
+      }
     } catch (err) {
       showError(err);
     } finally {
@@ -743,12 +773,28 @@ export const AdminProductsPage: React.FC = () => {
                           </span>
                         </div>
                       </div>
-                      <Badge
-                        variant={state === 'available' ? 'available' : state === 'low' ? 'low' : 'out'}
-                        size="sm"
-                      >
-                        {state === 'available' ? 'متوفر' : state === 'low' ? 'منخفض' : 'نفذ'}
-                      </Badge>
+                      <div className="flex flex-col items-end gap-1">
+                        <Badge
+                          variant={state === 'available' ? 'available' : state === 'low' ? 'low' : 'out'}
+                          size="sm"
+                        >
+                          {state === 'available'
+                            ? 'متوفر'
+                            : state === 'low'
+                            ? 'منخفض'
+                            : primaryDepletedMap[prod._id] && primaryDepletedMap[prod._id].length > 0
+                            ? `نفذ (${primaryDepletedMap[prod._id].join('، ')})`
+                            : 'نفذ'}
+                        </Badge>
+                        {recipeDepletedMap[prod._id] && recipeDepletedMap[prod._id].length > 0 && state !== 'out' && (
+                          <span
+                            className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-800 bg-amber-100/90 border border-amber-300 px-1 py-0.5 rounded"
+                          >
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                            عجز: {recipeDepletedMap[prod._id].join('، ')}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {prod.description && (
@@ -861,12 +907,31 @@ export const AdminProductsPage: React.FC = () => {
                         </td>
 
                         <td className="py-3 px-3">
-                          <Badge
-                            variant={state === 'available' ? 'available' : state === 'low' ? 'low' : 'out'}
-                            size="sm"
-                          >
-                            {state === 'available' ? 'متوفر' : state === 'low' ? 'منخفض' : 'نفذ المخزون'}
-                          </Badge>
+                          <div className="flex flex-col gap-1">
+                            <Badge
+                              variant={state === 'available' ? 'available' : state === 'low' ? 'low' : 'out'}
+                              size="sm"
+                            >
+                              {state === 'available'
+                                ? 'متوفر'
+                                : state === 'low'
+                                ? 'منخفض'
+                                : primaryDepletedMap[prod._id] && primaryDepletedMap[prod._id].length > 0
+                                ? `نفذ (${primaryDepletedMap[prod._id].join('، ')})`
+                                : 'نفذ المخزون'}
+                            </Badge>
+
+                            {/* تنبيه عجز في خامة ثانوية (مثل السكر) */}
+                            {recipeDepletedMap[prod._id] && recipeDepletedMap[prod._id].length > 0 && state !== 'out' && (
+                              <span
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-100/90 border border-amber-300 px-1.5 py-0.5 rounded"
+                                title={`خامات ثانوية نفذت: ${recipeDepletedMap[prod._id].join('، ')}`}
+                              >
+                                <AlertTriangle className="w-3 h-3 shrink-0" />
+                                <span>عجز: {recipeDepletedMap[prod._id].join('، ')}</span>
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         <td className="py-3 px-3 text-left" onClick={(e) => e.stopPropagation()}>
