@@ -28,6 +28,7 @@ import {
   ShoppingBag,
   X,
   AlertTriangle,
+  Eye,
 } from 'lucide-react';
 
 interface CartItem {
@@ -57,6 +58,10 @@ export const CashierPOSPage: React.FC = () => {
   const [recipeDepletedMap, setRecipeDepletedMap] = useState<Record<string, string[]>>({});
   // خريطة لتسجيل الخامة الأساسية النافذة لكل منتج ليعرف الكاشير سبب نفاذ المنتج بدقة (مثل: نفاذ البن أو الشاي)
   const [primaryDepletedMap, setPrimaryDepletedMap] = useState<Record<string, string[]>>({});
+  // ✅ نافذة تفاصيل المنتج وعين الوصفة والمخزون في المبيعات (مثل الأدمن)
+  const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
+  const [isViewModalOpen, setIsViewModalOpen] = useState<boolean>(false);
+  const [recipeData, setRecipeData] = useState<{ availableProductQty: number; ingredientDetails: any[]; depletedSecondary?: { name: string; unit: string; currentStock: number }[] } | null>(null);
   // ✅ تأكيد قبل تفريغ السلة — "طلب جديد" كان يمسح السلة فوراً بدون تحذير
   const [isClearCartConfirmOpen, setIsClearCartConfirmOpen] = useState<boolean>(false);
 
@@ -227,6 +232,23 @@ export const CashierPOSPage: React.FC = () => {
 
     return () => clearInterval(interval);
   }, []);
+
+  const handleViewProduct = (prod: Product) => {
+    setViewingProduct(prod);
+    setIsViewModalOpen(true);
+    setRecipeData(null);
+    recipeService.getRecipeByProduct(prod._id).then((res) => {
+      if (res.success && res.data) {
+        setRecipeData({
+          availableProductQty: res.data.availableProductQty,
+          ingredientDetails: res.data.ingredientDetails || [],
+          depletedSecondary: res.data.depletedSecondary || [],
+        });
+      }
+    }).catch(() => {
+      setRecipeData(null);
+    });
+  };
 
   const handleAddToCart = (product: Product) => {
     // ✅ نفس منطق "نافذ" الموحد (≤ 0.01) المستخدم في العرض والفلاتر —
@@ -811,6 +833,17 @@ export const CashierPOSPage: React.FC = () => {
 
                     {/* Image */}
                     <div className="w-full h-28 overflow-hidden bg-gray-100 relative">
+                      {/* زرار العين 👁️ لمعرفة تفاصيل المخزون والخامات النافذة بدقة */}
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewProduct(product);
+                        }}
+                        className="absolute top-2 right-2 z-20 p-1.5 bg-white/90 hover:bg-white text-gray-700 hover:text-[#2e5b9f] rounded-lg shadow-sm border border-gray-200/80 transition cursor-pointer"
+                        title="عرض تفاصيل المكونات والعجز"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                      </span>
                       <img
                         src={getProductImageUrl(product.image)}
                         alt={product.name}
@@ -1061,6 +1094,145 @@ export const CashierPOSPage: React.FC = () => {
             </div>
           )}
         </div>
+      </Modal>
+
+      {/* ✅ نافذة تفاصيل المنتج والمخزون والخامات النافذة (زرار العين 👁️ للكاشير) */}
+      <Modal
+        isOpen={isViewModalOpen}
+        onClose={() => setIsViewModalOpen(false)}
+        title="تفاصيل المشروب ومكونات المخزون"
+        maxWidth="md"
+      >
+        {viewingProduct && (
+          <div className="space-y-4 text-right font-sans">
+            <div className="flex items-center gap-4 p-4 bg-[#faf8f5] rounded-2xl border border-gray-100">
+              <img
+                src={getProductImageUrl(viewingProduct.image)}
+                alt={viewingProduct.name}
+                className="w-20 h-20 rounded-2xl object-cover border border-gray-200 shadow-2xs"
+                onError={(e) => {
+                  e.currentTarget.src =
+                    'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?q=80&w=800&auto=format&fit=crop';
+                }}
+              />
+              <div className="flex-1">
+                <h3 className="text-lg font-bold text-gray-900">{viewingProduct.name}</h3>
+                <p className="text-xs text-gray-500 mt-1">{viewingProduct.description || 'لا يوجد وصف'}</p>
+                <span className="inline-block mt-2 font-mono font-bold text-base text-[#2e5b9f]">
+                  {formatPrice(viewingProduct.price)}
+                </span>
+              </div>
+            </div>
+
+            {/* الأكواب المتاحة — بارز في الأعلى */}
+            <div className="p-4 bg-gradient-to-l from-[#eef3fc] to-[#f5f8ff] rounded-2xl border border-[#c5d5f0] flex items-center justify-between">
+              <div>
+                <span className="text-[11px] text-[#2e5b9f] font-bold block mb-0.5">الأكواب المتاحة للبيع (من الخامات الأساسية)</span>
+                <span className="text-3xl font-bold font-mono text-[#2e5b9f]">
+                  {recipeData ? formatNumber(recipeData.availableProductQty) : formatNumber(viewingProduct.stockQuantity)}
+                </span>
+                <span className="text-sm text-[#2e5b9f] mr-1">كوب</span>
+              </div>
+              <div className="text-right">
+                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                  viewingProduct.inStock ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                }`}>
+                  {viewingProduct.inStock ? 'متوفر للبيع' : 'نافذ من المخزن'}
+                </span>
+              </div>
+            </div>
+
+            {/* تحذير: خامات ثانوية نفذت (مثل السكر) */}
+            {recipeData && recipeData.depletedSecondary && recipeData.depletedSecondary.length > 0 && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-amber-600 text-base">⚠️</span>
+                  <span className="text-[12px] font-bold text-amber-700">
+                    خامات ثانوية نفذت — لا تمنع بيع الكوب لكن يجب الانتباه:
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {recipeData.depletedSecondary.map((item, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-800 text-[11px] font-bold rounded-lg border border-amber-200"
+                    >
+                      🥄 {item.name}
+                      <span className="text-amber-500 font-normal">(نفذ)</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* تفصيل حالة مكونات الوصفة ورصد العجز بدقة */}
+            {recipeData && recipeData.ingredientDetails && recipeData.ingredientDetails.length > 0 && (
+              <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-800">تفاصيل الخامات ورصد العجز (الوصفة)</span>
+                  <span className="text-[10px] text-gray-500">حساب كفاية المخزون لكل خامة</span>
+                </div>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {recipeData.ingredientDetails.map((detail, idx) => {
+                    const itemName = detail.inventoryItem?.name || `خامة #${idx + 1}`;
+                    const itemUnit = detail.inventoryItem?.unit || '';
+                    const itemStock = Number(detail.inventoryItem?.quantity) || 0;
+                    const availableCups = Number(detail.availableFromThisIngredient) || 0;
+                    const isPrimary = detail.isPrimary !== false;
+                    const isDepleted = itemStock <= 0 || availableCups <= 0;
+
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex items-center justify-between p-2 rounded-lg text-xs border ${
+                          isDepleted
+                            ? isPrimary
+                              ? 'bg-red-50 border-red-200 text-red-800'
+                              : 'bg-amber-50 border-amber-200 text-amber-800'
+                            : 'bg-white border-gray-100 text-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                            isPrimary ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            {isPrimary ? 'أساسية' : 'ثانوية'}
+                          </span>
+                          <span className="font-semibold">{itemName}</span>
+                          <span className="text-[10px] text-gray-400">
+                            (رصيد: {formatNumber(itemStock)} {itemUnit})
+                          </span>
+                        </div>
+
+                        <div className="text-left font-mono">
+                          {isDepleted ? (
+                            <span className="font-bold text-xs flex items-center gap-1">
+                              {isPrimary ? '⛔ عجز أساسي (نفذ)' : '⚠️ عجز ثانوي (نفذ)'}
+                            </span>
+                          ) : (
+                            <span className="font-bold">
+                              تكفي: {formatNumber(availableCups)} كوب
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 border-t border-gray-100 pt-3">
+              <button
+                type="button"
+                onClick={() => setIsViewModalOpen(false)}
+                className="py-2 px-4 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 transition cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Direct Receipt Print Modal */}
