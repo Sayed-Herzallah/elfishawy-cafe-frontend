@@ -1004,6 +1004,63 @@ export const AdminProductsPage: React.FC = () => {
               </div>
             </div>
 
+            {/* تفصيل حالة مكونات الوصفة ورصد العجز بدقة */}
+            {recipeData && recipeData.ingredientDetails && recipeData.ingredientDetails.length > 0 && (
+              <div className="mt-4 p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-800">تفاصيل الخامات ورصد العجز (الوصفة)</span>
+                  <span className="text-[10px] text-gray-500">حساب كفاية المخزون لكل خامة</span>
+                </div>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {recipeData.ingredientDetails.map((detail, idx) => {
+                    const itemName = detail.inventoryItem?.name || `خامة #${idx + 1}`;
+                    const itemUnit = detail.inventoryItem?.unit || '';
+                    const itemStock = Number(detail.inventoryItem?.quantity) || 0;
+                    const availableCups = Number(detail.availableFromThisIngredient) || 0;
+                    const isPrimary = detail.isPrimary !== false;
+                    const isDepleted = itemStock <= 0 || availableCups <= 0;
+
+                    return (
+                      <div
+                        key={idx}
+                        className={`flex items-center justify-between p-2 rounded-lg text-xs border ${
+                          isDepleted
+                            ? isPrimary
+                              ? 'bg-red-50 border-red-200 text-red-800'
+                              : 'bg-amber-50 border-amber-200 text-amber-800'
+                            : 'bg-white border-gray-100 text-gray-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                            isPrimary ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
+                          }`}>
+                            {isPrimary ? 'أساسية' : 'ثانوية'}
+                          </span>
+                          <span className="font-semibold">{itemName}</span>
+                          <span className="text-[10px] text-gray-400">
+                            (رصيد: {formatNumber(itemStock)} {itemUnit})
+                          </span>
+                        </div>
+
+                        <div className="text-left font-mono">
+                          {isDepleted ? (
+                            <span className="font-bold text-xs flex items-center gap-1">
+                              {isPrimary ? '⛔ عجز أساسي (نفذ)' : '⚠️ عجز ثانوي (نفذ)'}
+                            </span>
+                          ) : (
+                            <span className="font-bold">
+                              تكفي: {formatNumber(availableCups)} كوب
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div className="flex justify-end gap-2 border-t border-gray-100 pt-4">
               <Button
                 type="button"
