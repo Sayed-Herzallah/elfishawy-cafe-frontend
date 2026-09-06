@@ -65,8 +65,8 @@ export const recipeService = {
     return ApiClient.request<Recipe[]>('/recipes', { method: 'GET' });
   },
 
-  getRecipeByProduct: (productId: string): Promise<ApiResponse<{ recipe: Recipe; availableProductQty: number; ingredientDetails?: any[] }>> => {
-    return ApiClient.request<{ recipe: Recipe; availableProductQty: number; ingredientDetails?: any[] }>(`/recipes/product/${productId}`, {
+  getRecipeByProduct: (productId: string): Promise<ApiResponse<{ recipe: Recipe; availableProductQty: number; ingredientDetails?: any[]; depletedSecondary?: { name: string; unit: string; currentStock: number }[] }>> => {
+    return ApiClient.request<{ recipe: Recipe; availableProductQty: number; ingredientDetails?: any[]; depletedSecondary?: { name: string; unit: string; currentStock: number }[] }>(`/recipes/product/${productId}`, {
       method: 'GET',
     });
   },

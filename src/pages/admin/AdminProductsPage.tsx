@@ -83,7 +83,7 @@ export const AdminProductsPage: React.FC = () => {
   }[]>([]);
   const [computedAvailable, setComputedAvailable] = useState<number | null>(null);
   const [recipeErrors, setRecipeErrors] = useState<{ row?: string }>({});
-  const [recipeData, setRecipeData] = useState<{ availableProductQty: number; ingredientDetails: any[] } | null>(null);
+  const [recipeData, setRecipeData] = useState<{ availableProductQty: number; ingredientDetails: any[]; depletedSecondary?: { name: string; unit: string; currentStock: number }[] } | null>(null);
 
   const { showToast, showError } = useNotification();
 
@@ -320,12 +320,14 @@ export const AdminProductsPage: React.FC = () => {
   const handleViewProduct = (prod: Product) => {
     setViewingProduct(prod);
     setIsViewModalOpen(true);
+    setRecipeData(null); // إعادة تعيين البيانات قبل الجلب
     // Fetch recipe data for available quantity calculation
     recipeService.getRecipeByProduct(prod._id).then((res) => {
       if (res.success && res.data) {
         setRecipeData({
           availableProductQty: res.data.availableProductQty,
           ingredientDetails: res.data.ingredientDetails || [],
+          depletedSecondary: res.data.depletedSecondary || [],
         });
       }
     }).catch(() => {
@@ -927,29 +929,16 @@ export const AdminProductsPage: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 bg-white rounded-xl border border-gray-200">
-                <span className="text-[10px] text-gray-400 font-bold block">السعر</span>
-                <span className="text-lg font-bold font-mono text-[#2e5b9f]">{formatPrice(viewingProduct.price)}</span>
-              </div>
-              <div className="p-3 bg-white rounded-xl border border-gray-200">
-                <span className="text-[10px] text-gray-400 font-bold block">المخزون (يدوي)</span>
-                <span className="text-lg font-bold font-mono text-gray-900">{formatNumber(viewingProduct.stockQuantity)} وحدة</span>
-              </div>
-              <div className="p-3 bg-white rounded-xl border border-gray-200">
-                <span className="text-[10px] text-gray-400 font-bold block">المتاح من الوصفة</span>
-                <span className="text-lg font-bold font-mono text-[#2e5b9f]">
-                  {recipeData?.availableProductQty !== undefined ? `${formatNumber(recipeData.availableProductQty)} وحدة` : '—'}
+            {/* الأكواب المتاحة — بارز في الأعلى */}
+            <div className="p-4 bg-gradient-to-l from-[#eef3fc] to-[#f5f8ff] rounded-2xl border border-[#c5d5f0] flex items-center justify-between">
+              <div>
+                <span className="text-[11px] text-[#2e5b9f] font-bold block mb-0.5">الأكواب المتاحة (من المكونات الأساسية)</span>
+                <span className="text-3xl font-bold font-mono text-[#2e5b9f]">
+                  {recipeData ? formatNumber(recipeData.availableProductQty) : '…'}
                 </span>
+                <span className="text-sm text-[#2e5b9f] mr-1">كوب</span>
               </div>
-              <div className="p-3 bg-white rounded-xl border border-gray-200">
-                <span className="text-[10px] text-gray-400 font-bold block">التصنيف</span>
-                <span className="text-sm font-bold text-gray-900">
-                  {typeof viewingProduct.category === 'object' ? viewingProduct.category.name : 'عام'}
-                </span>
-              </div>
-              <div className="p-3 bg-white rounded-xl border border-gray-200">
-                <span className="text-[10px] text-gray-400 font-bold block">الحالة</span>
+              <div className="text-right">
                 <Badge
                   variant={(() => {
                     const s = productStockState({
@@ -968,6 +957,50 @@ export const AdminProductsPage: React.FC = () => {
                     return s === 'available' ? 'متوفر' : s === 'low' ? 'منخفض' : 'نفذ المخزون';
                   })()}
                 </Badge>
+              </div>
+            </div>
+
+            {/* تحذير: خامات ثانوية نفذت */}
+            {recipeData && recipeData.depletedSecondary && recipeData.depletedSecondary.length > 0 && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-amber-600 text-base">⚠️</span>
+                  <span className="text-[12px] font-bold text-amber-700">
+                    خامات ثانوية نفذت — لا تؤثر على عدد الأكواب لكن تحتاج تعبئة
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {recipeData.depletedSecondary.map((item, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-800 text-[11px] font-bold rounded-lg border border-amber-200"
+                    >
+                      🥄 {item.name}
+                      <span className="text-amber-500 font-normal">(نفذ)</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 bg-white rounded-xl border border-gray-200">
+                <span className="text-[10px] text-gray-400 font-bold block">السعر</span>
+                <span className="text-lg font-bold font-mono text-[#2e5b9f]">{formatPrice(viewingProduct.price)}</span>
+              </div>
+              <div className="p-3 bg-white rounded-xl border border-gray-200">
+                <span className="text-[10px] text-gray-400 font-bold block">المخزون (يدوي)</span>
+                <span className="text-lg font-bold font-mono text-gray-900">{formatNumber(viewingProduct.stockQuantity)} وحدة</span>
+              </div>
+              <div className="p-3 bg-white rounded-xl border border-gray-200">
+                <span className="text-[10px] text-gray-400 font-bold block">التصنيف</span>
+                <span className="text-sm font-bold text-gray-900">
+                  {typeof viewingProduct.category === 'object' ? viewingProduct.category.name : 'عام'}
+                </span>
+              </div>
+              <div className="p-3 bg-white rounded-xl border border-gray-200">
+                <span className="text-[10px] text-gray-400 font-bold block">حالة المنتج</span>
+                <span className="text-sm font-bold text-gray-700">{viewingProduct.inStock ? '✅ متاح للبيع' : '🔴 غير متاح'}</span>
               </div>
             </div>
 
