@@ -27,12 +27,12 @@ export default defineConfig(() => {
           changeOrigin: true,
           secure: true,
         },
-        '/product': {
+        '/products': {
           target: API_TARGET,
           changeOrigin: true,
           secure: true,
         },
-        '/category': {
+        '/categories': {
           target: API_TARGET,
           changeOrigin: true,
           secure: true,
@@ -42,22 +42,27 @@ export default defineConfig(() => {
           changeOrigin: true,
           secure: true,
         },
-        '/order': {
+        '/orders': {
           target: API_TARGET,
           changeOrigin: true,
           secure: true,
         },
-        '/recipe': {
+        '/recipes': {
           target: API_TARGET,
           changeOrigin: true,
           secure: true,
         },
-        '/user': {
+        '/users': {
           target: API_TARGET,
           changeOrigin: true,
           secure: true,
         },
-        '/report': {
+        '/expenses': {
+          target: API_TARGET,
+          changeOrigin: true,
+          secure: true,
+        },
+        '/analytics': {
           target: API_TARGET,
           changeOrigin: true,
           secure: true,
