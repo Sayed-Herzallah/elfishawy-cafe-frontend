@@ -75,7 +75,12 @@ export const AdminProductsPage: React.FC = () => {
 
   // Recipe / Raw-material linking for auto stock calc
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
-  const [recipeRows, setRecipeRows] = useState<{ inventoryItem: string; consumeQty: string; consumeUnit: string }[]>([]);
+  const [recipeRows, setRecipeRows] = useState<{
+    inventoryItem: string;
+    consumeQty: string;
+    consumeUnit: string;
+    isPrimary: boolean;
+  }[]>([]);
   const [computedAvailable, setComputedAvailable] = useState<number | null>(null);
   const [recipeErrors, setRecipeErrors] = useState<{ row?: string }>({});
   const [recipeData, setRecipeData] = useState<{ availableProductQty: number; ingredientDetails: any[] } | null>(null);
@@ -90,6 +95,7 @@ export const AdminProductsPage: React.FC = () => {
         categoryService.listCategories(),
         inventoryService.listInventory(),
       ]);
+
       if (prodRes.success && prodRes.data) setProducts(prodRes.data);
       if (catRes.success && catRes.data) setCategories(catRes.data);
       if (invRes.success && invRes.data) setInventoryItems(invRes.data);
@@ -101,15 +107,22 @@ export const AdminProductsPage: React.FC = () => {
   };
 
   // Compute how many product units we can make from the linked raw inventory
-  // Eg: linked "Coffee beans" with 2 LITER current and consumeQty 0.02 per cup => 100 cups available.
-  // Handles unit conversion to get accurate cup/piece calculation
-  // ⚠️ القاعدة: العدد النهائي = أقل خامة — الخامة اللي رصيدها يكفي أقل عدد هي اللي بتحدد السقف
-  const computeAvailability = (rows: { inventoryItem: string; consumeQty: string; consumeUnit: string }[]): number | null => {
+  // ⚠️ القاعدة: الحساب يعتمد على الخامات الأساسية فقط (البن للقهوة، الشاي للشاي).
+  // الخامات المساعدة (مثل السكر) تخصم عند البيع لكن لا تخنق رصيد الأكواب المتاحة.
+  const computeAvailability = (rows: {
+    inventoryItem: string;
+    consumeQty: string;
+    consumeUnit: string;
+    isPrimary: boolean;
+  }[]): number | null => {
     if (!rows || rows.length === 0) return null;
+
+    const primaryRows = rows.filter((r) => r.isPrimary);
+    const targetRows = primaryRows.length > 0 ? primaryRows : rows;
 
     let minAvailable = Infinity;
 
-    for (const row of rows) {
+    for (const row of targetRows) {
       const inv = inventoryItems.find((i) => i._id === row.inventoryItem);
       const qty = Number(row.consumeQty);
       if (!row.inventoryItem || !qty || qty <= 0) continue;
@@ -127,12 +140,40 @@ export const AdminProductsPage: React.FC = () => {
     return Number.isFinite(minAvailable) ? minAvailable : null;
   };
 
-  const updateComputedAvailable = (rows: { inventoryItem: string; consumeQty: string; consumeUnit: string }[]) => {
+  const updateComputedAvailable = (rows: {
+    inventoryItem: string;
+    consumeQty: string;
+    consumeUnit: string;
+    isPrimary: boolean;
+  }[]) => {
     setComputedAvailable(computeAvailability(rows));
   };
 
-  const handleRecipeRowChange = (idx: number, field: 'inventoryItem' | 'consumeQty' | 'consumeUnit', value: string) => {
-    const updated = recipeRows.map((r, i) => (i === idx ? { ...r, [field]: value } : r));
+  const handleRecipeRowChange = (
+    idx: number,
+    field: 'inventoryItem' | 'consumeQty' | 'consumeUnit' | 'isPrimary',
+    value: any
+  ) => {
+    const updated = recipeRows.map((r, i) => {
+      if (i !== idx) return r;
+      if (field === 'inventoryItem') {
+        const item = inventoryItems.find((inv) => inv._id === value);
+        const isSugar = item?.name ? /سكر|sugar/i.test(item.name) : false;
+        const defaultUnit =
+          item?.unit === 'LITER' || item?.unit === 'ML'
+            ? 'ML'
+            : isSugar
+            ? 'SPOON'
+            : 'GRAM';
+        return {
+          ...r,
+          inventoryItem: value,
+          consumeUnit: defaultUnit,
+          isPrimary: !isSugar,
+        };
+      }
+      return { ...r, [field]: value };
+    });
     setRecipeRows(updated);
     setRecipeErrors({});
     updateComputedAvailable(updated);
@@ -140,11 +181,26 @@ export const AdminProductsPage: React.FC = () => {
 
   const addRecipeRow = () => {
     const unused = inventoryItems.find((i) => !recipeRows.some((r) => r.inventoryItem === i._id));
-    setRecipeRows((prev) => [
-      ...prev,
-      { inventoryItem: unused?._id || inventoryItems[0]?._id || '', consumeQty: '', consumeUnit: 'KG' },
-    ]);
+    const selectedItem = unused || inventoryItems[0];
+    const isSugar = selectedItem?.name ? /سكر|sugar/i.test(selectedItem.name) : false;
+    const defaultUnit =
+      selectedItem?.unit === 'LITER' || selectedItem?.unit === 'ML'
+        ? 'ML'
+        : isSugar
+        ? 'SPOON'
+        : 'GRAM';
+    const newRows = [
+      ...recipeRows,
+      {
+        inventoryItem: selectedItem?._id || '',
+        consumeQty: '',
+        consumeUnit: defaultUnit,
+        isPrimary: !isSugar,
+      },
+    ];
+    setRecipeRows(newRows);
     setRecipeErrors({});
+    updateComputedAvailable(newRows);
   };
 
   const removeRecipeRow = (idx: number) => {
@@ -230,7 +286,7 @@ export const AdminProductsPage: React.FC = () => {
         // Populate recipe rows from backend
         if (res.data.ingredientDetails && res.data.ingredientDetails.length > 0) {
           const rows = res.data.ingredientDetails.map((ing: any) => {
-            const consumeUnit = ing.inputUnit || 'KG';
+            const consumeUnit = ing.inputUnit || 'GRAM';
             const inv =
               typeof ing.inventoryItem === 'object' && ing.inventoryItem
                 ? ing.inventoryItem
@@ -240,10 +296,14 @@ export const AdminProductsPage: React.FC = () => {
               inv ? Number(inv.quantity) : undefined,
               inv?.unit
             );
+            const invName = inv?.name || '';
+            const isSugar = /سكر|sugar/i.test(invName);
+            const isPrimary = ing.isPrimary !== undefined ? Boolean(ing.isPrimary) : !isSugar;
             return {
               inventoryItem: typeof ing.inventoryItem === 'string' ? ing.inventoryItem : ing.inventoryItem._id,
               consumeQty: String(qty),
               consumeUnit,
+              isPrimary,
             };
           });
           setRecipeRows(rows);
@@ -421,8 +481,9 @@ export const AdminProductsPage: React.FC = () => {
                 return {
                   inventoryItem: r.inventoryItem,
                   inputQuantity: repaired.qty,
-                  inputUnit: repaired.unit as 'KG' | 'GRAM' | 'LITER' | 'ML' | 'PIECE',
+                  inputUnit: repaired.unit as 'KG' | 'GRAM' | 'LITER' | 'ML' | 'PIECE' | 'SPOON',
                   outputQuantity: 1,
+                  isPrimary: r.isPrimary,
                 };
               });
               if (existingRecipe) {
@@ -468,8 +529,9 @@ export const AdminProductsPage: React.FC = () => {
                 return {
                   inventoryItem: r.inventoryItem,
                   inputQuantity: repaired.qty,
-                  inputUnit: repaired.unit as 'KG' | 'GRAM' | 'LITER' | 'ML' | 'PIECE',
+                  inputUnit: repaired.unit as 'KG' | 'GRAM' | 'LITER' | 'ML' | 'PIECE' | 'SPOON',
                   outputQuantity: 1,
+                  isPrimary: r.isPrimary,
                 };
               });
               if (existingRecipe) {
@@ -1059,7 +1121,19 @@ export const AdminProductsPage: React.FC = () => {
                 >
                   {/* Compact Row Header */}
                   <div className="flex items-center justify-between px-3.5 py-2 bg-gradient-to-l from-[#2e5b9f]/5 to-blue-50/30 border-b border-[#2e5b9f]/10">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => handleRecipeRowChange(idx, 'isPrimary', !row.isPrimary)}
+                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold transition cursor-pointer border ${
+                          row.isPrimary
+                            ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                            : 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
+                        }`}
+                        title={row.isPrimary ? "انقر للتحويل إلى خامة مساعدة" : "انقر للتحويل إلى خامة أساسية"}
+                      >
+                        {row.isPrimary ? '⭐ خامة أساسية (تحدد الأكواب)' : '🥄 خامة مساعدة (لا تقيّد الأكواب)'}
+                      </button>
                       {selectedInv && (
                         <span className="text-[10px] font-mono bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full font-bold">
                           الرصيد: {formatNumber(selectedInv.quantity)} {selectedInv.unit}
@@ -1111,7 +1185,7 @@ export const AdminProductsPage: React.FC = () => {
                       type="number"
                       min="0.001"
                       step="any"
-                      placeholder="0.2"
+                      placeholder="10"
                       value={row.consumeQty}
                       onChange={(e) => handleRecipeRowChange(idx, 'consumeQty', e.target.value)}
                     />
@@ -1127,10 +1201,11 @@ export const AdminProductsPage: React.FC = () => {
                           dir="rtl"
                         >
                           {[
-                            { value: 'KG', label: 'كيلوجرام (KG)' },
                             { value: 'GRAM', label: 'جرام (GRAM)' },
-                            { value: 'LITER', label: 'لتر (LITER)' },
+                            { value: 'SPOON', label: 'معلقة (5 جرام)' },
+                            { value: 'KG', label: 'كيلوجرام (KG)' },
                             { value: 'ML', label: 'مللي لتر (ML)' },
+                            { value: 'LITER', label: 'لتر (LITER)' },
                             { value: 'PIECE', label: 'قطعة (PIECE)' },
                           ].map((u) => (
                             <option key={u.value} value={u.value}>
@@ -1143,6 +1218,27 @@ export const AdminProductsPage: React.FC = () => {
                         </div>
                       </div>
                     </div>
+                  </div>
+
+                  {/* Row Bottom Info */}
+                  <div className="px-3 pb-2.5 pt-1.5 border-t border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-1 text-[11px]">
+                    {row.isPrimary ? (
+                      <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        تحدد رصيد المنتج: {(() => {
+                          if (!selectedInv || !Number(row.consumeQty)) return 'أدخل كمية الاستهلاك';
+                          const invBase = getQtyInBase(selectedInv.quantity, selectedInv.unit);
+                          const repaired = repairConsumeQty(Number(row.consumeQty), row.consumeUnit || 'GRAM', selectedInv.quantity, selectedInv.unit, 1);
+                          const consumeBase = getQtyInBase(repaired.qty, repaired.unit);
+                          return consumeBase > 0 ? `${formatNumber(Math.floor(invBase / consumeBase))} كوب متاح` : '—';
+                        })()}
+                      </span>
+                    ) : (
+                      <span className="text-purple-700 font-medium flex items-center gap-1">
+                        <Info className="w-3.5 h-3.5" />
+                        خامة مساعدة (مثل السكر) — تُخصم من المخزن مع كل طلب ولا تقيّد رصيد الأكواب
+                      </span>
+                    )}
                   </div>
                 </div>
               );

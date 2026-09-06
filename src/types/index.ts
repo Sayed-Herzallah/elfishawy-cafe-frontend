@@ -44,13 +44,14 @@ export interface Product {
   updatedAt?: string;
 }
 
-export type Unit = 'KG' | 'GRAM' | 'LITER' | 'ML' | 'PIECE';
+export type Unit = 'KG' | 'GRAM' | 'LITER' | 'ML' | 'PIECE' | 'SPOON';
 
 export interface RecipeIngredient {
   inventoryItem: string | InventoryItem;
   inputQuantity: number;
   inputUnit: Unit;
   outputQuantity: number;
+  isPrimary?: boolean;
   consumptionPerUnitInBase?: number;
   availableFromThisIngredient?: number;
 }

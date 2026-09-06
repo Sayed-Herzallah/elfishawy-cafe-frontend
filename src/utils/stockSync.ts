@@ -51,12 +51,17 @@ const recipeProductId = (recipe: any): string | null => {
   return p._id || null;
 };
 
-/** حساب المتاح من وصفة واحدة بناءً على أرصدة مكوناتها */
+/** حساب المتاح من وصفة واحدة بناءً على أرصدة مكوناتها (الخامات الأساسية فقط) */
 const calcRecipeAvailability = (recipe: any, allInventory: any[]): number | null => {
   if (!recipe?.ingredients?.length) return null;
 
+  // الخامات الأساسية فقط هي التي تحدد عدد الأكواب المتاحة (مثل البن للقهوة أو الشاي للشاي).
+  // الخامات المساعدة (مثل السكر) تُخصم عند البيع ولا تقيّد رصيد الأكواب.
+  const primaryIngredients = recipe.ingredients.filter((ing: any) => ing.isPrimary !== false);
+  const targetIngredients = primaryIngredients.length > 0 ? primaryIngredients : recipe.ingredients;
+
   let minAvailable = Infinity;
-  for (const ing of recipe.ingredients) {
+  for (const ing of targetIngredients) {
     const ingId = typeof ing.inventoryItem === 'string' ? ing.inventoryItem : ing.inventoryItem?._id;
     const invItem = allInventory.find((i: any) => String(i._id) === String(ingId));
     if (!invItem || isStockOut(invItem.quantity)) return 0;
@@ -64,7 +69,7 @@ const calcRecipeAvailability = (recipe: any, allInventory: any[]): number | null
     const out = Number(ing.outputQuantity) > 0 ? Number(ing.outputQuantity) : 1;
     const repaired = repairConsumeQty(
       Number(ing.inputQuantity) || 0,
-      ing.inputUnit || 'KG',
+      ing.inputUnit || 'GRAM',
       Number(invItem.quantity) || 0,
       invItem.unit || 'KG',
       out
