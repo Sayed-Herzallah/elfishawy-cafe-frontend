@@ -170,15 +170,15 @@ export const PublicMenuPage: React.FC = () => {
                     />
                     <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5">
                       {item.isPopular && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold py-1 px-2.5 rounded-md shadow-xs bg-amber-400 text-amber-950">
-                          <Sparkles className="w-3 h-3" />
+                        <span className="inline-flex items-center gap-1 text-xs font-bold py-1.5 px-3 rounded-lg shadow-sm bg-amber-400 text-amber-950">
+                          <Sparkles className="w-3.5 h-3.5" />
                           الأكثر طلباً
                         </span>
                       )}
                     </div>
                     {category && (
                       <div className="absolute bottom-2.5 right-2.5">
-                        <span className="text-[10px] font-bold py-1 px-2.5 rounded-md shadow-xs bg-white/95 text-gray-700">
+                        <span className="text-xs font-bold py-1.5 px-3 rounded-lg shadow-sm bg-white/95 text-gray-700">
                           {category.icon} {category.name}
                         </span>
                       </div>
@@ -186,23 +186,23 @@ export const PublicMenuPage: React.FC = () => {
                   </div>
 
                   <div className="p-4 text-right flex flex-col flex-1">
-                    <h3 className="font-bold text-gray-900 text-base">{item.name}</h3>
+                    <h3 className="font-bold text-gray-900 text-lg leading-snug">{item.name}</h3>
                     {item.description && (
-                      <p className="text-[11px] text-gray-500 mt-1 line-clamp-2 leading-relaxed">{item.description}</p>
+                      <p className="text-sm text-gray-500 mt-1.5 line-clamp-2 leading-relaxed">{item.description}</p>
                     )}
 
                     {/* قائمة الأنواع — تظهر فقط لو الصنف له أكثر من نوع وسعر */}
                     {hasMultipleVariants && (
                       <ul className="mt-3 flex-1 divide-y divide-dashed divide-gray-100">
                         {availableVariants.map((variant) => (
-                          <li key={variant.id} className="flex items-center justify-between py-2">
-                            <span className="text-xs font-bold text-gray-600 flex items-center gap-1.5">
-                              <span className="w-1 h-1 rounded-full bg-[#2e5b9f]/50" />
+                          <li key={variant.id} className="flex items-center justify-between py-2.5">
+                            <span className="text-sm font-bold text-gray-600 flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-[#2e5b9f]/50" />
                               {variant.label}
                             </span>
-                            <span className="text-sm font-extrabold font-mono text-[#2e5b9f]">
+                            <span className="text-base font-extrabold font-mono text-[#2e5b9f]">
                               {variant.price}
-                              <span className="text-[10px] font-sans font-medium text-gray-400 mr-1">جنيها</span>
+                              <span className="text-xs font-sans font-medium text-gray-400 mr-1">جنيها</span>
                             </span>
                           </li>
                         ))}
@@ -211,12 +211,12 @@ export const PublicMenuPage: React.FC = () => {
 
                     {/* ملخص السعر — مرة واحدة فقط بدون تكرار */}
                     <div className="pt-3 mt-3 border-t border-gray-100 flex items-center justify-between bg-[#faf8f5] -mx-4 -mb-4 px-4 py-3 rounded-b-2xl">
-                      <span className="text-[11px] text-gray-400 font-bold">
+                      <span className="text-sm text-gray-400 font-bold">
                         {hasMultipleVariants ? 'يبدأ السعر من' : 'السعر'}
                       </span>
-                      <span className="font-extrabold text-base text-[#2e5b9f] font-mono">
+                      <span className="font-extrabold text-xl text-[#2e5b9f] font-mono">
                         {priceRange.min}
-                        <span className="text-[10px] font-sans font-medium text-gray-400 mr-1">جنيها</span>
+                        <span className="text-xs font-sans font-medium text-gray-400 mr-1">جنيها</span>
                       </span>
                     </div>
                   </div>

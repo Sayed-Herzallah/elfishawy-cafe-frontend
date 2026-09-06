@@ -825,24 +825,24 @@ export const CashierPOSPage: React.FC = () => {
                   >
                     {/* شارة الكمية في السلة — تظهر عند الاختيار */}
                     {cartQty > 0 && (
-                      <span className="absolute top-2 left-2 z-10 inline-flex items-center gap-1 bg-[#2e5b9f] text-white text-[11px] font-bold px-2.5 py-1 rounded-full shadow-lg ring-2 ring-white">
-                        <CheckCircle2 className="w-3 h-3" />
-                        ×{formatNumber(cartQty)}
+                      <span className="absolute top-2 left-2 z-10 inline-flex items-center gap-1 bg-[#2e5b9f] text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-lg ring-2 ring-white">
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        {formatNumber(cartQty)}×
                       </span>
                     )}
 
                     {/* Image */}
-                    <div className="w-full h-28 overflow-hidden bg-gray-100 relative">
+                    <div className="w-full h-32 overflow-hidden bg-gray-100 relative">
                       {/* زرار العين 👁️ لمعرفة تفاصيل المخزون والخامات النافذة بدقة */}
                       <span
                         onClick={(e) => {
                           e.stopPropagation();
                           handleViewProduct(product);
                         }}
-                        className="absolute top-2 right-2 z-20 p-1.5 bg-white/90 hover:bg-white text-gray-700 hover:text-[#2e5b9f] rounded-lg shadow-sm border border-gray-200/80 transition cursor-pointer"
+                        className="absolute top-2 right-2 z-20 p-2 bg-white/95 hover:bg-white text-gray-600 hover:text-[#2e5b9f] rounded-xl shadow-md border border-gray-200 transition cursor-pointer"
                         title="عرض تفاصيل المكونات والعجز"
                       >
-                        <Eye className="w-3.5 h-3.5" />
+                        <Eye className="w-4 h-4" />
                       </span>
                       <img
                         src={getProductImageUrl(product.image)}
@@ -855,10 +855,10 @@ export const CashierPOSPage: React.FC = () => {
                         }}
                       />
                       {isOutOfStock && (
-                        <span className="absolute inset-0 bg-white/60 flex items-center justify-center p-1 text-center">
-                          <span className="bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded-lg shadow-sm">
+                        <span className="absolute inset-0 bg-white/65 flex items-center justify-center p-2 text-center">
+                          <span className="bg-rose-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-sm leading-tight">
                             {primaryDepletedMap[product._id] && primaryDepletedMap[product._id].length > 0
-                              ? `نفذ (${primaryDepletedMap[product._id].join('، ')})`
+                              ? `نفذ: ${primaryDepletedMap[product._id].join('، ')}`
                               : 'نافد من المخزن'}
                           </span>
                         </span>
@@ -866,51 +866,53 @@ export const CashierPOSPage: React.FC = () => {
                     </div>
 
                     {/* Body */}
-                    <div className="p-2.5 flex flex-col gap-1.5 flex-1">
-                      <h3 className="font-bold text-gray-900 text-[13px] leading-snug line-clamp-1">
+                    <div className="p-3 flex flex-col gap-2 flex-1">
+                      <h3 className="font-bold text-gray-900 text-sm leading-snug line-clamp-1">
                         {product.name}
                       </h3>
 
                       {/* السعر — أهم معلومة للكاشير */}
-                      <span className="text-base font-extrabold font-mono text-[#2e5b9f] leading-none">
+                      <span className="text-lg font-extrabold font-mono text-[#2e5b9f] leading-none">
                         {formatPrice(product.price)}
                       </span>
 
                       {/* الحالة + عدد الأكواب الجاهزة للبيع */}
-                        <div className="flex flex-col gap-1">
+                        <div className="flex flex-col gap-1.5">
                           {isOutOfStock ? (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
-                              <X className="w-3 h-3" />
-                              {primaryDepletedMap[product._id] && primaryDepletedMap[product._id].length > 0
-                                ? `نفاد: ${primaryDepletedMap[product._id].join('، ')} (0 كوب)`
-                                : 'نافذ من المخزن (0 كوب)'}
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
+                              <X className="w-3.5 h-3.5 shrink-0" />
+                              <span className="truncate">
+                                {primaryDepletedMap[product._id] && primaryDepletedMap[product._id].length > 0
+                                  ? `نفاد: ${primaryDepletedMap[product._id].join('، ')}`
+                                  : 'نافذ (0 كوب)'}
+                              </span>
                             </span>
                           ) : isLowStock ? (
-                            <span className="inline-flex items-center justify-between text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                            <span className="inline-flex items-center justify-between text-xs font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg">
                               <span className="flex items-center gap-1">
-                                <AlertTriangle className="w-3 h-3" />
+                                <AlertTriangle className="w-3.5 h-3.5" />
                                 متبقي:
                               </span>
-                              <span className="font-mono text-xs">{formatNumber(product.stockQuantity)} كوب</span>
+                              <span className="font-mono font-extrabold">{formatNumber(product.stockQuantity)} كوب</span>
                             </span>
                           ) : (
-                            <span className="inline-flex items-center justify-between text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                            <span className="inline-flex items-center justify-between text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg">
                               <span className="flex items-center gap-1">
-                                <CheckCircle2 className="w-3 h-3" />
+                                <CheckCircle2 className="w-3.5 h-3.5" />
                                 متاح للبيع:
                               </span>
-                              <span className="font-mono text-xs">{formatNumber(product.stockQuantity)} كوب</span>
+                              <span className="font-mono font-extrabold">{formatNumber(product.stockQuantity)} كوب</span>
                             </span>
                           )}
 
                           {/* تنبيه وجود عجز في خامة ثانوية (مثل السكر) */}
                           {recipeDepletedMap[product._id] && recipeDepletedMap[product._id].length > 0 && !isOutOfStock && (
                             <span
-                              className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-800 bg-amber-100/90 border border-amber-300 px-1.5 py-0.5 rounded"
+                              className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-800 bg-amber-100/90 border border-amber-300 px-2 py-0.5 rounded-lg"
                               title={`خامات ثانوية نفذت: ${recipeDepletedMap[product._id].join('، ')}`}
                             >
-                              <span>🥄 عجز:</span>
-                              <span className="truncate max-w-[90px]">{recipeDepletedMap[product._id].join('، ')}</span>
+                              <span className="shrink-0">🥄 عجز:</span>
+                              <span className="truncate">{recipeDepletedMap[product._id].join('، ')}</span>
                             </span>
                           )}
                         </div>
@@ -1105,36 +1107,39 @@ export const CashierPOSPage: React.FC = () => {
       >
         {viewingProduct && (
           <div className="space-y-4 text-right font-sans">
+            {/* معلومات المنتج */}
             <div className="flex items-center gap-4 p-4 bg-[#faf8f5] rounded-2xl border border-gray-100">
               <img
                 src={getProductImageUrl(viewingProduct.image)}
                 alt={viewingProduct.name}
-                className="w-20 h-20 rounded-2xl object-cover border border-gray-200 shadow-2xs"
+                className="w-24 h-24 rounded-2xl object-cover border border-gray-200 shadow-sm"
                 onError={(e) => {
                   e.currentTarget.src =
                     'https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?q=80&w=800&auto=format&fit=crop';
                 }}
               />
               <div className="flex-1">
-                <h3 className="text-lg font-bold text-gray-900">{viewingProduct.name}</h3>
-                <p className="text-xs text-gray-500 mt-1">{viewingProduct.description || 'لا يوجد وصف'}</p>
-                <span className="inline-block mt-2 font-mono font-bold text-base text-[#2e5b9f]">
+                <h3 className="text-xl font-bold text-gray-900">{viewingProduct.name}</h3>
+                <p className="text-sm text-gray-500 mt-1">{viewingProduct.description || 'لا يوجد وصف'}</p>
+                <span className="inline-block mt-2 font-mono font-extrabold text-xl text-[#2e5b9f]">
                   {formatPrice(viewingProduct.price)}
                 </span>
               </div>
             </div>
 
             {/* الأكواب المتاحة — بارز في الأعلى */}
-            <div className="p-4 bg-gradient-to-l from-[#eef3fc] to-[#f5f8ff] rounded-2xl border border-[#c5d5f0] flex items-center justify-between">
+            <div className="p-5 bg-gradient-to-l from-[#eef3fc] to-[#f5f8ff] rounded-2xl border border-[#c5d5f0] flex items-center justify-between">
               <div>
-                <span className="text-[11px] text-[#2e5b9f] font-bold block mb-0.5">الأكواب المتاحة للبيع (من الخامات الأساسية)</span>
-                <span className="text-3xl font-bold font-mono text-[#2e5b9f]">
-                  {recipeData ? formatNumber(recipeData.availableProductQty) : formatNumber(viewingProduct.stockQuantity)}
-                </span>
-                <span className="text-sm text-[#2e5b9f] mr-1">كوب</span>
+                <span className="text-sm text-[#2e5b9f] font-bold block mb-1">الأكواب المتاحة للبيع (من الخامات الأساسية)</span>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-4xl font-extrabold font-mono text-[#2e5b9f]">
+                    {recipeData ? formatNumber(recipeData.availableProductQty) : formatNumber(viewingProduct.stockQuantity)}
+                  </span>
+                  <span className="text-base font-bold text-[#2e5b9f]">كوب</span>
+                </div>
               </div>
               <div className="text-right">
-                <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
+                <span className={`px-3 py-1.5 rounded-full text-sm font-bold ${
                   viewingProduct.inStock ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                 }`}>
                   {viewingProduct.inStock ? 'متوفر للبيع' : 'نافذ من المخزن'}
@@ -1144,10 +1149,10 @@ export const CashierPOSPage: React.FC = () => {
 
             {/* تحذير: خامات ثانوية نفذت (مثل السكر) */}
             {recipeData && recipeData.depletedSecondary && recipeData.depletedSecondary.length > 0 && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-amber-600 text-base">⚠️</span>
-                  <span className="text-[12px] font-bold text-amber-700">
+              <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-amber-600 text-lg">⚠️</span>
+                  <span className="text-sm font-bold text-amber-700">
                     خامات ثانوية نفذت — لا تمنع بيع الكوب لكن يجب الانتباه:
                   </span>
                 </div>
@@ -1155,10 +1160,10 @@ export const CashierPOSPage: React.FC = () => {
                   {recipeData.depletedSecondary.map((item, idx) => (
                     <span
                       key={idx}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-800 text-[11px] font-bold rounded-lg border border-amber-200"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-100 text-amber-800 text-sm font-bold rounded-lg border border-amber-200"
                     >
                       🥄 {item.name}
-                      <span className="text-amber-500 font-normal">(نفذ)</span>
+                      <span className="text-amber-500 font-semibold">(نفذ)</span>
                     </span>
                   ))}
                 </div>
@@ -1167,12 +1172,12 @@ export const CashierPOSPage: React.FC = () => {
 
             {/* تفصيل حالة مكونات الوصفة ورصد العجز بدقة */}
             {recipeData && recipeData.ingredientDetails && recipeData.ingredientDetails.length > 0 && (
-              <div className="p-3 bg-gray-50 border border-gray-200 rounded-xl space-y-2">
+              <div className="p-4 bg-gray-50 border border-gray-200 rounded-xl space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-gray-800">تفاصيل الخامات ورصد العجز (الوصفة)</span>
-                  <span className="text-[10px] text-gray-500">حساب كفاية المخزون لكل خامة</span>
+                  <span className="text-sm font-bold text-gray-800">تفاصيل الخامات ورصد العجز (الوصفة)</span>
+                  <span className="text-xs text-gray-500">حساب كفاية المخزون لكل خامة</span>
                 </div>
-                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
                   {recipeData.ingredientDetails.map((detail, idx) => {
                     const itemName = detail.inventoryItem?.name || `خامة #${idx + 1}`;
                     const itemUnit = detail.inventoryItem?.unit || '';
@@ -1184,7 +1189,7 @@ export const CashierPOSPage: React.FC = () => {
                     return (
                       <div
                         key={idx}
-                        className={`flex items-center justify-between p-2 rounded-lg text-xs border ${
+                        className={`flex items-center justify-between p-3 rounded-xl border ${
                           isDepleted
                             ? isPrimary
                               ? 'bg-red-50 border-red-200 text-red-800'
@@ -1192,25 +1197,25 @@ export const CashierPOSPage: React.FC = () => {
                             : 'bg-white border-gray-100 text-gray-700'
                         }`}
                       >
-                        <div className="flex items-center gap-2">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`text-xs px-2 py-0.5 rounded-md font-bold ${
                             isPrimary ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-600'
                           }`}>
                             {isPrimary ? 'أساسية' : 'ثانوية'}
                           </span>
-                          <span className="font-semibold">{itemName}</span>
-                          <span className="text-[10px] text-gray-400">
+                          <span className="font-bold text-sm">{itemName}</span>
+                          <span className="text-xs text-gray-400">
                             (رصيد: {formatNumber(itemStock)} {itemUnit})
                           </span>
                         </div>
 
-                        <div className="text-left font-mono">
+                        <div className="text-left font-mono shrink-0 mr-2">
                           {isDepleted ? (
-                            <span className="font-bold text-xs flex items-center gap-1">
+                            <span className="font-bold text-sm flex items-center gap-1">
                               {isPrimary ? '⛔ عجز أساسي (نفذ)' : '⚠️ عجز ثانوي (نفذ)'}
                             </span>
                           ) : (
-                            <span className="font-bold">
+                            <span className="font-bold text-sm">
                               تكفي: {formatNumber(availableCups)} كوب
                             </span>
                           )}
@@ -1226,7 +1231,7 @@ export const CashierPOSPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setIsViewModalOpen(false)}
-                className="py-2 px-4 rounded-xl border border-gray-200 text-xs font-bold text-gray-700 hover:bg-gray-50 transition cursor-pointer"
+                className="py-2.5 px-6 rounded-xl border border-gray-200 text-sm font-bold text-gray-700 hover:bg-gray-50 transition cursor-pointer"
               >
                 إغلاق
               </button>
