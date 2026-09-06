@@ -14,6 +14,7 @@ import { formatPrice, formatNumber, formatTime } from '../utils/formatters';
 import { toBase } from '../utils/stockSync';
 import { productStockState } from '../utils/stockStatus';
 import { playAlertSound } from '../utils/soundFeedback';
+import { recordOrderShortages } from '../utils/orderShortageJournal';
 import {
   Plus,
   Trash2,
@@ -392,6 +393,23 @@ export const CashierPOSPage: React.FC = () => {
       if (orderRes.success && orderRes.data) {
         // ✅ لا حاجة لخصم المخزون من هنا — الـ Backend يخصم stockQuantity والمخزون الخام
         // (عبر الوصفات) تلقائياً عند إنشاء الطلب. أي خصم إضافي كان يسبب خصماً مزدوجاً.
+
+        // ✅ تسجيل العجز اللحظي للمواد الثانوية (مثل السكر أو اللبن) وقت إنشاء الفاتورة
+        // حتى لا تتأثر الفواتير القديمة بنفاد خامة في المخزن مستقبلاً (لا أثر رجعي)
+        const shortagesForThisOrder = new Set<string>();
+        cart.forEach((cartItem) => {
+          const depSec = recipeDepletedMap[cartItem.product._id];
+          if (depSec && depSec.length > 0) {
+            depSec.forEach((name) => shortagesForThisOrder.add(name));
+          }
+        });
+        if (shortagesForThisOrder.size > 0) {
+          recordOrderShortages(
+            orderRes.data._id,
+            String(orderRes.data.orderNumber || ''),
+            Array.from(shortagesForThisOrder)
+          );
+        }
 
         showToast('تم تأكيد الطلب وحفظ الفاتورة بنجاح!');
         setSelectedReceiptOrder(orderRes.data);

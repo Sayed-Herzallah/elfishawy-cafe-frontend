@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { orderService, inventoryService } from '../../services/opsService';
 import { productService, recipeService } from '../../services/catalogService';
 import { Order, OrderStatus, Product } from '../../types';
+import { getOrderShortages } from '../../utils/orderShortageJournal';
 import { Badge } from '../../components/ui/Badge';
 import { StatCard } from '../../components/ui/StatCard';
 import { ReceiptModal } from '../../components/ui/ReceiptModal';
@@ -43,7 +44,6 @@ export const AdminSalesPage: React.FC = () => {
   const [stockQualityFilter, setStockQualityFilter] = useState<'all' | 'clean' | 'shortage'>('all');
   const [dateRange, setDateRange] = useState<DateRange>({ from: null, to: null, preset: 'custom' });
   const [selectedReceiptOrder, setSelectedReceiptOrder] = useState<Order | null>(null);
-  const [productDepletedSecondaryMap, setProductDepletedSecondaryMap] = useState<Record<string, string[]>>({});
   
   // --- Pagination ---
   const [itemsPerPage] = useState<number>(10);
@@ -79,47 +79,10 @@ export const AdminSalesPage: React.FC = () => {
     productService.listProducts()
       .then((res) => { if (res.success && res.data) setProducts(res.data); })
       .catch(() => { /* تجاهل — الأسماء هتفضل من الطلب نفسه */ });
-
-    // ✅ خريطة الخامات الثانوية النافذة لكل منتج لمعرفة نواقص المشروبات وقت البيع
-    Promise.all([
-      recipeService.listRecipes().catch(() => null),
-      inventoryService.listInventory().catch(() => null),
-    ]).then(([recRes, invRes]) => {
-      const invMap = new Map<string, any>();
-      if (invRes && invRes.success && Array.isArray(invRes.data)) {
-        invRes.data.forEach((item: any) => {
-          invMap.set(String(item._id), item);
-        });
-      }
-
-      if (recRes && recRes.success && Array.isArray(recRes.data)) {
-        const depMap: Record<string, string[]> = {};
-        recRes.data.forEach((r: any) => {
-          const pId = typeof r.product === 'string' ? r.product : r.product?._id;
-          const pName = typeof r.product === 'object' && r.product?.name ? String(r.product.name).trim() : '';
-          if (!r.ingredients) return;
-          const depletedSec: string[] = [];
-          r.ingredients.forEach((ing: any) => {
-            const invId = typeof ing.inventoryItem === 'string'
-              ? ing.inventoryItem
-              : ing.inventoryItem?._id;
-            const directInv = invId ? invMap.get(String(invId)) : null;
-            const inv = directInv || ing.inventoryItem;
-            const qty = Number(inv?.quantity) || 0;
-            const isPrimary = ing.isPrimary !== false;
-            if (qty <= 0.01 && !isPrimary) {
-              depletedSec.push(inv?.name || 'خامة ثانوية');
-            }
-          });
-          if (depletedSec.length > 0) {
-            if (pId) depMap[pId] = depletedSec;
-            if (pName) depMap[pName] = depletedSec;
-          }
-        });
-        setProductDepletedSecondaryMap(depMap);
-      }
-    }).catch(() => { /* صامت */ });
+    // ✅ بيانات العجز الثانوي الآن تُقرأ من سجل لحظي (localStorage) مسجَّل عند كل فاتورة
+    // ولا يتم جلب المخزن هنا لأنه كان يسبب أثراً رجعياً على الفواتير القديمة
   }, []);
+
 
   useEffect(() => {
     setCurrentPage(1);
@@ -176,23 +139,13 @@ export const AdminSalesPage: React.FC = () => {
   };
 
   // ✅ فحص هل الطلب كان به عجز في أي خامة ثانوية (مثل السكر أو اللبن)
+  // يقرأ من السجل اللحظي (localStorage) المسجَّل وقت إنشاء الطلب —
+  // لا يتأثر بنفاد أي خامة لاحقاً ولا يوجد أثر رجعي على الفواتير القديمة.
   const getOrderShortageItems = (o: Order): string[] => {
-    const names = new Set<string>();
-    (o.items || []).forEach((item) => {
-      const pId = typeof item.product === 'object' && item.product
-        ? (item.product as any)._id
-        : String(item.product || '');
-      const pName = typeof item.product === 'object' && item.product
-        ? (item.product as any).name
-        : products.find((p) => p._id === pId)?.name || '';
-
-      if (pId && productDepletedSecondaryMap[pId]) {
-        productDepletedSecondaryMap[pId].forEach((n) => names.add(n));
-      } else if (pName && productDepletedSecondaryMap[pName]) {
-        productDepletedSecondaryMap[pName].forEach((n) => names.add(n));
-      }
-    });
-    return Array.from(names);
+    const orderNum = typeof o.orderNumber === 'string' ? o.orderNumber : String(o.orderNumber || '');
+    const stored = getOrderShortages(o._id, orderNum);
+    if (stored) return stored; // ✅ سجل لحظي دقيق — فاتورة بها عجز فعلي وقت البيع
+    return []; // لا يوجد سجل = لم يكن هناك عجز وقت الطلب
   };
 
   // --- Filtered Orders (memoized) ---
@@ -237,7 +190,7 @@ export const AdminSalesPage: React.FC = () => {
 
       return matchesStatus && matchesDate && matchesSearch;
     });
-  }, [orders, products, statusFilter, stockQualityFilter, dateRange, searchQuery, productDepletedSecondaryMap]);
+  }, [orders, products, statusFilter, stockQualityFilter, dateRange, searchQuery]);
 
   // --- Pagination Logic ---
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage) || 1;
@@ -645,8 +598,27 @@ export const AdminSalesPage: React.FC = () => {
         onClose={() => setSelectedReceiptOrder(null)}
         order={selectedReceiptOrder}
         products={products}
-        shortageMap={productDepletedSecondaryMap}
+        shortageMap={
+          selectedReceiptOrder
+            ? (() => {
+                const stored = getOrderShortages(
+                  selectedReceiptOrder._id,
+                  String(selectedReceiptOrder.orderNumber || '')
+                );
+                if (!stored || stored.length === 0) return undefined;
+                const map: Record<string, string[]> = {};
+                (selectedReceiptOrder.items || []).forEach((item: any) => {
+                  const pId = typeof item?.product === 'object' && item?.product
+                    ? (item.product as any)._id
+                    : String(item?.product || '');
+                  if (pId) map[pId] = stored;
+                });
+                return map;
+              })()
+            : undefined
+        }
       />
+
 
       {/* Edit Order Modal */}
       <Modal
