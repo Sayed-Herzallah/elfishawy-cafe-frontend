@@ -139,13 +139,13 @@ export const AdminSalesPage: React.FC = () => {
   };
 
   // ✅ فحص هل الطلب كان به عجز في أي خامة ثانوية (مثل السكر أو اللبن)
-  // يقرأ من السجل اللحظي (localStorage) المسجَّل وقت إنشاء الطلب —
-  // لا يتأثر بنفاد أي خامة لاحقاً ولا يوجد أثر رجعي على الفواتير القديمة.
+  // يفحص أولاً من السيرفر مباشرة (من notes الفاتورة المسجلة في الـ DB)
+  // ثم من السجل المحلي (localStorage) كـ fallback — يعمل على Vercel وأي جهاز!
   const getOrderShortageItems = (o: Order): string[] => {
     const orderNum = typeof o.orderNumber === 'string' ? o.orderNumber : String(o.orderNumber || '');
-    const stored = getOrderShortages(o._id, orderNum);
-    if (stored) return stored; // ✅ سجل لحظي دقيق — فاتورة بها عجز فعلي وقت البيع
-    return []; // لا يوجد سجل = لم يكن هناك عجز وقت الطلب
+    const stored = getOrderShortages(o._id, orderNum, o.notes);
+    if (stored && stored.length > 0) return stored;
+    return [];
   };
 
   // --- Filtered Orders (memoized) ---
@@ -603,7 +603,8 @@ export const AdminSalesPage: React.FC = () => {
             ? (() => {
                 const stored = getOrderShortages(
                   selectedReceiptOrder._id,
-                  String(selectedReceiptOrder.orderNumber || '')
+                  String(selectedReceiptOrder.orderNumber || ''),
+                  selectedReceiptOrder.notes
                 );
                 if (!stored || stored.length === 0) return undefined;
                 const map: Record<string, string[]> = {};

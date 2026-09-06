@@ -3,6 +3,7 @@ import { Order } from '../../types';
 import { Button } from './Button';
 import { X, Printer, AlertTriangle, PackageX } from 'lucide-react';
 import { formatPrice, formatNumber, formatDateTime } from '../../utils/formatters';
+import { getCleanNotes } from '../../utils/orderShortageJournal';
 
 interface ReceiptModalProps {
   order: Order | null;
@@ -93,11 +94,15 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
               <span className="font-bold text-gray-800">طاولة رقم: <strong className="text-[#2e5b9f] font-mono text-sm">#{order.tableNumber || '—'}</strong></span>
               <span className="font-mono text-[11px] text-gray-400 font-bold bg-gray-100 px-2 py-0.5 rounded">{formatNumber(totalItemsCount)} صنف</span>
             </div>
-            {order.notes && order.notes.trim() !== '' && (
-              <div className="mt-2 bg-amber-50/70 border border-amber-200/60 p-2 rounded-xl text-xs text-amber-900 text-right font-bold print:border-dashed">
-                <span>📝 ملاحظات:</span> <span className="mr-1 text-gray-800 font-medium">{order.notes}</span>
-              </div>
-            )}
+            {(() => {
+              const cleanNotes = getCleanNotes(order.notes);
+              if (!cleanNotes) return null;
+              return (
+                <div className="mt-2 bg-amber-50/70 border border-amber-200/60 p-2 rounded-xl text-xs text-amber-900 text-right font-bold print:border-dashed">
+                  <span>📝 ملاحظات:</span> <span className="mr-1 text-gray-800 font-medium">{cleanNotes}</span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* ✅ بانر العجز الثانوي — يظهر واضح وكبير لو فيه عجز في الفاتورة */}
