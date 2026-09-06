@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { productService, categoryService } from '../services/catalogService';
+import { productService, categoryService, recipeService } from '../services/catalogService';
 import { orderService } from '../services/opsService';
 import { inventoryService } from '../services/opsService';
 // ⚡ تمت إزالة syncAllProductsStock — كان بيبطّئ تحميل الصفحة وبيعيد كتابة
@@ -53,6 +53,8 @@ export const CashierPOSPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [warnedProducts, setWarnedProducts] = useState<Record<string, boolean>>({});
+  // خريطة لتسجيل الخامات الثانوية النافذة لكل منتج لعرضها على شاشة المبيعات (POS)
+  const [recipeDepletedMap, setRecipeDepletedMap] = useState<Record<string, string[]>>({});
   // ✅ تأكيد قبل تفريغ السلة — "طلب جديد" كان يمسح السلة فوراً بدون تحذير
   const [isClearCartConfirmOpen, setIsClearCartConfirmOpen] = useState<boolean>(false);
 
@@ -124,6 +126,7 @@ export const CashierPOSPage: React.FC = () => {
       const prodPromise = productService.listProducts();
       const catPromise = categoryService.listCategories();
       const ordPromise = orderService.getOrders();
+      const recPromise = recipeService.listRecipes().catch(() => null);
 
       prodPromise
         .then((res) => { if (res.success && res.data) applyProducts(res.data); })
@@ -138,7 +141,33 @@ export const CashierPOSPage: React.FC = () => {
         .then((res) => { if (res.success && res.data) applyOrders(res.data); })
         .catch((err) => console.error('Silent orders load error:', err));
 
-      await Promise.allSettled([prodPromise, catPromise, ordPromise]);
+      recPromise
+        .then((res) => {
+          if (res && res.success && res.data) {
+            const map: Record<string, string[]> = {};
+            res.data.forEach((r: any) => {
+              const pId = typeof r.product === 'string' ? r.product : r.product?._id;
+              if (!pId || !r.ingredients) return;
+              const depletedSecNames: string[] = [];
+              r.ingredients.forEach((ing: any) => {
+                if (ing.isPrimary === false) {
+                  const inv = ing.inventoryItem;
+                  const qty = Number(inv?.quantity) || 0;
+                  if (qty <= 0) {
+                    depletedSecNames.push(inv?.name || 'خامة ثانوية');
+                  }
+                }
+              });
+              if (depletedSecNames.length > 0) {
+                map[pId] = depletedSecNames;
+              }
+            });
+            setRecipeDepletedMap(map);
+          }
+        })
+        .catch(() => {});
+
+      await Promise.allSettled([prodPromise, catPromise, ordPromise, recPromise]);
     } catch (err) {
       showError(err);
       setIsLoading(false);
@@ -153,12 +182,34 @@ export const CashierPOSPage: React.FC = () => {
     const interval = setInterval(async () => {
       if (document.hidden) return;
       try {
-        const [prodRes, ordRes] = await Promise.all([
+        const [prodRes, ordRes, recRes] = await Promise.all([
           productService.listProducts(),
           orderService.getOrders(),
+          recipeService.listRecipes().catch(() => null),
         ]);
         if (prodRes.success && prodRes.data) applyProducts(prodRes.data);
         if (ordRes.success && ordRes.data) applyOrders(ordRes.data);
+        if (recRes && recRes.success && recRes.data) {
+          const map: Record<string, string[]> = {};
+          recRes.data.forEach((r: any) => {
+            const pId = typeof r.product === 'string' ? r.product : r.product?._id;
+            if (!pId || !r.ingredients) return;
+            const depletedSecNames: string[] = [];
+            r.ingredients.forEach((ing: any) => {
+              if (ing.isPrimary === false) {
+                const inv = ing.inventoryItem;
+                const qty = Number(inv?.quantity) || 0;
+                if (qty <= 0) {
+                  depletedSecNames.push(inv?.name || 'خامة ثانوية');
+                }
+              }
+            });
+            if (depletedSecNames.length > 0) {
+              map[pId] = depletedSecNames;
+            }
+          });
+          setRecipeDepletedMap(map);
+        }
       } catch (err) {
         console.error('Silent POS data refresh error:', err);
       }
@@ -752,24 +803,42 @@ export const CashierPOSPage: React.FC = () => {
                       </span>
 
                       {/* الحالة + الحد الأقصى المتاح */}
-                      <div className="pt-1.5 mt-auto">
-                        {isOutOfStock ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
-                            <X className="w-3 h-3" />
-                            نافذ من المخزن
-                          </span>
-                        ) : isLowStock ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                            <AlertTriangle className="w-3 h-3" />
-                            الحد الأقصى: {formatNumber(product.stockQuantity)} فقط
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                            <CheckCircle2 className="w-3 h-3" />
-                            الحد الأقصى: {formatNumber(product.stockQuantity)}
-                          </span>
-                        )}
-                      </div>
+                        {/* الحالة + عدد الأكواب الجاهزة للبيع */}
+                        <div className="flex flex-col gap-1">
+                          {isOutOfStock ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
+                              <X className="w-3 h-3" />
+                              نافذ من المخزن (0 كوب)
+                            </span>
+                          ) : isLowStock ? (
+                            <span className="inline-flex items-center justify-between text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                              <span className="flex items-center gap-1">
+                                <AlertTriangle className="w-3 h-3" />
+                                متبقي:
+                              </span>
+                              <span className="font-mono text-xs">{formatNumber(product.stockQuantity)} كوب</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center justify-between text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                              <span className="flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" />
+                                متاح للبيع:
+                              </span>
+                              <span className="font-mono text-xs">{formatNumber(product.stockQuantity)} كوب</span>
+                            </span>
+                          )}
+
+                          {/* تنبيه وجود عجز في خامة ثانوية (مثل السكر) */}
+                          {recipeDepletedMap[product._id] && recipeDepletedMap[product._id].length > 0 && !isOutOfStock && (
+                            <span
+                              className="inline-flex items-center gap-1 text-[9px] font-bold text-amber-800 bg-amber-100/90 border border-amber-300 px-1.5 py-0.5 rounded"
+                              title={`خامات ثانوية نفذت: ${recipeDepletedMap[product._id].join('، ')}`}
+                            >
+                              <span>🥄 عجز:</span>
+                              <span className="truncate max-w-[90px]">{recipeDepletedMap[product._id].join('، ')}</span>
+                            </span>
+                          )}
+                        </div>
                     </div>
                   </button>
                 );
