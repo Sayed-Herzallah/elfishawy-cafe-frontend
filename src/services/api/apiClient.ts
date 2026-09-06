@@ -1,6 +1,10 @@
 import { ApiResponse } from '../../types';
 
-const BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://elfishawy-cafe-server.vercel.app';
+// في dev mode: استخدم '' عشان الطلبات تروح للـ Vite proxy (اللي بيعملها forward للـ Vercel)
+// في production (Vercel): استخدم الـ URL الحقيقي للـ backend
+const BASE_URL: string =
+  (import.meta as any).env?.VITE_API_BASE_URL ||
+  ((import.meta as any).env?.DEV ? '' : 'https://elfishawy-cafe-server.vercel.app');
 
 // مكشوفة عشان services تانية تستخدمها (زي logout)
 export const API_BASE_URL = BASE_URL;
