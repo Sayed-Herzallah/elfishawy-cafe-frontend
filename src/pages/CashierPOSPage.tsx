@@ -55,6 +55,8 @@ export const CashierPOSPage: React.FC = () => {
   const [warnedProducts, setWarnedProducts] = useState<Record<string, boolean>>({});
   // خريطة لتسجيل الخامات الثانوية النافذة لكل منتج لعرضها على شاشة المبيعات (POS)
   const [recipeDepletedMap, setRecipeDepletedMap] = useState<Record<string, string[]>>({});
+  // خريطة لتسجيل الخامة الأساسية النافذة لكل منتج ليعرف الكاشير سبب نفاذ المنتج بدقة (مثل: نفاذ البن أو الشاي)
+  const [primaryDepletedMap, setPrimaryDepletedMap] = useState<Record<string, string[]>>({});
   // ✅ تأكيد قبل تفريغ السلة — "طلب جديد" كان يمسح السلة فوراً بدون تحذير
   const [isClearCartConfirmOpen, setIsClearCartConfirmOpen] = useState<boolean>(false);
 
@@ -144,25 +146,29 @@ export const CashierPOSPage: React.FC = () => {
       recPromise
         .then((res) => {
           if (res && res.success && res.data) {
-            const map: Record<string, string[]> = {};
+            const secMap: Record<string, string[]> = {};
+            const priMap: Record<string, string[]> = {};
             res.data.forEach((r: any) => {
               const pId = typeof r.product === 'string' ? r.product : r.product?._id;
               if (!pId || !r.ingredients) return;
               const depletedSecNames: string[] = [];
+              const depletedPriNames: string[] = [];
               r.ingredients.forEach((ing: any) => {
-                if (ing.isPrimary === false) {
-                  const inv = ing.inventoryItem;
-                  const qty = Number(inv?.quantity) || 0;
-                  if (qty <= 0) {
+                const inv = ing.inventoryItem;
+                const qty = Number(inv?.quantity) || 0;
+                if (qty <= 0) {
+                  if (ing.isPrimary === false) {
                     depletedSecNames.push(inv?.name || 'خامة ثانوية');
+                  } else {
+                    depletedPriNames.push(inv?.name || 'خامة أساسية');
                   }
                 }
               });
-              if (depletedSecNames.length > 0) {
-                map[pId] = depletedSecNames;
-              }
+              if (depletedSecNames.length > 0) secMap[pId] = depletedSecNames;
+              if (depletedPriNames.length > 0) priMap[pId] = depletedPriNames;
             });
-            setRecipeDepletedMap(map);
+            setRecipeDepletedMap(secMap);
+            setPrimaryDepletedMap(priMap);
           }
         })
         .catch(() => {});
@@ -190,25 +196,29 @@ export const CashierPOSPage: React.FC = () => {
         if (prodRes.success && prodRes.data) applyProducts(prodRes.data);
         if (ordRes.success && ordRes.data) applyOrders(ordRes.data);
         if (recRes && recRes.success && recRes.data) {
-          const map: Record<string, string[]> = {};
+          const secMap: Record<string, string[]> = {};
+          const priMap: Record<string, string[]> = {};
           recRes.data.forEach((r: any) => {
             const pId = typeof r.product === 'string' ? r.product : r.product?._id;
             if (!pId || !r.ingredients) return;
             const depletedSecNames: string[] = [];
+            const depletedPriNames: string[] = [];
             r.ingredients.forEach((ing: any) => {
-              if (ing.isPrimary === false) {
-                const inv = ing.inventoryItem;
-                const qty = Number(inv?.quantity) || 0;
-                if (qty <= 0) {
+              const inv = ing.inventoryItem;
+              const qty = Number(inv?.quantity) || 0;
+              if (qty <= 0) {
+                if (ing.isPrimary === false) {
                   depletedSecNames.push(inv?.name || 'خامة ثانوية');
+                } else {
+                  depletedPriNames.push(inv?.name || 'خامة أساسية');
                 }
               }
             });
-            if (depletedSecNames.length > 0) {
-              map[pId] = depletedSecNames;
-            }
+            if (depletedSecNames.length > 0) secMap[pId] = depletedSecNames;
+            if (depletedPriNames.length > 0) priMap[pId] = depletedPriNames;
           });
-          setRecipeDepletedMap(map);
+          setRecipeDepletedMap(secMap);
+          setPrimaryDepletedMap(priMap);
         }
       } catch (err) {
         console.error('Silent POS data refresh error:', err);
@@ -222,8 +232,12 @@ export const CashierPOSPage: React.FC = () => {
     // ✅ نفس منطق "نافذ" الموحد (≤ 0.01) المستخدم في العرض والفلاتر —
     // بقايا الكسور (مثل 0.005) مبتكفيش أي وحدة بيع فتُحجب زي ما بتظهر.
     if (!product.inStock || productStockState(product) === 'out') {
-      // ✅ رسالة واضحة عند الضغط على صنف نافذ — الزرار مش معطّل عشان الـclick يوصل هنا
-      showToast(`صنف "${product.name}" نافد من المخزن — لا يمكن إضافته للطلب`, 'error');
+      // ✅ رسالة واضحة تحدد السلعة/الخامة التي انتهت بالضبط (مثل: نفاد البن أو الشاي)
+      const missingIngredients = primaryDepletedMap[product._id];
+      const detailMsg = missingIngredients && missingIngredients.length > 0
+        ? `بسبب نفاذ (${missingIngredients.join('، ')}) من المخزن`
+        : 'رصيد الخامة بالمخزن 0';
+      showToast(`صنف "${product.name}" نافد من المخزن ${detailMsg} — لا يمكن إضافته للطلب`, 'error');
       return;
     }
 
@@ -674,59 +688,84 @@ export const CashierPOSPage: React.FC = () => {
               <button
                 onClick={() => {
                   setActiveCategory('all');
-                  // ✅ "الكل" بترجّع كل المنتجات فوراً — بتلغي فلتر الحالة كمان
                   setStockFilter('all');
                 }}
                 className={`py-1.5 px-3 rounded-xl font-bold whitespace-nowrap transition cursor-pointer ${
-                  activeCategory === 'all'
+                  activeCategory === 'all' && stockFilter === 'all'
                     ? 'bg-[#2e5b9f] text-white shadow-2xs'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
                 الكل ({products.length})
               </button>
-              {categories.map((cat) => (
-                <button
-                  key={cat._id}
-                  onClick={() => setActiveCategory(cat._id)}
-                  className={`py-1.5 px-3 rounded-xl font-bold whitespace-nowrap transition cursor-pointer ${
-                    activeCategory === cat._id
-                      ? 'bg-[#2e5b9f] text-white shadow-2xs'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                >
-                  {cat.name}
-                </button>
-              ))}
+              {categories.map((cat) => {
+                const countInCat = products.filter((p) => {
+                  const catId = p.category
+                    ? (typeof p.category === 'string' ? p.category : p.category._id)
+                    : '';
+                  return catId === cat._id;
+                }).length;
+
+                return (
+                  <button
+                    key={cat._id}
+                    onClick={() => setActiveCategory(activeCategory === cat._id ? 'all' : cat._id)}
+                    className={`py-1.5 px-3 rounded-xl font-bold whitespace-nowrap transition cursor-pointer ${
+                      activeCategory === cat._id
+                        ? 'bg-[#2e5b9f] text-white shadow-2xs'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {cat.name} ({countInCat})
+                  </button>
+                );
+              })}
 
               <span className="w-px h-5 bg-gray-200 mx-1" aria-hidden />
 
-              {/* فلتر التوفر — أزرار تبديل: الضغط تاني بيلغي التحديد ويرجّع الكل */}
-              <button
-                onClick={() => setStockFilter(stockFilter === 'low' ? 'all' : 'low')}
-                className={`inline-flex items-center gap-1 py-1.5 px-3 rounded-xl font-bold whitespace-nowrap transition cursor-pointer border ${
-                  stockFilter === 'low'
-                    ? 'bg-amber-500 text-white border-amber-500 shadow-2xs'
-                    : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
-                }`}
-                title={stockFilter === 'low' ? 'إلغاء التحديد — إظهار كل المنتجات' : 'إظهار المنتجات منخفضة المخزون فقط'}
-              >
-                <AlertTriangle className="w-3 h-3" />
-                منخفض ({products.filter((p) => productStockState(p) === 'low').length})
-              </button>
+              {/* فلتر التوفر — أزرار تبديل: يظهر عدد المنتجات حسب التصنيف المختار إن وجد */}
+              {(() => {
+                const scopedProducts = activeCategory === 'all'
+                  ? products
+                  : products.filter((p) => {
+                      const catId = p.category
+                        ? (typeof p.category === 'string' ? p.category : p.category._id)
+                        : '';
+                      return catId === activeCategory;
+                    });
+                const lowCount = scopedProducts.filter((p) => productStockState(p) === 'low').length;
+                const outCount = scopedProducts.filter((p) => productStockState(p) === 'out').length;
 
-              <button
-                onClick={() => setStockFilter(stockFilter === 'out' ? 'all' : 'out')}
-                className={`inline-flex items-center gap-1 py-1.5 px-3 rounded-xl font-bold whitespace-nowrap transition cursor-pointer border ${
-                  stockFilter === 'out'
-                    ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
-                    : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                }`}
-                title={stockFilter === 'out' ? 'إلغاء التحديد — إظهار كل المنتجات' : 'إظهار المنتجات النافدة فقط'}
-              >
-                <X className="w-3 h-3" />
-                نافذ ({products.filter((p) => productStockState(p) === 'out').length})
-              </button>
+                return (
+                  <>
+                    <button
+                      onClick={() => setStockFilter(stockFilter === 'low' ? 'all' : 'low')}
+                      className={`inline-flex items-center gap-1 py-1.5 px-3 rounded-xl font-bold whitespace-nowrap transition cursor-pointer border ${
+                        stockFilter === 'low'
+                          ? 'bg-amber-500 text-white border-amber-500 shadow-2xs'
+                          : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                      }`}
+                      title={stockFilter === 'low' ? 'إلغاء التحديد — إظهار الكل' : 'إظهار المنتجات منخفضة المخزون فقط'}
+                    >
+                      <AlertTriangle className="w-3 h-3" />
+                      منخفض ({lowCount})
+                    </button>
+
+                    <button
+                      onClick={() => setStockFilter(stockFilter === 'out' ? 'all' : 'out')}
+                      className={`inline-flex items-center gap-1 py-1.5 px-3 rounded-xl font-bold whitespace-nowrap transition cursor-pointer border ${
+                        stockFilter === 'out'
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
+                          : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                      }`}
+                      title={stockFilter === 'out' ? 'إلغاء التحديد — إظهار الكل' : 'إظهار المنتجات النافدة فقط'}
+                    >
+                      <X className="w-3 h-3" />
+                      نافذ ({outCount})
+                    </button>
+                  </>
+                );
+              })()}
             </div>
           </div>
 
@@ -783,9 +822,11 @@ export const CashierPOSPage: React.FC = () => {
                         }}
                       />
                       {isOutOfStock && (
-                        <span className="absolute inset-0 bg-white/60 flex items-center justify-center">
-                          <span className="bg-rose-600 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-sm">
-                            نافد من المخزن
+                        <span className="absolute inset-0 bg-white/60 flex items-center justify-center p-1 text-center">
+                          <span className="bg-rose-600 text-white text-[10px] font-bold px-2 py-1 rounded-lg shadow-sm">
+                            {primaryDepletedMap[product._id] && primaryDepletedMap[product._id].length > 0
+                              ? `نفذ (${primaryDepletedMap[product._id].join('، ')})`
+                              : 'نافد من المخزن'}
                           </span>
                         </span>
                       )}
@@ -802,13 +843,14 @@ export const CashierPOSPage: React.FC = () => {
                         {formatPrice(product.price)}
                       </span>
 
-                      {/* الحالة + الحد الأقصى المتاح */}
-                        {/* الحالة + عدد الأكواب الجاهزة للبيع */}
+                      {/* الحالة + عدد الأكواب الجاهزة للبيع */}
                         <div className="flex flex-col gap-1">
                           {isOutOfStock ? (
                             <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
                               <X className="w-3 h-3" />
-                              نافذ من المخزن (0 كوب)
+                              {primaryDepletedMap[product._id] && primaryDepletedMap[product._id].length > 0
+                                ? `نفاد: ${primaryDepletedMap[product._id].join('، ')} (0 كوب)`
+                                : 'نافذ من المخزن (0 كوب)'}
                             </span>
                           ) : isLowStock ? (
                             <span className="inline-flex items-center justify-between text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
