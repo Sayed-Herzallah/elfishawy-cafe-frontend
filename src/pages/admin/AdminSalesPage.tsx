@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { orderService, inventoryService } from '../../services/opsService';
 import { productService, recipeService } from '../../services/catalogService';
 import { Order, OrderStatus, Product } from '../../types';
-import { getOrderShortages } from '../../utils/orderShortageJournal';
+import { getOrderShortages, appendShortagesToNotes, extractShortagesFromNotes } from '../../utils/orderShortageJournal';
 import { Badge } from '../../components/ui/Badge';
 import { StatCard } from '../../components/ui/StatCard';
 import { ReceiptModal } from '../../components/ui/ReceiptModal';
@@ -65,6 +65,23 @@ export const AdminSalesPage: React.FC = () => {
       const res = await orderService.getOrders();
       if (res.success && res.data) {
         setOrders(res.data);
+
+        // ✅ مزامنة تلقائية للفواتير القديمة: إذا كان هناك فاتورة مسجل عجزها محلياً فقط،
+        // يتم إرسال وسم العجز إلى السيرفر في الخلفية لتسمع في السيرفر وVercel للأبد!
+        res.data.forEach(async (ord) => {
+          const serverShortages = extractShortagesFromNotes(ord.notes);
+          if (serverShortages.length === 0) {
+            const localShortages = getOrderShortages(ord._id, String(ord.orderNumber || ''));
+            if (localShortages && localShortages.length > 0) {
+              const updatedNotes = appendShortagesToNotes(ord.notes, localShortages);
+              try {
+                await orderService.updateOrder(ord._id, { notes: updatedNotes });
+              } catch {
+                /* صامت */
+              }
+            }
+          }
+        });
       }
     } catch (err) {
       showError(err);
