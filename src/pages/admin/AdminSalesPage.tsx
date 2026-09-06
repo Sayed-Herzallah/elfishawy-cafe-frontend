@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { orderService } from '../../services/opsService';
+import { orderService, inventoryService } from '../../services/opsService';
 import { productService, recipeService } from '../../services/catalogService';
 import { Order, OrderStatus, Product } from '../../types';
 import { Badge } from '../../components/ui/Badge';
@@ -81,27 +81,44 @@ export const AdminSalesPage: React.FC = () => {
       .catch(() => { /* تجاهل — الأسماء هتفضل من الطلب نفسه */ });
 
     // ✅ خريطة الخامات الثانوية النافذة لكل منتج لمعرفة نواقص المشروبات وقت البيع
-    recipeService.listRecipes()
-      .then((res) => {
-        if (res && res.success && res.data) {
-          const depMap: Record<string, string[]> = {};
-          res.data.forEach((r: any) => {
-            const pId = typeof r.product === 'string' ? r.product : r.product?._id;
-            if (!pId || !r.ingredients) return;
-            const depletedSec: string[] = [];
-            r.ingredients.forEach((ing: any) => {
-              const inv = ing.inventoryItem;
-              const qty = Number(inv?.quantity) || 0;
-              if (qty <= 0 && ing.isPrimary === false) {
-                depletedSec.push(inv?.name || 'خامة ثانوية');
-              }
-            });
-            if (depletedSec.length > 0) depMap[pId] = depletedSec;
+    Promise.all([
+      recipeService.listRecipes().catch(() => null),
+      inventoryService.listInventory().catch(() => null),
+    ]).then(([recRes, invRes]) => {
+      const invMap = new Map<string, any>();
+      if (invRes && invRes.success && Array.isArray(invRes.data)) {
+        invRes.data.forEach((item: any) => {
+          invMap.set(String(item._id), item);
+        });
+      }
+
+      if (recRes && recRes.success && Array.isArray(recRes.data)) {
+        const depMap: Record<string, string[]> = {};
+        recRes.data.forEach((r: any) => {
+          const pId = typeof r.product === 'string' ? r.product : r.product?._id;
+          const pName = typeof r.product === 'object' && r.product?.name ? String(r.product.name).trim() : '';
+          if (!r.ingredients) return;
+          const depletedSec: string[] = [];
+          r.ingredients.forEach((ing: any) => {
+            const invId = typeof ing.inventoryItem === 'string'
+              ? ing.inventoryItem
+              : ing.inventoryItem?._id;
+            const directInv = invId ? invMap.get(String(invId)) : null;
+            const inv = directInv || ing.inventoryItem;
+            const qty = Number(inv?.quantity) || 0;
+            const isPrimary = ing.isPrimary !== false;
+            if (qty <= 0.01 && !isPrimary) {
+              depletedSec.push(inv?.name || 'خامة ثانوية');
+            }
           });
-          setProductDepletedSecondaryMap(depMap);
-        }
-      })
-      .catch(() => { /* صامت */ });
+          if (depletedSec.length > 0) {
+            if (pId) depMap[pId] = depletedSec;
+            if (pName) depMap[pName] = depletedSec;
+          }
+        });
+        setProductDepletedSecondaryMap(depMap);
+      }
+    }).catch(() => { /* صامت */ });
   }, []);
 
   useEffect(() => {
@@ -165,8 +182,14 @@ export const AdminSalesPage: React.FC = () => {
       const pId = typeof item.product === 'object' && item.product
         ? (item.product as any)._id
         : String(item.product || '');
+      const pName = typeof item.product === 'object' && item.product
+        ? (item.product as any).name
+        : products.find((p) => p._id === pId)?.name || '';
+
       if (pId && productDepletedSecondaryMap[pId]) {
         productDepletedSecondaryMap[pId].forEach((n) => names.add(n));
+      } else if (pName && productDepletedSecondaryMap[pName]) {
+        productDepletedSecondaryMap[pName].forEach((n) => names.add(n));
       }
     });
     return Array.from(names);
@@ -214,7 +237,7 @@ export const AdminSalesPage: React.FC = () => {
 
       return matchesStatus && matchesDate && matchesSearch;
     });
-  }, [orders, statusFilter, stockQualityFilter, dateRange, searchQuery, productDepletedSecondaryMap]);
+  }, [orders, products, statusFilter, stockQualityFilter, dateRange, searchQuery, productDepletedSecondaryMap]);
 
   // --- Pagination Logic ---
   const totalPages = Math.ceil(filteredOrders.length / itemsPerPage) || 1;
@@ -317,20 +340,8 @@ export const AdminSalesPage: React.FC = () => {
       </DashboardFilterBar>
 
       {/* ✅ فلتر لمبيعات العجز الثانوي فقط أو الكل */}
-      <div className="flex flex-wrap items-center gap-2 bg-amber-50/60 p-2.5 rounded-xl border border-amber-200/60">
-        <span className="text-xs font-bold text-amber-900 ml-1">تصفية المبيعات حسب حالة المكونات:</span>
-        <button
-          type="button"
-          onClick={() => { setStockQualityFilter('shortage'); setCurrentPage(1); }}
-          className={`py-1.5 px-3.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-            stockQualityFilter === 'shortage'
-              ? 'bg-amber-600 text-white shadow-xs'
-              : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-100'
-          }`}
-        >
-          <AlertTriangle className="w-3.5 h-3.5" />
-          <span>المبيعات التي كان بها عجز فقط ({formatNumber(orders.filter((o) => getOrderShortageItems(o).length > 0).length)})</span>
-        </button>
+      <div className="flex flex-wrap items-center gap-2 bg-gray-50/80 p-2.5 rounded-xl border border-gray-200/70">
+        <span className="text-xs font-bold text-gray-700 ml-1">تصفية المبيعات حسب حالة المكونات:</span>
         <button
           type="button"
           onClick={() => { setStockQualityFilter('all'); setCurrentPage(1); }}
@@ -341,6 +352,18 @@ export const AdminSalesPage: React.FC = () => {
           }`}
         >
           كل المبيعات ({formatNumber(orders.length)})
+        </button>
+        <button
+          type="button"
+          onClick={() => { setStockQualityFilter('shortage'); setCurrentPage(1); }}
+          className={`py-1.5 px-3.5 rounded-lg text-xs font-bold transition whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+            stockQualityFilter === 'shortage'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'bg-white text-amber-900 border border-amber-200 hover:bg-amber-50'
+          }`}
+        >
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+          <span>المبيعات التي كان بها عجز فقط ({formatNumber(orders.filter((o) => getOrderShortageItems(o).length > 0).length)})</span>
         </button>
       </div>
 
@@ -622,6 +645,7 @@ export const AdminSalesPage: React.FC = () => {
         onClose={() => setSelectedReceiptOrder(null)}
         order={selectedReceiptOrder}
         products={products}
+        shortageMap={productDepletedSecondaryMap}
       />
 
       {/* Edit Order Modal */}

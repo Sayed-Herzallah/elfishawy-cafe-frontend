@@ -1246,6 +1246,7 @@ export const CashierPOSPage: React.FC = () => {
         isOpen={!!selectedReceiptOrder}
         onClose={() => setSelectedReceiptOrder(null)}
         products={products}
+        shortageMap={recipeDepletedMap}
       />
 
       {/* ✅ تأكيد بدء طلب جديد عندما تحتوي السلة على أصناف */}

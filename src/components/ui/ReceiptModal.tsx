@@ -10,9 +10,11 @@ interface ReceiptModalProps {
   onClose: () => void;
   /** ✅ قائمة المنتجات — لحل أسماء الأصناف لما الـ API يرجّع product كـ ID بس */
   products?: Array<{ _id: string; name: string }>;
+  /** ✅ خريطة الخامات الثانوية النافذة لكل منتج */
+  shortageMap?: Record<string, string[]>;
 }
 
-export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClose, products }) => {
+export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClose, products, shortageMap }) => {
   if (!isOpen || !order) return null;
 
   const handlePrint = () => {
@@ -91,11 +93,21 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             <div className="space-y-3">
               {receiptItems.map((item, idx) => {
                 const prodName = resolveProductName(item);
+                const pId = typeof item?.product === 'object' && item?.product ? (item.product as any)._id : String(item?.product || '');
+                const itemShortages = shortageMap && pId ? shortageMap[pId] : null;
+
                 return (
                   <div key={idx} className="flex justify-between items-center text-sm py-0.5" dir="rtl">
-                    <span className="font-bold text-gray-800 text-sm">
-                      {prodName}
-                    </span>
+                    <div className="flex flex-col">
+                      <span className="font-bold text-gray-800 text-sm">
+                        {prodName}
+                      </span>
+                      {itemShortages && itemShortages.length > 0 && (
+                        <span className="text-[10px] text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 mt-0.5 inline-block w-fit">
+                          ⚠️ بيع بعجز: {itemShortages.join('، ')}
+                        </span>
+                      )}
+                    </div>
                     <span className="text-gray-500 font-mono text-xs bg-gray-100 px-2 py-0.5 rounded-md">
                       {formatNumber(item.quantity)} × {formatNumber(item.price)}
                     </span>
