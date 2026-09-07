@@ -1336,8 +1336,7 @@ export const AdminProductsPage: React.FC = () => {
 
                     {/* Consumption per unit */}
                     <Input
-                    // counter spone
-                      label=" ( عدد  المعالق)الاستهلاك للوحدة"
+                      label=" الاستهلاك للوحدة"
                       type="number"
                       min="0.001"
                       step="any"
