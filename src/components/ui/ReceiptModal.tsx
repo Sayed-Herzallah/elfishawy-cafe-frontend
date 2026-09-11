@@ -63,7 +63,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       max-width: 80mm;
       overflow: hidden;
       font-family: 'Tahoma', Arial, sans-serif;
-      font-size: 11px;
+      font-size: 12px;
+      font-weight: 600;
       color: #000 !important;
       background: #fff !important;
       direction: rtl;
@@ -72,67 +73,68 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
     }
     #receipt-root {
       width: 76mm;
-      padding: 2mm 2mm;
+      padding: 3mm 2mm;
     }
 
-    /* ===== Tailwind mapping للطباعة الحرارية ===== */
+    /* ===== Tailwind mapping للطباعة الحرارية — خطوط واضحة وأسمك ===== */
     .text-center  { text-align: center; }
     .text-right   { text-align: right; }
-    .font-bold    { font-weight: 700; }
-    .font-extrabold { font-weight: 800; }
+    .font-bold    { font-weight: 800 !important; }
+    .font-extrabold { font-weight: 900 !important; }
+    .font-medium  { font-weight: 700; }
     .font-mono    { font-family: 'Courier New', monospace; }
-    .font-arabic-heading { font-weight: 700; }
+    .font-arabic-heading { font-weight: 900; letter-spacing: -0.5px; }
     .font-sans    { font-family: 'Tahoma', Arial, sans-serif; }
 
-    /* Borders */
-    .border-b-2.border-dashed { border-bottom: 2px dashed #aaa !important; }
-    .border-b-2   { border-bottom: 2px solid #aaa; }
-    .border-b     { border-bottom: 1px solid #ccc; }
-    .border-t     { border-top: 1px solid #ccc; }
-    .border       { border: 1px solid #ccc; }
-    .border-2     { border: 2px solid #ccc; }
+    /* ===== خطوط فاصل سميكة وواضحة للطباعة الحرارية ===== */
+    .border-b-2.border-dashed,
+    .border-b-2 { border-bottom: 2.5px solid #000 !important; }
+    .border-b     { border-bottom: 1.5px solid #333 !important; }
+    .border-t     { border-top: 1.5px solid #333 !important; }
+    .border       { border: 1.5px solid #444 !important; }
+    .border-2     { border: 2px solid #222 !important; }
     .border-dashed { border-style: dashed !important; }
-    .border-gray-200, .border-gray-300 { border-color: #d1d5db !important; }
-    .border-amber-200  { border-color: #fde68a !important; }
-    .border-amber-300  { border-color: #fcd34d !important; }
-    .border-amber-400  { border-color: #fbbf24 !important; }
-    .border-red-200    { border-color: #fecaca !important; }
-    .border-red-300    { border-color: #fca5a5 !important; }
-    .border-orange-300 { border-color: #fdba74 !important; }
 
-    /* Backgrounds */
+    /* ألوان الخطوط — أسود قاتم للطباعة الحرارية */
+    .border-gray-200, .border-gray-300 { border-color: #555 !important; }
+    .border-amber-200  { border-color: #888 !important; }
+    .border-amber-300  { border-color: #777 !important; }
+    .border-amber-400  { border-color: #555 !important; }
+    .border-red-200    { border-color: #888 !important; }
+    .border-red-300    { border-color: #777 !important; }
+    .border-orange-300 { border-color: #888 !important; }
+
+    /* ألوان الخلفيات — باهتة للحرارية */
     .bg-white          { background: #fff; }
-    .bg-gray-50        { background: #f9fafb; }
-    .bg-gray-100       { background: #f3f4f6; }
-    .bg-amber-50       { background: #fffbeb; }
-    .bg-amber-400      { background: #fbbf24; }
-    .bg-red-50         { background: #fef2f2; }
-    .bg-red-100        { background: #fee2e2; }
-    .bg-orange-100     { background: #ffedd5; }
+    .bg-gray-50, .bg-gray-100 { background: #f0f0f0; }
+    .bg-amber-50       { background: #f5f5f5; }
+    .bg-amber-400      { background: #333; }
+    .bg-red-50, .bg-red-100   { background: #f0f0f0; }
+    .bg-orange-100     { background: #f0f0f0; }
 
-    /* Colors */
-    .text-gray-400  { color: #9ca3af; }
-    .text-gray-500  { color: #6b7280; }
-    .text-gray-600  { color: #4b5563; }
-    .text-gray-700  { color: #374151; }
-    .text-gray-800  { color: #1f2937; }
-    .text-gray-900  { color: #111827; }
-    .text-amber-900 { color: #78350f; }
-    .text-amber-500 { color: #f59e0b; }
-    .text-red-700   { color: #b91c1c; }
-    .text-red-800   { color: #991b1b; }
-    .text-orange-800{ color: #9a3412; }
+    /* ألوان النصوص — كلها أسود أو رمادي داكن */
+    .text-gray-400  { color: #555; }
+    .text-gray-500  { color: #444; }
+    .text-gray-600  { color: #333; }
+    .text-gray-700  { color: #222; }
+    .text-gray-800  { color: #111; }
+    .text-gray-900  { color: #000; }
+    .text-amber-900 { color: #000; }
+    .text-amber-500 { color: #333; }
+    .text-red-700   { color: #000; }
+    .text-red-800   { color: #000; }
+    .text-orange-800{ color: #000; }
     .text-white     { color: #fff !important; }
+    [class*="text-[#2e5b9f]"] { color: #000; font-weight: 900; }
 
-    /* Arbitrary color values */
-    [class*="text-[#2e5b9f]"] { color: #2e5b9f; }
-
-    /* Font sizes */
-    .text-xs    { font-size: 10px; }
-    .text-sm    { font-size: 11px; }
-    .text-base  { font-size: 12px; }
-    .text-lg    { font-size: 13px; }
-    .text-2xl   { font-size: 16px; font-weight: 700; }
+    /* Font sizes — أكبر قليلاً للوضوح */
+    .text-xs    { font-size: 11px; font-weight: 600; }
+    .text-sm    { font-size: 12px; font-weight: 600; }
+    .text-base  { font-size: 13px; font-weight: 700; }
+    .text-lg    { font-size: 14px; font-weight: 700; }
+    .text-2xl   { font-size: 18px; font-weight: 900; }
+    [class*="text-[10px]"], [class*="text-[11px]"] { font-size: 11px; font-weight: 600; }
+    [class*="text-[9px]"] { font-size: 10px; }
 
     /* Spacing — Padding */
     .p-1\\.5  { padding: 1.5mm; }
@@ -187,38 +189,43 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
     /* Utils */
     .overflow-hidden  { overflow: hidden; }
     .truncate         { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .tracking-widest  { letter-spacing: 2px; }
+    .tracking-widest  { letter-spacing: 3px; }
     .tracking-wide    { letter-spacing: 1px; }
     .select-none      { user-select: none; }
-    .rounded-xl, .rounded-2xl, .rounded-3xl { border-radius: 3px; }
+    .rounded-xl, .rounded-2xl, .rounded-3xl { border-radius: 2px; }
     .rounded-full     { border-radius: 9999px; }
-    .rounded-md, .rounded { border-radius: 2px; }
+    .rounded-md, .rounded { border-radius: 1px; }
     .w-12  { width: 10mm; }
     .h-12  { height: 10mm; }
-    .font-medium { font-weight: 500; }
 
     /* Space-y helpers */
     .space-y-1   > * + * { margin-top: 1mm; }
     .space-y-2   > * + * { margin-top: 1.5mm; }
     .space-y-2\\.5 > * + * { margin-top: 2mm; }
 
-    /* إخفاء أيقونات SVG — الطابعة الحرارية لا تطبعها بشكل صحيح */
+    /* إخفاء أيقونات SVG — لا تُطبع على الحرارية */
     svg { display: none !important; }
+
+    /* خط فاصل واضح بين الأقسام */
+    .border-b-2.border-dashed.border-gray-300 {
+      border-bottom: 2.5px solid #000 !important;
+      margin-bottom: 1mm;
+      margin-top: 1mm;
+    }
   </style>
 </head>
 <body>
   <div id="receipt-root">${receiptHTML}</div>
   <script>
-    // ✅ طباعة أوتوماتيك بعد 150ms من تحميل النافذة — يعطي وقت لرسم الـ CSS
-    window.onload = function () {
-      setTimeout(function () { window.print(); }, 150);
-    };
+    // ✅ طباعة فورية بمجرد تحميل النافذة — بدون أي تأخير
+    window.onload = function () { window.print(); };
     // ✅ إغلاق النافذة فور انتهاء الطباعة أو إلغائها
     window.onafterprint = function () { window.close(); };
   <\/script>
 </body>
 </html>`);
     printWindow.document.close();
+
   };
 
   const formattedDate = formatDateTime(order.createdAt);
