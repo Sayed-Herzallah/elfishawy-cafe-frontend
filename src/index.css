@@ -86,7 +86,7 @@ input[type='number'] {
 /* Print Styles */
 @media print {
   @page {
-    size: auto;
+    size: portrait;
     margin: 0mm !important;
   }
 

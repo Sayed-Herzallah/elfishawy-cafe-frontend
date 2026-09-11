@@ -67,11 +67,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
-  <title>فاتورة مقهى الفيشاوي #${String(order.orderNumber || order._id || '').slice(-6)}</title>
+  <title>فاتورة كافيه الفيشاوي #${String(order.orderNumber || order._id || '').slice(-6)}</title>
   ${styleElements}
   <style>
     @page {
-      size: auto;
+      size: 80mm auto;
       margin: 0mm !important;
     }
     * {
@@ -85,13 +85,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       margin: 0 auto !important;
       padding: 0 !important;
       background: #ffffff !important;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Cairo", sans-serif;
+      font-family: 'Cairo', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+      color: #000000 !important;
     }
     #printable-receipt {
       width: 100% !important;
       max-width: 72mm !important;
       margin: 0 auto !important;
-      padding: 0 1mm 2mm 1mm !important;
+      padding: 1mm !important;
       background: #ffffff !important;
       color: #000000 !important;
       display: block !important;
@@ -108,7 +109,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
 </html>`);
     doc.close();
 
-    // تشغيل أمر الطباعة من الـ iframe بعد تحميل التنسيقات
+    // انتظار تحميل الخطوط قبل الطباعة (500ms للتأكد من تحميل Google Fonts)
     setTimeout(() => {
       try {
         iframe.contentWindow?.focus();
@@ -118,7 +119,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       } finally {
         setTimeout(() => setIsPrinting(false), 2000);
       }
-    }, 250);
+    }, 500);
   };
 
 
@@ -162,12 +163,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
   );
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 overflow-y-auto flex justify-center p-4 min-h-screen">
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/50 backdrop-blur-xs" onClick={onClose} />
 
       {/* Modal Dialog */}
-      <div className="relative bg-white rounded-3xl shadow-2xl border border-gray-100 w-full max-w-md p-6 z-10 text-right animate-in fade-in zoom-in-95 duration-150">
+      <div className="relative bg-white rounded-3xl shadow-2xl border border-gray-100 w-full max-w-md p-6 z-10 text-right animate-in fade-in zoom-in-95 duration-150 my-auto">
         <button
           onClick={onClose}
           className="absolute top-4 left-4 text-gray-400 hover:text-gray-600 p-2 rounded-xl hover:bg-gray-100 transition-colors print:hidden"
@@ -180,46 +181,44 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
         <div id="printable-receipt" className="text-black font-sans p-2 text-right bg-white" dir="rtl">
 
           {/* Cafe Header */}
-          <div className="text-center pb-3 border-b-2 border-black">
-            <h2 className="text-2xl font-black font-arabic-heading text-black">
-              مقهى الفيشاوي
+          <div className="text-center pb-2 border-b-2 border-black">
+            <h2 className="text-xl font-black font-arabic-heading text-black">
+              كافيه الفيشاوي
             </h2>
-            <p className="text-xs font-mono font-bold text-gray-800 mt-1">Elfishawy Cafe</p>
+            <p className="text-xs font-mono font-bold text-gray-800">Elfishawy Cafe</p>
 
             {/* رقم الفاتورة والطاولة */}
-            <div className="mt-2 border-2 border-black rounded-lg py-1 px-2 flex items-center justify-between text-xs font-bold text-black" dir="rtl">
+            <div className="mt-1.5 border-2 border-black rounded-lg py-1 px-2 flex items-center justify-between text-xs font-black text-black" dir="rtl">
               <span>رقم الفاتورة: <strong className="font-mono text-sm font-black">#{String(order.orderNumber || order._id || '').slice(-6)}</strong></span>
               <span>طاولة: <strong className="font-mono text-sm font-black">#{order.tableNumber || '—'}</strong></span>
             </div>
 
-            {/* التاريخ والوقت مكتوبين بالعربي بدون إيموجي نهائياً وبخط أسود عريض */}
-            <div className="mt-1.5 flex items-center justify-between text-xs font-bold text-black px-1 border-b border-gray-300 pb-1" dir="rtl">
+            {/* التاريخ والوقت */}
+            <div className="mt-1 flex items-center justify-between text-xs font-black text-black px-1 border-b border-gray-300 pb-1" dir="rtl">
               <span>التاريخ: <strong className="font-mono font-black">{formatDate(order.createdAt)}</strong></span>
               <span>الوقت: <strong className="font-mono font-black">{formatTime(order.createdAt)}</strong></span>
             </div>
 
-            {/* عدد الأصناف واضح وعريض */}
-            <div className="mt-1.5 text-center text-xs font-black text-black">
-              <span>عدد الأصناف بالفاتورة: <strong className="font-mono text-sm">{formatNumber(totalItemsCount)} صنف</strong></span>
+            {/* عدد الأصناف */}
+            <div className="mt-1 text-center text-xs font-black text-black">
+              <span>عدد الأصناف: <strong className="font-mono text-sm font-black">{formatNumber(totalItemsCount)} صنف</strong></span>
             </div>
 
             {(() => {
               const cleanNotes = getCleanNotes(order.notes);
               if (!cleanNotes) return null;
               return (
-                <div className="mt-2 border border-black p-1.5 rounded text-xs text-black text-right font-bold">
+                <div className="mt-1 border border-black p-1 rounded text-xs text-black text-right font-bold">
                   <span>ملاحظات:</span> <span className="mr-1">{cleanNotes}</span>
                 </div>
               );
             })()}
           </div>
 
-          {/* ✅ بانر العجز الثانوي */}
+          {/* بانر العجز الثانوي */}
           {hasAnyShortage && (
-            <div className="my-2 border-2 border-black bg-gray-100 p-2 text-xs font-bold text-black">
-              <div className="text-red-700 font-black mb-1">
-                ⚠️ تنبيه: عجز في مواد الفاتورة
-              </div>
+            <div className="my-1.5 border-2 border-black bg-gray-100 p-1.5 text-xs font-bold text-black">
+              <div className="text-red-700 font-black mb-1">⚠️ تنبيه: عجز في مواد الفاتورة</div>
               {Array.from(shortagesPerProduct.entries()).map(([productName, shortages]) => (
                 <div key={productName} dir="rtl">
                   <span>{productName}: </span>
@@ -229,16 +228,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             </div>
           )}
 
-          {/* جدول الأصناف — عمودان فقط: الصنف (مع كميته وسعره) والإجمالي */}
-          <div className="py-3 border-b-2 border-black">
-            {/* رأس الجدول: الصنف يميناً والإجمالي يساراً */}
-            <div className="flex justify-between text-xs font-black text-black mb-2 border-b-2 border-black pb-1" dir="rtl">
+          {/* جدول الأصناف */}
+          <div className="py-2 border-b-2 border-black">
+            <div className="flex justify-between text-xs font-black text-black mb-1.5 border-b-2 border-black pb-1" dir="rtl">
               <span className="flex-1 text-right">الصنف</span>
-              <span className="w-24 text-left font-mono">الإجمالي</span>
+              <span className="w-20 text-left font-mono">الإجمالي</span>
             </div>
 
-            {/* الأصناف */}
-            <div className="space-y-2.5">
+            <div className="space-y-1.5">
               {receiptItems.map((item, idx) => {
                 const prodName = resolveProductName(item);
                 const pId =
@@ -249,24 +246,19 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
                 const hasShortage = itemShortages && itemShortages.length > 0;
 
                 return (
-                  <div key={idx} dir="rtl" className="border-b border-gray-400 pb-2 pt-0.5">
-                    {/* اسم الصنف وإجمالي السعر */}
+                  <div key={idx} dir="rtl" className="pb-1 pt-0.5">
                     <div className="flex justify-between items-center text-sm font-black text-black">
                       <span className="flex-1 text-right">
                         {hasShortage && '⚠️ '}{prodName}
-                        {item.quantity > 1 ? ` (${formatNumber(item.quantity)})` : ''}
+                        {' '}({formatNumber(item.quantity)})
                       </span>
-                      <span className="w-24 text-left font-mono text-base font-black text-black">
+                      <span className="w-20 text-left font-mono text-sm font-black text-black">
                         {formatPrice(item.price * item.quantity)}
                       </span>
                     </div>
-
-                    {/* سطر توضيحي نقي بدون خلفيات: الكمية × سعر القطعة */}
-                    <div className="text-xs text-gray-800 font-bold mt-0.5 font-mono">
+                    <div className="text-xs text-gray-700 font-bold mt-0.5 font-mono">
                       {formatNumber(item.quantity)} × {formatNumber(item.price)} جنيه
                     </div>
-
-                    {/* تحذير العجز */}
                     {hasShortage && (
                       <div className="text-xs font-black text-red-700 mt-0.5">
                         ⚠️ نافذ: {itemShortages!.join(' — ')}
@@ -278,45 +270,34 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             </div>
           </div>
 
-          {/* قسم الإجمالي والفوتر مع مسافة التغذية مجمعين لمنع انقسام الصفحة وضمان خروج كامل الفاتورة */}
+          {/* قسم الإجمالي والفوتر */}
           <div className="receipt-keep-together" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
-            {/* الإجمالي وسداد الفاتورة */}
-            <div className="py-3 border-b-2 border-black space-y-1.5">
+            <div className="py-2 border-b-2 border-black space-y-1">
               <div className="flex justify-between text-xs text-black font-black" dir="rtl">
                 <span>إجمالي عدد القطع:</span>
-                <span className="font-mono text-sm font-black">{formatNumber(totalItemsCount)} قطعة</span>
+                <span className="font-mono text-xs font-black">{formatNumber(totalItemsCount)} قطعة</span>
               </div>
-              <div className="flex justify-between items-center pt-2 border-t-2 border-black" dir="rtl">
-                <span className="text-base font-black text-black">المطلوب سداده:</span>
+              <div className="flex justify-between items-center pt-1.5 border-t-2 border-black" dir="rtl">
+                <span className="text-sm font-black text-black">المطلوب سداده:</span>
                 <span className="font-mono text-2xl font-black text-black">
                   {formatPrice(order.totalAmount)}
                 </span>
               </div>
             </div>
 
-            {/* Footer — أسود واضح وكامل */}
-            <div className="mt-3 text-center space-y-1 text-black">
-              <p className="text-xs font-black">أهلاً وسهلاً بكم دائماً في مقهى الفيشاوي</p>
-              <p className="text-xs font-bold font-mono">شكراً لزيارتكم — نتمنى لكم يوماً سعيداً</p>
+            <div className="mt-2 text-center text-black">
+              <p className="text-xs font-black">أهلاً وسهلاً بكم دائماً في كافيه الفيشاوي</p>
             </div>
 
-            {/* مسافة تغذية كافية (40 مم) مع خط تنقيط نهاية الفاتورة لإجبار موتور الطابعة على سحب الورقة بالكامل وتجاوز شفرة القاطع */}
+            {/* مسافة سحب الورقة بدون خطوط تنقيط */}
             <div
               style={{
-                height: '42mm',
-                minHeight: '42mm',
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'flex-end',
-                alignItems: 'center'
+                height: '18mm',
+                minHeight: '18mm'
               }}
               className="w-full select-none"
               aria-hidden="true"
-            >
-              <div className="w-full text-center text-[10px] text-gray-500 font-mono tracking-widest border-t border-dashed border-gray-400 pt-1">
-                - - - - - - - - - - - - - - - - - - - -
-              </div>
-            </div>
+            />
           </div>
         </div>
 
