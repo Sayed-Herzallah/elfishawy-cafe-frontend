@@ -53,7 +53,7 @@ const RECEIPT_RULES: Array<[string, string]> = [
   ['.r-total-row', 'display: flex; justify-content: space-between; align-items: center; border-top: 0.6mm solid #000000; padding-top: 1.2mm; margin-top: 1.2mm; font-size: 9pt; font-weight: 900;'],
   ['.r-grand', 'font-size: 17pt; font-weight: 900; white-space: nowrap;'],
   ['.r-footer', 'margin-top: 1.5mm; text-align: center; font-size: 8.5pt; font-weight: 900;'],
-  ['.r-feed', 'height: 8mm;'],
+  ['.r-feed', 'height: 4mm; flex-shrink: 0;'],
 ];
 
 /** توليد CSS الفاتورة — مع prefix اختياري للاستخدام داخل النافذة الرئيسية */
@@ -63,20 +63,35 @@ const buildReceiptCss = (scope?: string): string =>
     .join('\n');
 
 /** لفّ فاتورة مستقلة في مستند HTML كامل — pageHeightMm = null لوضع القياس */
-const wrapReceiptDocument = (bodyHTML: string, pageHeightMm: number | null): string => `<!DOCTYPE html>
+const wrapReceiptDocument = (bodyHTML: string, pageHeightMm: number | null): string => {
+  const pageSizeRule = pageHeightMm
+    ? `size: 80mm ${pageHeightMm}mm;`
+    : 'size: 80mm auto;';
+  const heightLockRule = pageHeightMm
+    ? `width: 80mm !important; height: ${pageHeightMm}mm !important; min-height: ${pageHeightMm}mm !important; max-height: ${pageHeightMm}mm !important; overflow: hidden !important;`
+    : 'width: 80mm !important; height: auto !important; min-height: 0 !important; overflow: visible !important;';
+
+  return `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
   <title>فاتورة كافيه الفيشاوي</title>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;800;900&display=swap">
   <style>
-    @page { size: 80mm ${pageHeightMm ?? 200}mm; margin: 0 !important; }
-    html, body { margin: 0 !important; padding: 0 !important; }
+    @page { ${pageSizeRule} margin: 0 !important; }
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      ${heightLockRule}
+      background: #ffffff !important;
+    }
+    body { display: block !important; position: relative !important; top: 0 !important; left: 0 !important; }
 ${buildReceiptCss()}
   </style>
 </head>
 <body>${bodyHTML}</body>
 </html>`;
+};
 
 /** بناء HTML الفاتورة كاملة (هيدر + أصناف + إجماليات + فوتر) بستايل مدمج */
 const buildReceiptBodyHTML = (
@@ -187,9 +202,24 @@ const printViaMainWindow = (bodyHTML: string, heightMm: number): Promise<void> =
       #${holderId} { display: none; }
       @media print {
         @page { size: 80mm ${heightMm}mm; margin: 0 !important; }
-        html, body { width: 80mm !important; max-width: none !important; margin: 0 !important; padding: 0 !important; background: #ffffff !important; }
+        html, body {
+          width: 80mm !important;
+          max-width: none !important;
+          height: ${heightMm}mm !important;
+          min-height: ${heightMm}mm !important;
+          max-height: ${heightMm}mm !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: #ffffff !important;
+          overflow: hidden !important;
+        }
         body > *:not(#${holderId}) { display: none !important; }
-        #${holderId} { display: block !important; }
+        #${holderId} {
+          display: block !important;
+          position: fixed !important;
+          top: 0 !important;
+          left: 0 !important;
+        }
 ${buildReceiptCss(`#${holderId}`)}
       }
     `;
@@ -238,12 +268,26 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
   // معلومات تشخيصية لآخر عملية طباعة — للتأكد من إن النظام المستقل v2 شغال
   const [printInfo, setPrintInfo] = React.useState('');
 
-  // وسم body أثناء فتح الفاتورة — يفعّل قواعد الطباعة النظيفة في index.css
-  // (الفاتورة تلزق أول الورقة وكل حاجة تانية تتمسح من الـ layout)
+  // وسم body + حقن @page مخصص لطابعة 80mm أثناء فتح الفاتورة
   React.useEffect(() => {
     if (!isOpen) return undefined;
+    const pageStyleId = 'receipt-print-page-style';
+    document.getElementById(pageStyleId)?.remove();
+
+    const pageStyle = document.createElement('style');
+    pageStyle.id = pageStyleId;
+    pageStyle.textContent = `
+      @media print {
+        @page { size: 80mm auto !important; margin: 0 !important; }
+      }
+    `;
+    document.head.appendChild(pageStyle);
     document.body.classList.add('receipt-modal-open');
-    return () => document.body.classList.remove('receipt-modal-open');
+
+    return () => {
+      document.body.classList.remove('receipt-modal-open');
+      document.getElementById(pageStyleId)?.remove();
+    };
   }, [isOpen]);
 
   const handlePrint = async () => {
@@ -280,9 +324,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
         await new Promise((r) => setTimeout(r, 250));
 
         const receiptEl = measureDoc.getElementById('receipt');
-        heightPx = receiptEl
-          ? receiptEl.getBoundingClientRect().height
-          : measureDoc.body?.scrollHeight || 0;
+        const receiptHeight = receiptEl?.getBoundingClientRect().height ?? 0;
+        const bodyHeight = measureDoc.body?.scrollHeight ?? 0;
+        const docHeight = measureDoc.documentElement?.scrollHeight ?? 0;
+        heightPx = Math.max(receiptHeight, bodyHeight, docHeight);
       } finally {
         measureFrame.remove();
       }
@@ -291,7 +336,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
 
       // تحويل البكسل إلى ملم (96px = 25.4mm) + هامش أمان صغير فقط لمنع أي قطع
       const PX_PER_MM = 96 / 25.4;
-      const heightMm = Math.min(1500, Math.max(40, Math.ceil(heightPx / PX_PER_MM) + 3));
+      const heightMm = Math.min(1500, Math.max(40, Math.ceil(heightPx / PX_PER_MM) + 1));
 
       // تشخيص: تسجيل القياس الفعلي
       setPrintInfo(`iframe · ${heightMm}mm`);

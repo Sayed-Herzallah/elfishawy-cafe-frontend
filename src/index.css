@@ -108,9 +108,13 @@ input[type='number'] {
     2) حاويات المودال يتم إلغاء تمركزها تماماً لتلتصق الفاتورة بأعلى الورقة.
   */
   body.receipt-modal-open:not(.receipt-main-print) {
+    display: block !important;
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
+    min-height: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 
   body.receipt-modal-open:not(.receipt-main-print) :not(:has(#printable-receipt)):not(#printable-receipt):not(#printable-receipt *) {
@@ -129,20 +133,26 @@ input[type='number'] {
     background: transparent !important;
     min-height: 0 !important;
     height: auto !important;
+    overflow: visible !important;
+    flex: none !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
   }
 
   body.receipt-modal-open:not(.receipt-main-print) #printable-receipt {
     width: 80mm !important;
     max-width: 80mm !important;
-    position: absolute !important;
+    position: fixed !important;
     top: 0 !important;
     left: 0 !important;
-    right: 0 !important;
+    right: auto !important;
     margin: 0 !important;
     padding: 0 1.5mm 0 1.5mm !important;
     background: #ffffff !important;
     color: #000000 !important;
     display: block !important;
+    page-break-after: avoid !important;
+    page-break-inside: avoid !important;
   }
 
   /* إخفاء أزرار الطباعة والعناصر غير المطلوبة */
