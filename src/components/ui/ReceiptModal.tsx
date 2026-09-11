@@ -127,16 +127,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
     .text-red-800   { color: #000; }
     .text-orange-800{ color: #000; }
     .text-white     { color: #fff !important; }
-    [class*="text-[#2e5b9f]"] { color: #000; font-weight: 900; }
-
-    /* Font sizes — أكبر قليلاً للوضوح */
-    .text-xs    { font-size: 11px; font-weight: 600; }
-    .text-sm    { font-size: 12px; font-weight: 600; }
-    .text-base  { font-size: 13px; font-weight: 700; }
-    .text-lg    { font-size: 14px; font-weight: 700; }
-    .text-2xl   { font-size: 18px; font-weight: 900; }
-    [class*="text-[10px]"], [class*="text-[11px]"] { font-size: 11px; font-weight: 600; }
-    [class*="text-[9px]"] { font-size: 10px; }
+    /* Font sizes — خطوط أكبر وأوضح للطباعة الحرارية */
+    .text-xs    { font-size: 12px; font-weight: 700; }
+    .text-sm    { font-size: 13px; font-weight: 700; }
+    .text-base  { font-size: 15px; font-weight: 800; }
+    .text-lg    { font-size: 16px; font-weight: 800; }
+    .text-2xl   { font-size: 20px; font-weight: 900; }
+    [class*="text-[10px]"], [class*="text-[11px]"] { font-size: 12px; font-weight: 700; }
+    [class*="text-[9px]"] { font-size: 11px; font-weight: 600; }
 
     /* Spacing — Padding */
     .p-1\\.5  { padding: 1.5mm; }
@@ -341,10 +339,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
           )}
 
           {/* جدول الأصناف */}
-          <div className="py-3 border-b-2 border-gray-300">
+          <div className="py-3 border-b-2 border-gray-400">
             {/* رأس الجدول */}
-            <div className="flex justify-between text-xs font-bold text-gray-600 mb-2 border-b border-gray-300 pb-1" dir="rtl">
-              <span className="flex-1">الصنف</span>
+            <div className="flex justify-between text-xs font-black text-gray-800 mb-2 border-b-2 border-gray-400 pb-1" dir="rtl">
+              <span className="flex-1 text-right">الصنف</span>
               <span className="w-16 text-center">الكمية</span>
               <span className="w-20 text-left">الإجمالي</span>
             </div>
@@ -361,26 +359,29 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
                 const hasShortage = itemShortages && itemShortages.length > 0;
 
                 return (
-                  <div key={idx} dir="rtl" className="border-b border-gray-200 pb-1">
-                    {/* اسم الصنف */}
-                    <div className="flex justify-between items-start">
-                      <span className={`font-bold text-sm flex-1 ${hasShortage ? 'text-gray-900' : 'text-gray-900'}`}>
+                  <div key={idx} dir="rtl" className="border-b border-gray-300 pb-1.5 pt-0.5">
+                    {/* صف الصنف: الاسم + الكمية في عمودها + الإجمالي */}
+                    <div className="flex justify-between items-center text-sm font-bold">
+                      <span className="flex-1 text-right truncate">
                         {hasShortage && '⚠️ '}{prodName}
                       </span>
-                      <span className="font-bold text-gray-900 font-mono text-sm w-20 text-left">
+                      <span className="w-16 text-center font-mono text-base font-black text-gray-900 bg-gray-100 py-0.5 rounded">
+                        × {formatNumber(item.quantity)}
+                      </span>
+                      <span className="w-20 text-left font-mono text-base font-black text-gray-900">
                         {formatPrice(item.price * item.quantity)}
                       </span>
                     </div>
-                    {/* الكمية والسعر */}
-                    <div className="flex justify-between items-center mt-0.5">
-                      <span className="text-gray-600 font-mono text-xs">
-                        {formatNumber(item.quantity)} قطعة × {formatNumber(item.price)} جنيه
-                      </span>
+
+                    {/* سعر الوحدة الفردية للتوضيح */}
+                    <div className="flex justify-between items-center text-[10px] text-gray-500 mt-0.5 font-mono">
+                      <span>سعر القطعة: {formatNumber(item.price)} ج</span>
                     </div>
+
                     {/* تحذير العجز */}
                     {hasShortage && (
-                      <div className="text-xs font-bold text-gray-700 mt-0.5">
-                        ناقص: {itemShortages!.join(' — ')}
+                      <div className="text-[11px] font-bold text-red-700 mt-0.5">
+                        ⚠️ نافذ: {itemShortages!.join(' — ')}
                       </div>
                     )}
                   </div>
@@ -390,14 +391,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
           </div>
 
           {/* الإجمالي */}
-          <div className="py-3 border-b-2 border-gray-300 space-y-1">
-            <div className="flex justify-between text-xs text-gray-600" dir="rtl">
-              <span>إجمالي القطع</span>
-              <span className="font-mono font-bold">{formatNumber(totalItemsCount)} قطعة</span>
+          <div className="py-3 border-b-2 border-gray-400 space-y-1.5">
+            <div className="flex justify-between text-xs text-gray-700 font-bold" dir="rtl">
+              <span>إجمالي عدد القطع:</span>
+              <span className="font-mono font-black text-sm">{formatNumber(totalItemsCount)} قطعة</span>
             </div>
-            <div className="flex justify-between items-center pt-1 border-t-2 border-gray-900" dir="rtl">
-              <span className="text-base font-extrabold text-gray-900">المطلوب سداده</span>
-              <span className="font-mono text-xl font-extrabold text-gray-900">
+            <div className="flex justify-between items-center pt-1.5 border-t-2 border-gray-900" dir="rtl">
+              <span className="text-base font-black text-gray-900">المطلوب سداده</span>
+              <span className="font-mono text-2xl font-black text-gray-900">
                 {formatPrice(order.totalAmount)}
               </span>
             </div>
