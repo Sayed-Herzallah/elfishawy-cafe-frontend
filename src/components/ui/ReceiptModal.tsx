@@ -24,7 +24,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
     if (isPrinting) return;
     setIsPrinting(true);
 
-    // أنشئ print-portal مستقل مباشرة في body لتجاوز قيود الـ modal layout
     const source = document.getElementById('printable-receipt');
     if (!source) {
       window.print();
@@ -32,30 +31,89 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       return;
     }
 
-    // احذف أي portal قديم
-    const old = document.getElementById('print-portal');
-    if (old) old.remove();
+    // إزالة أي iframe طباعة قديم
+    const oldIframe = document.getElementById('receipt-print-frame');
+    if (oldIframe) {
+      oldIframe.remove();
+    }
 
-    // أنشئ الـ portal وانسخ محتوى الفاتورة فيه بكل التنسيقات
-    const portal = document.createElement('div');
-    portal.id = 'print-portal';
-    portal.dir = 'rtl';
-    portal.className = source.className;
-    portal.innerHTML = source.innerHTML;
-    document.body.appendChild(portal);
+    // إنشاء iframe خفي معزول تماماً عن DOM الصفحة لتجنب أي قيود للـ Modal
+    const iframe = document.createElement('iframe');
+    iframe.id = 'receipt-print-frame';
+    iframe.style.position = 'fixed';
+    iframe.style.top = '-10000px';
+    iframe.style.left = '-10000px';
+    iframe.style.width = '72mm';
+    iframe.style.height = '1000px';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
 
-    // تنظيف بعد انتهاء الطباعة
-    const cleanup = () => {
-      portal.remove();
-      window.removeEventListener('afterprint', cleanup);
-      setTimeout(() => setIsPrinting(false), 1500);
-    };
-    window.addEventListener('afterprint', cleanup);
-
-    // إعطاء المتصفح مهلة لتطبيق DOM قبل فتح نافذة الطباعة
-    setTimeout(() => {
+    const doc = iframe.contentWindow?.document;
+    if (!doc) {
       window.print();
-    }, 80);
+      setTimeout(() => setIsPrinting(false), 2000);
+      return;
+    }
+
+    // جمع كل ملفات الـ CSS لتطبيق خطوط وألوان الفاتورة في الـ iframe
+    const styleElements = Array.from(
+      document.querySelectorAll('link[rel="stylesheet"], style')
+    )
+      .map((el) => el.outerHTML)
+      .join('\n');
+
+    doc.open();
+    doc.write(`<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <title>فاتورة مقهى الفيشاوي #${String(order.orderNumber || order._id || '').slice(-6)}</title>
+  ${styleElements}
+  <style>
+    @page {
+      size: 72mm 297mm;
+      margin: 0mm !important;
+    }
+    * {
+      box-sizing: border-box;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    html, body {
+      width: 72mm !important;
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #ffffff !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Cairo", sans-serif;
+    }
+    #printable-receipt {
+      width: 70mm !important;
+      max-width: 70mm !important;
+      margin: 0 auto !important;
+      padding: 0 1mm 5mm 1mm !important;
+      background: #ffffff !important;
+      color: #000000 !important;
+      display: block !important;
+    }
+  </style>
+</head>
+<body>
+  ${source.outerHTML}
+</body>
+</html>`);
+    doc.close();
+
+    // تشغيل أمر الطباعة من الـ iframe بعد تحميل التنسيقات
+    setTimeout(() => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } catch {
+        window.print();
+      } finally {
+        setTimeout(() => setIsPrinting(false), 2000);
+      }
+    }, 250);
   };
 
 

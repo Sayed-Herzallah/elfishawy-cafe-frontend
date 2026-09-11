@@ -83,10 +83,10 @@ input[type='number'] {
   @apply ring-2 ring-[#2e5b9f]/20 bg-[#faf8f5];
 }
 
-/* Print Styles — print-portal approach avoids all modal layout constraints */
+/* Print Styles */
 @media print {
   @page {
-    size: portrait;
+    size: 72mm 297mm;
     margin: 0mm !important;
   }
 
@@ -97,35 +97,9 @@ input[type='number'] {
     background: #ffffff !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
-    overflow: visible !important;
   }
 
-  /* إخفاء التطبيق بالكامل أثناء الطباعة حتى لا يترك مساحات بيضاء فارغة */
-  body > *:not(#print-portal) {
-    display: none !important;
-  }
-
-  /* حاوية الفاتورة تملأ الورقة وتبدأ من أول ملليمتر وبطول طبيعي كامل بدون قطع */
-  #print-portal {
-    display: block !important;
-    position: static !important;
-    width: 70mm !important;
-    max-width: 70mm !important;
-    margin: 0 auto !important;
-    padding: 0 1mm 45mm 1mm !important;
-    background: #ffffff !important;
-    color: #000000 !important;
-    overflow: visible !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-
-  #print-portal * {
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
-  }
-
-  /* إخفاء أي أزرار متبقية */
+  /* إخفاء أزرار الطباعة والعناصر غير المطلوبة */
   .print\:hidden {
     display: none !important;
   }
