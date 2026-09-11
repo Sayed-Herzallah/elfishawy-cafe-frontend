@@ -217,10 +217,17 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
 <body>
   <div id="receipt-root">${receiptHTML}</div>
   <script>
-    // ✅ طباعة فورية بمجرد تحميل النافذة — بدون أي تأخير
-    window.onload = function () { window.print(); };
-    // ✅ إغلاق النافذة فور انتهاء الطباعة أو إلغائها
-    window.onafterprint = function () { window.close(); };
+    // ✅ إعطاء وقت كافي للمتصفح لرسم كامل محتوى الفاتورة وإرسالها كاملة لـ Spooler الطابعة
+    window.onload = function () {
+      setTimeout(function () {
+        window.print();
+      }, 250);
+    };
+    window.onafterprint = function () {
+      setTimeout(function () {
+        window.close();
+      }, 500);
+    };
   <\/script>
 </body>
 </html>`);
