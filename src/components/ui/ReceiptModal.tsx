@@ -30,10 +30,10 @@ const RECEIPT_FONT = "'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif";
 /** كل قواعد CSS الخاصة بفاتورة الطباعة (مقاسات ملم — مناسبة لطابعة حرارية 80mm) */
 const RECEIPT_RULES: Array<[string, string]> = [
   ['*', 'box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact;'],
-  ['html, body', `margin: 0; padding: 0; width: 80mm; background: #ffffff; color: #000000; font-family: ${RECEIPT_FONT};`],
-  ['#receipt', 'width: 80mm; padding: 0 3mm 4mm 3mm; margin: 0; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
-  ['.r-header', 'text-align: center; padding-bottom: 1.5mm; border-bottom: 0.6mm solid #000000;'],
-  ['.r-title', 'font-size: 15pt; font-weight: 900; line-height: 1.35;'],
+  ['html, body', `margin: 0; padding: 0; width: 72mm; background: #ffffff; color: #000000; font-family: ${RECEIPT_FONT};`],
+  ['#receipt', 'width: 72mm; max-width: 72mm; padding: 0 1mm 4mm 1mm; margin: 0 auto; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
+  ['.r-header', 'margin: 0; padding: 0 0 1.5mm 0; text-align: center; border-bottom: 0.6mm solid #000000;'],
+  ['.r-title', 'margin: 0; padding: 0; font-size: 15pt; font-weight: 900; line-height: 1.15;'],
   ['.r-invoice-row', 'margin-top: 1.5mm; border: 0.5mm solid #000000; border-radius: 2mm; padding: 0.8mm 2mm; display: flex; justify-content: space-between; align-items: center; font-size: 8.5pt; font-weight: 800;'],
   ['.r-dt-row', 'margin-top: 1.2mm; padding: 0 1mm; display: flex; justify-content: space-between; font-size: 8.5pt; font-weight: 800;'],
   ['.r-notes', 'margin-top: 1.2mm; border: 0.35mm solid #000000; border-radius: 1.5mm; padding: 1mm 1.5mm; font-size: 8.5pt; font-weight: 700; text-align: right;'],
@@ -53,7 +53,7 @@ const RECEIPT_RULES: Array<[string, string]> = [
   ['.r-total-row', 'display: flex; justify-content: space-between; align-items: center; border-top: 0.6mm solid #000000; padding-top: 1.2mm; margin-top: 1.2mm; font-size: 9pt; font-weight: 900;'],
   ['.r-grand', 'font-size: 17pt; font-weight: 900; white-space: nowrap;'],
   ['.r-footer', 'margin-top: 1.5mm; text-align: center; font-size: 8.5pt; font-weight: 900;'],
-  ['.r-feed', 'height: 3mm;'],
+  ['.r-feed', 'height: 8mm;'],
 ];
 
 /** توليد CSS الفاتورة — مع prefix اختياري للاستخدام داخل النافذة الرئيسية */
@@ -71,6 +71,7 @@ const wrapReceiptDocument = (bodyHTML: string, pageHeightMm: number | null): str
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;800;900&display=swap">
   <style>
     @page { size: 80mm ${pageHeightMm ?? 200}mm; margin: 0 !important; }
+    html, body { margin: 0 !important; padding: 0 !important; }
 ${buildReceiptCss()}
   </style>
 </head>
@@ -399,12 +400,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
   );
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto flex justify-center p-4 min-h-screen">
+    <div className="fixed inset-0 z-50 overflow-y-auto flex justify-center p-4 min-h-screen print:p-0 print:m-0 print:static print:min-h-0 print:block">
       {/* Backdrop */}
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-xs" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50 backdrop-blur-xs print:hidden" onClick={onClose} />
 
       {/* Modal Dialog */}
-      <div className="relative bg-white rounded-3xl shadow-2xl border border-gray-100 w-full max-w-md p-6 z-10 text-right animate-in fade-in zoom-in-95 duration-150 my-auto">
+      <div className="relative bg-white rounded-3xl shadow-2xl border border-gray-100 w-full max-w-md p-6 z-10 text-right animate-in fade-in zoom-in-95 duration-150 my-auto print:my-0 print:p-0 print:border-none print:shadow-none print:rounded-none print:w-auto print:max-w-none">
         <button
           onClick={onClose}
           className="absolute top-4 left-4 text-gray-400 hover:text-gray-600 p-2 rounded-xl hover:bg-gray-100 transition-colors print:hidden"
@@ -414,7 +415,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
         </button>
 
         {/* Printable Receipt Section */}
-        <div id="printable-receipt" className="text-black font-sans p-2 text-right bg-white" dir="rtl">
+        <div id="printable-receipt" className="text-black font-sans p-2 print:p-0 text-right bg-white" dir="rtl">
 
           {/* Cafe Header */}
           <div className="text-center pb-1.5 border-b-2 border-black">
@@ -553,11 +554,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
           >
             إغلاق ومتابعة الطلب التالي
           </Button>
-
-          {/* بصمة نظام الطباعة — لو مش شايف السطر ده يبقى التاب لسه على النسخة القديمة (اعمل Ctrl+Shift+R) */}
-          <p className="text-center text-[10px] font-mono text-gray-300 pt-1" dir="ltr">
-            Receipt Print v2 {printInfo ? `· ${printInfo}` : ''}
-          </p>
         </div>
       </div>
     </div>
