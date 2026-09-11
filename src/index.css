@@ -140,14 +140,14 @@ input[type='number'] {
   }
 
   body.receipt-modal-open:not(.receipt-main-print) #printable-receipt {
-    width: 80mm !important;
-    max-width: 80mm !important;
+    width: 70mm !important;
+    max-width: 70mm !important;
     position: fixed !important;
     top: 0 !important;
     left: 0 !important;
-    right: auto !important;
-    margin: 0 !important;
-    padding: 0 1.5mm 0 1.5mm !important;
+    right: 0 !important;
+    margin: 0 auto !important;
+    padding: 0 2.5mm 0 2.5mm !important;
     background: #ffffff !important;
     color: #000000 !important;
     display: block !important;
