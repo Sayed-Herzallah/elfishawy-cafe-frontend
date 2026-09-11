@@ -30,8 +30,8 @@ const RECEIPT_FONT = "'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif";
 /** كل قواعد CSS الخاصة بفاتورة الطباعة (مقاسات ملم — مناسبة لطابعة حرارية 80mm) */
 const RECEIPT_RULES: Array<[string, string]> = [
   ['*', 'box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact;'],
-  ['html, body', `margin: 0; padding: 0; width: 72mm; background: #ffffff; color: #000000; font-family: ${RECEIPT_FONT};`],
-  ['#receipt', 'width: 72mm; max-width: 72mm; padding: 0 1mm 4mm 1mm; margin: 0 auto; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
+  ['html, body', `margin: 0; padding: 0; width: 80mm; background: #ffffff; color: #000000; font-family: ${RECEIPT_FONT};`],
+  ['#receipt', 'width: 80mm; max-width: 80mm; padding: 0 1.5mm 4mm 1.5mm; margin: 0; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
   ['.r-header', 'margin: 0; padding: 0 0 1.5mm 0; text-align: center; border-bottom: 0.6mm solid #000000;'],
   ['.r-title', 'margin: 0; padding: 0; font-size: 15pt; font-weight: 900; line-height: 1.15;'],
   ['.r-invoice-row', 'margin-top: 1.5mm; border: 0.5mm solid #000000; border-radius: 2mm; padding: 0.8mm 2mm; display: flex; justify-content: space-between; align-items: center; font-size: 8.5pt; font-weight: 800;'],
@@ -305,12 +305,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       printFrame.id = 'receipt-print-frame';
       printFrame.setAttribute('title', 'فاتورة كافيه الفيشاوي');
       printFrame.style.position = 'fixed';
-      printFrame.style.top = '-99999px';
-      printFrame.style.left = '-99999px';
+      printFrame.style.top = '0px';
+      printFrame.style.left = '0px';
       printFrame.style.width = '80mm';
       printFrame.style.height = `${Math.ceil(heightPx + 60)}px`;
       printFrame.style.border = 'none';
-      printFrame.style.visibility = 'hidden';
+      printFrame.style.zIndex = '-99999';
+      printFrame.style.opacity = '0.01';
+      printFrame.style.pointerEvents = 'none';
       document.body.appendChild(printFrame);
 
       const printWin = printFrame.contentWindow;

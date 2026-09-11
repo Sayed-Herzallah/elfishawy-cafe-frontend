@@ -105,8 +105,8 @@ input[type='number'] {
     لما فاتورة تكون مفتوحة (body.receipt-modal-open):
     1) أي عنصر مفيش جواه الفاتورة يتمسح من الـ layout نهائياً
        - مفيش صفحات بيضاء إضافية ولا فراغات.
-    2) حاويات المودال (اللي بتمركز الفاتورة في نص الشاشة) display:contents
-       - الفاتورة تلاقي نفسها أول الورقة بالظبط.
+    2) حاويات المودال يتم إلغاء تمركزها تماماً لتلتصق الفاتورة بأعلى الورقة.
+  */
   body.receipt-modal-open:not(.receipt-main-print) {
     margin: 0 !important;
     padding: 0 !important;
@@ -134,8 +134,12 @@ input[type='number'] {
   body.receipt-modal-open:not(.receipt-main-print) #printable-receipt {
     width: 80mm !important;
     max-width: 80mm !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
     margin: 0 !important;
-    padding: 0 2mm 0 2mm !important;
+    padding: 0 1.5mm 0 1.5mm !important;
     background: #ffffff !important;
     color: #000000 !important;
     display: block !important;
