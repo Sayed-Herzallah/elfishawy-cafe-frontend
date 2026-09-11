@@ -283,89 +283,71 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
         {/* Printable Receipt Section */}
         <div id="printable-receipt" className="text-gray-900 font-sans p-2 text-right bg-white" dir="rtl">
 
-          {/* Cafe Header */}
-          <div className="text-center pb-4 border-b-2 border-dashed border-gray-300">
-            <div className="inline-flex items-center justify-center w-12 h-12 rounded-2xl bg-amber-50 text-amber-900 mb-2 font-bold text-lg">
-              ☕
-            </div>
+          {/* Cafe Header — بدون لوجو */}
+          <div className="text-center pb-3 border-b-2 border-gray-300">
             <h2 className="text-2xl font-bold font-arabic-heading text-gray-900">
               مقهى الفيشاوي
             </h2>
-            <p className="text-xs font-mono text-gray-500 mt-0.5">Elfishawy Cafe — Authentic Taste</p>
-            <div className="mt-3 bg-gray-50 py-1.5 px-3 rounded-xl border border-gray-200/80 flex items-center justify-between text-xs text-gray-700" dir="rtl">
-              <span>فاتورة طلب: <strong className="text-gray-900 font-mono text-sm font-bold">#{String(order.orderNumber || order._id || '').slice(-8)}</strong></span>
-              <span className="font-mono text-[11px] text-gray-500">{formattedDate}</span>
+            <p className="text-xs font-mono text-gray-500 mt-1">Elfishawy Cafe — Authentic Taste</p>
+
+            {/* رقم الفاتورة */}
+            <div className="mt-2 border border-gray-300 rounded-xl py-1 px-2 flex items-center justify-between text-xs" dir="rtl">
+              <span className="font-bold text-gray-700">فاتورة رقم: <strong className="font-mono text-sm">#{String(order.orderNumber || order._id || '').slice(-6)}</strong></span>
+              <span className="font-bold text-gray-700">طاولة: <strong className="font-mono text-sm">#{order.tableNumber || '—'}</strong></span>
             </div>
-            <div className="mt-1.5 flex items-center justify-between text-xs text-gray-600 px-1" dir="rtl">
-              <span className="font-bold text-gray-800">طاولة رقم: <strong className="text-[#2e5b9f] font-mono text-sm">#{order.tableNumber || '—'}</strong></span>
-              <span className="font-mono text-[11px] text-gray-400 font-bold bg-gray-100 px-2 py-0.5 rounded">{formatNumber(totalItemsCount)} صنف</span>
+
+            {/* التاريخ والوقت منفصلَين */}
+            <div className="mt-1 flex items-center justify-between text-xs px-1" dir="rtl">
+              <span className="font-mono text-gray-600">📅 {formatDate(order.createdAt)}</span>
+              <span className="font-mono text-gray-600">🕐 {formatTime(order.createdAt)}</span>
             </div>
+
+            {/* عدد الأصناف */}
+            <div className="mt-1 text-center">
+              <span className="font-bold text-xs text-gray-700">عدد الأصناف: <strong className="font-mono">{formatNumber(totalItemsCount)} قطعة</strong></span>
+            </div>
+
             {(() => {
               const cleanNotes = getCleanNotes(order.notes);
               if (!cleanNotes) return null;
               return (
-                <div className="mt-2 bg-amber-50/70 border border-amber-200/60 p-2 rounded-xl text-xs text-amber-900 text-right font-bold print:border-dashed">
-                  <span>📝 ملاحظات:</span> <span className="mr-1 text-gray-800 font-medium">{cleanNotes}</span>
+                <div className="mt-2 border border-gray-400 p-2 rounded-xl text-xs text-gray-900 text-right font-bold">
+                  <span>ملاحظات:</span> <span className="mr-1 font-medium">{cleanNotes}</span>
                 </div>
               );
             })()}
           </div>
 
-          {/* ✅ بانر العجز الثانوي — يظهر واضح وكبير لو فيه عجز في الفاتورة */}
+          {/* ✅ بانر العجز الثانوي */}
           {hasAnyShortage && (
-            <div className="my-3 rounded-2xl border-2 border-amber-400 bg-amber-50 overflow-hidden print:border-dashed">
-              {/* رأس البانر */}
-              <div className="flex items-center gap-2 bg-amber-400 px-3 py-2.5">
-                <AlertTriangle className="w-4 h-4 text-white shrink-0" />
+            <div className="my-2 border-2 border-gray-700 bg-gray-100 overflow-hidden">
+              <div className="flex items-center gap-2 bg-gray-700 px-3 py-2">
                 <span className="text-white font-extrabold text-xs tracking-wide">
-                  ⚠️ تنبيه: هذه الفاتورة بها عجز في مواد ثانوية
+                  ⚠️ تنبيه: الفاتورة بها عجز في مواد ثانوية
                 </span>
               </div>
-
-              {/* تفاصيل المواد الناقصة مقسّمة لكل صنف */}
-              <div className="px-3 py-3 space-y-2.5">
+              <div className="px-2 py-2 space-y-1">
                 {Array.from(shortagesPerProduct.entries()).map(([productName, shortages]) => (
                   <div key={productName} dir="rtl">
-                    <div className="text-[11px] font-extrabold text-amber-900 mb-1">
-                      📦 {productName}:
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {shortages.map((s) => (
-                        <span
-                          key={s}
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-red-800 bg-red-100 border border-red-300 px-2.5 py-1 rounded-full"
-                        >
-                          <PackageX className="w-3 h-3 shrink-0" />
-                          {s} — نافذ
-                        </span>
-                      ))}
+                    <div className="text-[11px] font-extrabold text-gray-900 mb-1">
+                      {productName}: {shortages.join(' — ')} (نافذ)
                     </div>
                   </div>
                 ))}
-
-                {/* ملخص مدمج لكل الخامات الناقصة */}
-                <div className="pt-2 mt-1 border-t border-amber-300 flex items-center gap-1.5 flex-wrap" dir="rtl">
-                  <span className="text-[10px] font-extrabold text-amber-900">⚡ يلزم تعبئة:</span>
-                  {uniqueShortageIngredients.map((ing) => (
-                    <span
-                      key={ing}
-                      className="text-[10px] font-bold text-orange-800 bg-orange-100 border border-orange-300 px-2 py-0.5 rounded-md"
-                    >
-                      {ing}
-                    </span>
-                  ))}
-                </div>
               </div>
             </div>
           )}
 
-          {/* Line Items Table */}
-          <div className="py-4 border-b-2 border-dashed border-gray-300">
-            <div className="text-xs font-bold text-gray-400 mb-3 flex justify-between px-1" dir="rtl">
-              <span>المشروب / الصنف</span>
-              <span className="text-center">الكمية × السعر</span>
-              <span>الإجمالي</span>
+          {/* جدول الأصناف */}
+          <div className="py-3 border-b-2 border-gray-300">
+            {/* رأس الجدول */}
+            <div className="flex justify-between text-xs font-bold text-gray-600 mb-2 border-b border-gray-300 pb-1" dir="rtl">
+              <span className="flex-1">الصنف</span>
+              <span className="w-16 text-center">الكمية</span>
+              <span className="w-20 text-left">الإجمالي</span>
             </div>
+
+            {/* الأصناف */}
             <div className="space-y-2">
               {receiptItems.map((item, idx) => {
                 const prodName = resolveProductName(item);
@@ -377,47 +359,26 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
                 const hasShortage = itemShortages && itemShortages.length > 0;
 
                 return (
-                  <div
-                    key={idx}
-                    className={`rounded-xl px-2 py-1.5 ${
-                      hasShortage
-                        ? 'bg-amber-50 border border-amber-200'
-                        : ''
-                    }`}
-                    dir="rtl"
-                  >
-                    {/* صف الصنف الرئيسي */}
-                    <div className="flex justify-between items-center text-sm">
-                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                        {hasShortage && (
-                          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                        )}
-                        <span className={`font-bold text-sm truncate ${hasShortage ? 'text-amber-900' : 'text-gray-800'}`}>
-                          {prodName}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-gray-500 font-mono text-xs bg-gray-100 px-2 py-0.5 rounded-md">
-                          {formatNumber(item.quantity)} × {formatNumber(item.price)}
-                        </span>
-                        <span className="font-bold text-gray-900 font-mono text-base">
-                          {formatPrice(item.price * item.quantity)}
-                        </span>
-                      </div>
+                  <div key={idx} dir="rtl" className="border-b border-gray-200 pb-1">
+                    {/* اسم الصنف */}
+                    <div className="flex justify-between items-start">
+                      <span className={`font-bold text-sm flex-1 ${hasShortage ? 'text-gray-900' : 'text-gray-900'}`}>
+                        {hasShortage && '⚠️ '}{prodName}
+                      </span>
+                      <span className="font-bold text-gray-900 font-mono text-sm w-20 text-left">
+                        {formatPrice(item.price * item.quantity)}
+                      </span>
                     </div>
-
-                    {/* تاقات الخامات الناقصة لهذا الصنف */}
+                    {/* الكمية والسعر */}
+                    <div className="flex justify-between items-center mt-0.5">
+                      <span className="text-gray-600 font-mono text-xs">
+                        {formatNumber(item.quantity)} قطعة × {formatNumber(item.price)} جنيه
+                      </span>
+                    </div>
+                    {/* تحذير العجز */}
                     {hasShortage && (
-                      <div className="flex flex-wrap gap-1 mt-1.5 pr-5">
-                        {itemShortages!.map((s) => (
-                          <span
-                            key={s}
-                            className="inline-flex items-center gap-0.5 text-[9px] font-bold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full"
-                          >
-                            <PackageX className="w-2.5 h-2.5 shrink-0" />
-                            {s}
-                          </span>
-                        ))}
+                      <div className="text-xs font-bold text-gray-700 mt-0.5">
+                        ناقص: {itemShortages!.join(' — ')}
                       </div>
                     )}
                   </div>
@@ -426,30 +387,27 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             </div>
           </div>
 
-          {/* Totals Section */}
-          <div className="py-4 border-b-2 border-dashed border-gray-300 space-y-2">
-            <div className="flex justify-between text-xs text-gray-500" dir="rtl">
-              <span>إجمالي عدد العناصر</span>
-              <span className="font-mono font-bold text-gray-700">{formatNumber(totalItemsCount)} قطع</span>
+          {/* الإجمالي */}
+          <div className="py-3 border-b-2 border-gray-300 space-y-1">
+            <div className="flex justify-between text-xs text-gray-600" dir="rtl">
+              <span>إجمالي القطع</span>
+              <span className="font-mono font-bold">{formatNumber(totalItemsCount)} قطعة</span>
             </div>
-
-            <div className="flex justify-between items-center pt-2 text-gray-900 font-bold bg-amber-50/50 p-3 rounded-2xl border border-amber-200/60" dir="rtl">
-              <span className="text-base font-bold">المطلوب سداده</span>
-              <span className="font-mono text-2xl text-[#2e5b9f]">
+            <div className="flex justify-between items-center pt-1 border-t-2 border-gray-900" dir="rtl">
+              <span className="text-base font-extrabold text-gray-900">المطلوب سداده</span>
+              <span className="font-mono text-xl font-extrabold text-gray-900">
                 {formatPrice(order.totalAmount)}
               </span>
             </div>
           </div>
 
-          {/* Footer */}
-          <div className="mt-4 pt-2 text-center space-y-1">
-            <div className="font-mono text-xs tracking-widest text-gray-400 select-none">
-              ||||| ||| ||||||| |||| |||||||| ||||
-            </div>
-            <p className="text-xs font-bold text-gray-700">أهلاً وسهلاً بكم دائماً في مقهى الفيشاوي</p>
-            <p className="text-[10px] text-gray-400 font-mono">شكراً لزيارتكم • نتمنى لكم يوماً سعيداً</p>
+          {/* Footer — بدون خطوط باركود */}
+          <div className="mt-3 text-center space-y-1">
+            <p className="text-xs font-bold text-gray-800">أهلاً وسهلاً بكم في مقهى الفيشاوي</p>
+            <p className="text-xs text-gray-600 font-mono">شكراً لزيارتكم — نتمنى لكم يوماً سعيداً</p>
           </div>
         </div>
+
 
         {/* Modal Action Buttons */}
         <div className="mt-6 print:hidden space-y-2">

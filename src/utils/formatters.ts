@@ -62,16 +62,16 @@ export const formatTime = (dateInput: string | Date | undefined | null): string 
 
   let hours = date.getHours();
   const minutes = String(date.getMinutes()).padStart(2, '0');
-  const ampm = hours >= 12 ? 'PM' : 'AM';
+  const ampm = hours >= 12 ? 'م' : 'ص';
   hours = hours % 12;
-  hours = hours ? hours : 12; // the hour '0' should be '12'
+  hours = hours ? hours : 12;
 
   return `${String(hours).padStart(2, '0')}:${minutes} ${ampm}`;
 };
 
 /**
  * Combines date and time into a single unified format.
- * Example: "2026-08-21T14:30:00.000Z" -> "21 أغسطس 2026 • 02:30 PM"
+ * Example: "2026-08-21T14:30:00.000Z" -> "21 أغسطس 2026 • 02:30 م"
  */
 export const formatDateTime = (dateInput: string | Date | undefined | null): string => {
   if (!dateInput) return '';
