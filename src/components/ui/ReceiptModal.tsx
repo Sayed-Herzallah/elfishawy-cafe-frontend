@@ -19,7 +19,198 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
   if (!isOpen || !order) return null;
 
   const handlePrint = () => {
-    window.print();
+    // ✅ نافذة طباعة حرارية مخصصة 80mm — Portrait — ورقة واحدة — تغلق أوتوماتيك بعد الطباعة
+    const receiptEl = document.getElementById('printable-receipt');
+    if (!receiptEl) return;
+
+    const receiptHTML = receiptEl.innerHTML;
+
+    // نفتح نافذة بعرض 302px (= 80mm تقريباً على شاشات 96dpi)
+    const printWindow = window.open(
+      '',
+      '_blank',
+      'width=302,height=800,toolbar=0,menubar=0,scrollbars=0,resizable=0,status=0,location=0'
+    );
+    if (!printWindow) {
+      // Fallback لو المتصفح منع الـ popup
+      window.print();
+      return;
+    }
+
+    printWindow.document.write(`<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>فاتورة مقهى الفيشاوي</title>
+  <style>
+    @page {
+      size: 80mm auto;
+      margin: 0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html {
+      width: 80mm;
+    }
+    body {
+      width: 80mm;
+      max-width: 80mm;
+      font-family: 'Tahoma', Arial, sans-serif;
+      font-size: 11px;
+      color: #000 !important;
+      background: #fff !important;
+      direction: rtl;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    #receipt-root {
+      width: 76mm;
+      padding: 2mm 2mm;
+    }
+
+    /* ===== Tailwind mapping للطباعة الحرارية ===== */
+    .text-center  { text-align: center; }
+    .text-right   { text-align: right; }
+    .font-bold    { font-weight: 700; }
+    .font-extrabold { font-weight: 800; }
+    .font-mono    { font-family: 'Courier New', monospace; }
+    .font-arabic-heading { font-weight: 700; }
+    .font-sans    { font-family: 'Tahoma', Arial, sans-serif; }
+
+    /* Borders */
+    .border-b-2.border-dashed { border-bottom: 2px dashed #aaa !important; }
+    .border-b-2   { border-bottom: 2px solid #aaa; }
+    .border-b     { border-bottom: 1px solid #ccc; }
+    .border-t     { border-top: 1px solid #ccc; }
+    .border       { border: 1px solid #ccc; }
+    .border-2     { border: 2px solid #ccc; }
+    .border-dashed { border-style: dashed !important; }
+    .border-gray-200, .border-gray-300 { border-color: #d1d5db !important; }
+    .border-amber-200  { border-color: #fde68a !important; }
+    .border-amber-300  { border-color: #fcd34d !important; }
+    .border-amber-400  { border-color: #fbbf24 !important; }
+    .border-red-200    { border-color: #fecaca !important; }
+    .border-red-300    { border-color: #fca5a5 !important; }
+    .border-orange-300 { border-color: #fdba74 !important; }
+
+    /* Backgrounds */
+    .bg-white          { background: #fff; }
+    .bg-gray-50        { background: #f9fafb; }
+    .bg-gray-100       { background: #f3f4f6; }
+    .bg-amber-50       { background: #fffbeb; }
+    .bg-amber-400      { background: #fbbf24; }
+    .bg-red-50         { background: #fef2f2; }
+    .bg-red-100        { background: #fee2e2; }
+    .bg-orange-100     { background: #ffedd5; }
+
+    /* Colors */
+    .text-gray-400  { color: #9ca3af; }
+    .text-gray-500  { color: #6b7280; }
+    .text-gray-600  { color: #4b5563; }
+    .text-gray-700  { color: #374151; }
+    .text-gray-800  { color: #1f2937; }
+    .text-gray-900  { color: #111827; }
+    .text-amber-900 { color: #78350f; }
+    .text-amber-500 { color: #f59e0b; }
+    .text-red-700   { color: #b91c1c; }
+    .text-red-800   { color: #991b1b; }
+    .text-orange-800{ color: #9a3412; }
+    .text-white     { color: #fff !important; }
+
+    /* Arbitrary color values */
+    [class*="text-[#2e5b9f]"] { color: #2e5b9f; }
+
+    /* Font sizes */
+    .text-xs    { font-size: 10px; }
+    .text-sm    { font-size: 11px; }
+    .text-base  { font-size: 12px; }
+    .text-lg    { font-size: 13px; }
+    .text-2xl   { font-size: 16px; font-weight: 700; }
+
+    /* Spacing — Padding */
+    .p-1\\.5  { padding: 1.5mm; }
+    .p-2      { padding: 2mm; }
+    .p-2\\.5  { padding: 2mm; }
+    .p-3      { padding: 2mm; }
+    .p-3\\.5  { padding: 2.5mm; }
+    .px-1     { padding-left: 1mm; padding-right: 1mm; }
+    .px-2     { padding-left: 2mm; padding-right: 2mm; }
+    .px-2\\.5 { padding-left: 2mm; padding-right: 2mm; }
+    .px-3     { padding-left: 2mm; padding-right: 2mm; }
+    .py-0\\.5 { padding-top: 0.5mm; padding-bottom: 0.5mm; }
+    .py-1     { padding-top: 1mm;   padding-bottom: 1mm; }
+    .py-1\\.5 { padding-top: 1.5mm; padding-bottom: 1.5mm; }
+    .py-2     { padding-top: 2mm;   padding-bottom: 2mm; }
+    .py-2\\.5 { padding-top: 2mm;   padding-bottom: 2mm; }
+    .py-3     { padding-top: 2mm;   padding-bottom: 2mm; }
+    .py-4     { padding-top: 3mm;   padding-bottom: 3mm; }
+    .pb-4     { padding-bottom: 3mm; }
+    .pt-2     { padding-top: 2mm; }
+    .pr-5     { padding-right: 4mm; }
+
+    /* Spacing — Margin */
+    .mt-0\\.5  { margin-top: 0.5mm; }
+    .mt-1      { margin-top: 1mm; }
+    .mt-1\\.5  { margin-top: 1.5mm; }
+    .mt-2      { margin-top: 2mm; }
+    .mt-3      { margin-top: 2mm; }
+    .mt-4      { margin-top: 3mm; }
+    .mt-6      { margin-top: 3mm; }
+    .mb-1      { margin-bottom: 1mm; }
+    .mb-2      { margin-bottom: 2mm; }
+    .mb-3      { margin-bottom: 2mm; }
+    .my-3      { margin-top: 2mm; margin-bottom: 2mm; }
+    .mr-1      { margin-right: 1mm; }
+
+    /* Flex */
+    .flex          { display: flex; }
+    .inline-flex   { display: inline-flex; }
+    .flex-1        { flex: 1; }
+    .flex-wrap     { flex-wrap: wrap; }
+    .shrink-0      { flex-shrink: 0; }
+    .min-w-0       { min-width: 0; }
+    .items-center  { align-items: center; }
+    .justify-center  { justify-content: center; }
+    .justify-between { justify-content: space-between; }
+    .gap-0\\.5  { gap: 0.5mm; }
+    .gap-1      { gap: 1mm; }
+    .gap-1\\.5  { gap: 1.5mm; }
+    .gap-2      { gap: 2mm; }
+
+    /* Utils */
+    .overflow-hidden  { overflow: hidden; }
+    .truncate         { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tracking-widest  { letter-spacing: 2px; }
+    .tracking-wide    { letter-spacing: 1px; }
+    .select-none      { user-select: none; }
+    .rounded-xl, .rounded-2xl, .rounded-3xl { border-radius: 3px; }
+    .rounded-full     { border-radius: 9999px; }
+    .rounded-md, .rounded { border-radius: 2px; }
+    .w-12  { width: 10mm; }
+    .h-12  { height: 10mm; }
+    .font-medium { font-weight: 500; }
+
+    /* Space-y helpers */
+    .space-y-1   > * + * { margin-top: 1mm; }
+    .space-y-2   > * + * { margin-top: 1.5mm; }
+    .space-y-2\\.5 > * + * { margin-top: 2mm; }
+
+    /* إخفاء أيقونات SVG — الطابعة الحرارية لا تطبعها بشكل صحيح */
+    svg { display: none !important; }
+  </style>
+</head>
+<body>
+  <div id="receipt-root">${receiptHTML}</div>
+  <script>
+    // ✅ طباعة أوتوماتيك بعد 150ms من تحميل النافذة — يعطي وقت لرسم الـ CSS
+    window.onload = function () {
+      setTimeout(function () { window.print(); }, 150);
+    };
+    // ✅ إغلاق النافذة فور انتهاء الطباعة أو إلغائها
+    window.onafterprint = function () { window.close(); };
+  <\/script>
+</body>
+</html>`);
+    printWindow.document.close();
   };
 
   const formattedDate = formatDateTime(order.createdAt);
