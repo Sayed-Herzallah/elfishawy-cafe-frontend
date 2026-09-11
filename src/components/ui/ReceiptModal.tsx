@@ -2,7 +2,7 @@ import React from 'react';
 import { Order } from '../../types';
 import { Button } from './Button';
 import { X, Printer, AlertTriangle, PackageX } from 'lucide-react';
-import { formatPrice, formatNumber, formatDateTime } from '../../utils/formatters';
+import { formatPrice, formatNumber, formatDateTime, formatDate, formatTime } from '../../utils/formatters';
 import { getCleanNotes } from '../../utils/orderShortageJournal';
 
 interface ReceiptModalProps {
@@ -43,27 +43,27 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
   <title>فاتورة مقهى الفيشاوي</title>
   <style>
     @page {
-      size: 80mm auto;
+      size: 72mm auto;
       margin: 0mm;
     }
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0;
-      page-break-inside: avoid !important;
-      break-inside: avoid !important;
     }
     html {
-      width: 80mm;
-      max-width: 80mm;
-      overflow: hidden;
+      width: 72mm;
+      max-width: 72mm;
+      margin: 0;
+      padding: 0;
     }
     body {
-      width: 80mm;
-      max-width: 80mm;
-      overflow: hidden;
+      width: 72mm;
+      max-width: 72mm;
+      margin: 0;
+      padding: 0;
       font-family: 'Tahoma', Arial, sans-serif;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
       color: #000 !important;
       background: #fff !important;
@@ -72,8 +72,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       print-color-adjust: exact;
     }
     #receipt-root {
-      width: 76mm;
-      padding: 3mm 2mm;
+      width: 70mm;
+      max-width: 70mm;
+      margin: 0 auto;
+      padding: 2mm 1mm;
     }
 
     /* ===== Tailwind mapping للطباعة الحرارية — خطوط واضحة وأسمك ===== */
