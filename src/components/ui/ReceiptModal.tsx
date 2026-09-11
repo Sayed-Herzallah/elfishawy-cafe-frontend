@@ -18,8 +18,44 @@ interface ReceiptModalProps {
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClose, products, shortageMap }) => {
   if (!isOpen || !order) return null;
 
+  const [isPrinting, setIsPrinting] = React.useState(false);
+
   const handlePrint = () => {
-    window.print();
+    if (isPrinting) return;
+    setIsPrinting(true);
+
+    // أنشئ print-portal مستقل مباشرة في body لتجاوز قيود الـ modal layout
+    const source = document.getElementById('printable-receipt');
+    if (!source) {
+      window.print();
+      setTimeout(() => setIsPrinting(false), 2000);
+      return;
+    }
+
+    // احذف أي portal قديم
+    const old = document.getElementById('print-portal');
+    if (old) old.remove();
+
+    // أنشئ الـ portal وانسخ محتوى الفاتورة فيه بكل التنسيقات
+    const portal = document.createElement('div');
+    portal.id = 'print-portal';
+    portal.dir = 'rtl';
+    portal.className = source.className;
+    portal.innerHTML = source.innerHTML;
+    document.body.appendChild(portal);
+
+    // تنظيف بعد انتهاء الطباعة
+    const cleanup = () => {
+      portal.remove();
+      window.removeEventListener('afterprint', cleanup);
+      setTimeout(() => setIsPrinting(false), 1500);
+    };
+    window.addEventListener('afterprint', cleanup);
+
+    // إعطاء المتصفح مهلة لتطبيق DOM قبل فتح نافذة الطباعة
+    setTimeout(() => {
+      window.print();
+    }, 80);
   };
 
 
@@ -209,10 +245,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
           <Button
             onClick={handlePrint}
             variant="primary"
-            className="w-full bg-[#2e5b9f] hover:bg-[#244b85] text-white font-bold py-3.5 text-base rounded-2xl shadow-sm cursor-pointer"
-            leftIcon={<Printer className="w-5 h-5 ml-2" />}
+            disabled={isPrinting}
+            className={`w-full bg-[#2e5b9f] hover:bg-[#244b85] text-white font-bold py-3.5 text-base rounded-2xl shadow-sm cursor-pointer ${
+              isPrinting ? 'opacity-70 cursor-not-allowed' : ''
+            }`}
+            leftIcon={<Printer className={`w-5 h-5 ml-2 ${isPrinting ? 'animate-spin' : ''}`} />}
           >
-            طباعة الفاتورة الآن 🖨️
+            {isPrinting ? 'جاري إرسال الفاتورة للطابعة...' : 'طباعة الفاتورة الآن 🖨️'}
           </Button>
 
           <Button
