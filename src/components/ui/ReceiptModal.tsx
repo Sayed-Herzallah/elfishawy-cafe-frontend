@@ -71,7 +71,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
   ${styleElements}
   <style>
     @page {
-      size: 72mm 297mm;
+      size: auto;
       margin: 0mm !important;
     }
     * {
@@ -80,20 +80,25 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       print-color-adjust: exact !important;
     }
     html, body {
-      width: 72mm !important;
-      margin: 0 !important;
+      width: 100% !important;
+      max-width: 72mm !important;
+      margin: 0 auto !important;
       padding: 0 !important;
       background: #ffffff !important;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Cairo", sans-serif;
     }
     #printable-receipt {
-      width: 70mm !important;
-      max-width: 70mm !important;
+      width: 100% !important;
+      max-width: 72mm !important;
       margin: 0 auto !important;
-      padding: 0 1mm 5mm 1mm !important;
+      padding: 0 1mm 2mm 1mm !important;
       background: #ffffff !important;
       color: #000000 !important;
       display: block !important;
+    }
+    .receipt-keep-together {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
     }
   </style>
 </head>
@@ -273,28 +278,46 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             </div>
           </div>
 
-          {/* الإجمالي وسداد الفاتورة */}
-          <div className="py-3 border-b-2 border-black space-y-1.5">
-            <div className="flex justify-between text-xs text-black font-black" dir="rtl">
-              <span>إجمالي عدد القطع:</span>
-              <span className="font-mono text-sm font-black">{formatNumber(totalItemsCount)} قطعة</span>
+          {/* قسم الإجمالي والفوتر مع مسافة التغذية مجمعين لمنع انقسام الصفحة وضمان خروج كامل الفاتورة */}
+          <div className="receipt-keep-together" style={{ pageBreakInside: 'avoid', breakInside: 'avoid' }}>
+            {/* الإجمالي وسداد الفاتورة */}
+            <div className="py-3 border-b-2 border-black space-y-1.5">
+              <div className="flex justify-between text-xs text-black font-black" dir="rtl">
+                <span>إجمالي عدد القطع:</span>
+                <span className="font-mono text-sm font-black">{formatNumber(totalItemsCount)} قطعة</span>
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t-2 border-black" dir="rtl">
+                <span className="text-base font-black text-black">المطلوب سداده:</span>
+                <span className="font-mono text-2xl font-black text-black">
+                  {formatPrice(order.totalAmount)}
+                </span>
+              </div>
             </div>
-            <div className="flex justify-between items-center pt-2 border-t-2 border-black" dir="rtl">
-              <span className="text-base font-black text-black">المطلوب سداده:</span>
-              <span className="font-mono text-2xl font-black text-black">
-                {formatPrice(order.totalAmount)}
-              </span>
+
+            {/* Footer — أسود واضح وكامل */}
+            <div className="mt-3 text-center space-y-1 text-black">
+              <p className="text-xs font-black">أهلاً وسهلاً بكم دائماً في مقهى الفيشاوي</p>
+              <p className="text-xs font-bold font-mono">شكراً لزيارتكم — نتمنى لكم يوماً سعيداً</p>
+            </div>
+
+            {/* مسافة تغذية كافية (40 مم) مع خط تنقيط نهاية الفاتورة لإجبار موتور الطابعة على سحب الورقة بالكامل وتجاوز شفرة القاطع */}
+            <div
+              style={{
+                height: '42mm',
+                minHeight: '42mm',
+                display: 'flex',
+                flexDirection: 'column',
+                justifyContent: 'flex-end',
+                alignItems: 'center'
+              }}
+              className="w-full select-none"
+              aria-hidden="true"
+            >
+              <div className="w-full text-center text-[10px] text-gray-500 font-mono tracking-widest border-t border-dashed border-gray-400 pt-1">
+                - - - - - - - - - - - - - - - - - - - -
+              </div>
             </div>
           </div>
-
-          {/* Footer — أسود واضح وكامل */}
-          <div className="mt-3 text-center space-y-1 text-black">
-            <p className="text-xs font-black">أهلاً وسهلاً بكم دائماً في مقهى الفيشاوي</p>
-            <p className="text-xs font-bold font-mono">شكراً لزيارتكم — نتمنى لكم يوماً سعيداً</p>
-          </div>
-
-          {/* مسافة تغذية كافية (45 مم) لخروج الفاتورة بالكامل وتجاوز شفرة القاطع لتصل ليد الكاشير مباشرة */}
-          <div style={{ height: '45mm', minHeight: '45mm' }} className="w-full select-none" aria-hidden="true">&nbsp;</div>
         </div>
 
 

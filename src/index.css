@@ -86,13 +86,14 @@ input[type='number'] {
 /* Print Styles */
 @media print {
   @page {
-    size: 72mm 297mm;
+    size: auto;
     margin: 0mm !important;
   }
 
   html, body {
-    width: 72mm !important;
-    margin: 0 !important;
+    width: 100% !important;
+    max-width: 72mm !important;
+    margin: 0 auto !important;
     padding: 0 !important;
     background: #ffffff !important;
     -webkit-print-color-adjust: exact !important;
