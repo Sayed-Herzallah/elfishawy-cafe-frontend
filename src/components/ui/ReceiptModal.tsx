@@ -235,8 +235,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             <p className="text-xs font-bold font-mono">شكراً لزيارتكم — نتمنى لكم يوماً سعيداً</p>
           </div>
 
-          {/* مسافة سحب الورقة بعد نهاية الفاتورة لتصل للقاطع ولا تنحشر داخل الماكينة */}
-          <div className="h-10 w-full select-none" aria-hidden="true">&nbsp;</div>
+          {/* مسافة تغذية كافية (45 مم) لخروج الفاتورة بالكامل وتجاوز شفرة القاطع لتصل ليد الكاشير مباشرة */}
+          <div style={{ height: '45mm', minHeight: '45mm' }} className="w-full select-none" aria-hidden="true">&nbsp;</div>
         </div>
 
 
