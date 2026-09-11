@@ -75,7 +75,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       width: 70mm;
       max-width: 70mm;
       margin: 0 auto;
-      padding: 2mm 1mm;
+      padding: 2mm 1mm 18mm 1mm;
     }
 
     /* ===== Tailwind mapping للطباعة الحرارية — خطوط واضحة وأسمك ===== */
@@ -401,6 +401,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             <p className="text-xs font-black">أهلاً وسهلاً بكم دائماً في مقهى الفيشاوي</p>
             <p className="text-xs font-bold font-mono">شكراً لزيارتكم — نتمنى لكم يوماً سعيداً</p>
           </div>
+
+          {/* مسافة سحب الورقة بعد نهاية الفاتورة لتصل للقاطع ولا تنحشر داخل الماكينة */}
+          <div className="h-10 w-full select-none" aria-hidden="true">&nbsp;</div>
         </div>
 
 
