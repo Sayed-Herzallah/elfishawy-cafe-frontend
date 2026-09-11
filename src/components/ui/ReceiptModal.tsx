@@ -281,38 +281,38 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
         </button>
 
         {/* Printable Receipt Section */}
-        <div id="printable-receipt" className="text-gray-900 font-sans p-2 text-right bg-white" dir="rtl">
+        <div id="printable-receipt" className="text-black font-sans p-2 text-right bg-white" dir="rtl">
 
-          {/* Cafe Header — بدون لوجو */}
-          <div className="text-center pb-3 border-b-2 border-gray-300">
-            <h2 className="text-2xl font-bold font-arabic-heading text-gray-900">
+          {/* Cafe Header */}
+          <div className="text-center pb-3 border-b-2 border-black">
+            <h2 className="text-2xl font-black font-arabic-heading text-black">
               مقهى الفيشاوي
             </h2>
-            <p className="text-xs font-mono text-gray-500 mt-1">Elfishawy Cafe — Authentic Taste</p>
+            <p className="text-xs font-mono font-bold text-gray-800 mt-1">Elfishawy Cafe</p>
 
-            {/* رقم الفاتورة */}
-            <div className="mt-2 border border-gray-300 rounded-xl py-1 px-2 flex items-center justify-between text-xs" dir="rtl">
-              <span className="font-bold text-gray-700">فاتورة رقم: <strong className="font-mono text-sm">#{String(order.orderNumber || order._id || '').slice(-6)}</strong></span>
-              <span className="font-bold text-gray-700">طاولة: <strong className="font-mono text-sm">#{order.tableNumber || '—'}</strong></span>
+            {/* رقم الفاتورة والطاولة */}
+            <div className="mt-2 border-2 border-black rounded-lg py-1 px-2 flex items-center justify-between text-xs font-bold text-black" dir="rtl">
+              <span>رقم الفاتورة: <strong className="font-mono text-sm font-black">#{String(order.orderNumber || order._id || '').slice(-6)}</strong></span>
+              <span>طاولة: <strong className="font-mono text-sm font-black">#{order.tableNumber || '—'}</strong></span>
             </div>
 
-            {/* التاريخ والوقت منفصلَين */}
-            <div className="mt-1 flex items-center justify-between text-xs px-1" dir="rtl">
-              <span className="font-mono text-gray-600">📅 {formatDate(order.createdAt)}</span>
-              <span className="font-mono text-gray-600">🕐 {formatTime(order.createdAt)}</span>
+            {/* التاريخ والوقت مكتوبين بالعربي بدون إيموجي نهائياً وبخط أسود عريض */}
+            <div className="mt-1.5 flex items-center justify-between text-xs font-bold text-black px-1 border-b border-gray-300 pb-1" dir="rtl">
+              <span>التاريخ: <strong className="font-mono font-black">{formatDate(order.createdAt)}</strong></span>
+              <span>الوقت: <strong className="font-mono font-black">{formatTime(order.createdAt)}</strong></span>
             </div>
 
-            {/* عدد الأصناف */}
-            <div className="mt-1 text-center">
-              <span className="font-bold text-xs text-gray-700">عدد الأصناف: <strong className="font-mono">{formatNumber(totalItemsCount)} قطعة</strong></span>
+            {/* عدد الأصناف واضح وعريض */}
+            <div className="mt-1.5 text-center text-xs font-black text-black">
+              <span>عدد الأصناف بالفاتورة: <strong className="font-mono text-sm">{formatNumber(totalItemsCount)} صنف</strong></span>
             </div>
 
             {(() => {
               const cleanNotes = getCleanNotes(order.notes);
               if (!cleanNotes) return null;
               return (
-                <div className="mt-2 border border-gray-400 p-2 rounded-xl text-xs text-gray-900 text-right font-bold">
-                  <span>ملاحظات:</span> <span className="mr-1 font-medium">{cleanNotes}</span>
+                <div className="mt-2 border border-black p-1.5 rounded text-xs text-black text-right font-bold">
+                  <span>ملاحظات:</span> <span className="mr-1">{cleanNotes}</span>
                 </div>
               );
             })()}
@@ -320,28 +320,23 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
 
           {/* ✅ بانر العجز الثانوي */}
           {hasAnyShortage && (
-            <div className="my-2 border-2 border-gray-700 bg-gray-100 overflow-hidden">
-              <div className="flex items-center gap-2 bg-gray-700 px-3 py-2">
-                <span className="text-white font-extrabold text-xs tracking-wide">
-                  ⚠️ تنبيه: الفاتورة بها عجز في مواد ثانوية
-                </span>
+            <div className="my-2 border-2 border-black bg-gray-100 p-2 text-xs font-bold text-black">
+              <div className="text-red-700 font-black mb-1">
+                ⚠️ تنبيه: عجز في مواد الفاتورة
               </div>
-              <div className="px-2 py-2 space-y-1">
-                {Array.from(shortagesPerProduct.entries()).map(([productName, shortages]) => (
-                  <div key={productName} dir="rtl">
-                    <div className="text-[11px] font-extrabold text-gray-900 mb-1">
-                      {productName}: {shortages.join(' — ')} (نافذ)
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {Array.from(shortagesPerProduct.entries()).map(([productName, shortages]) => (
+                <div key={productName} dir="rtl">
+                  <span>{productName}: </span>
+                  <span className="text-red-700 font-black">{shortages.join('، ')} (نافذ)</span>
+                </div>
+              ))}
             </div>
           )}
 
-          {/* جدول الأصناف */}
-          <div className="py-3 border-b-2 border-gray-400">
+          {/* جدول الأصناف — واضح، عريض، محاذاة مضبوطة للأعمدة الثلاثة */}
+          <div className="py-3 border-b-2 border-black">
             {/* رأس الجدول */}
-            <div className="flex justify-between text-xs font-black text-gray-800 mb-2 border-b-2 border-gray-400 pb-1" dir="rtl">
+            <div className="flex justify-between text-xs font-black text-black mb-2 border-b-2 border-black pb-1" dir="rtl">
               <span className="flex-1 text-right">الصنف</span>
               <span className="w-16 text-center">الكمية</span>
               <span className="w-20 text-left">الإجمالي</span>
@@ -359,28 +354,28 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
                 const hasShortage = itemShortages && itemShortages.length > 0;
 
                 return (
-                  <div key={idx} dir="rtl" className="border-b border-gray-300 pb-1.5 pt-0.5">
+                  <div key={idx} dir="rtl" className="border-b border-gray-400 pb-1.5 pt-0.5">
                     {/* صف الصنف: الاسم + الكمية في عمودها + الإجمالي */}
-                    <div className="flex justify-between items-center text-sm font-bold">
+                    <div className="flex justify-between items-center text-sm font-black text-black">
                       <span className="flex-1 text-right truncate">
                         {hasShortage && '⚠️ '}{prodName}
                       </span>
-                      <span className="w-16 text-center font-mono text-base font-black text-gray-900 bg-gray-100 py-0.5 rounded">
+                      <span className="w-16 text-center font-mono text-base font-black text-black bg-gray-200 px-1 py-0.5 rounded">
                         × {formatNumber(item.quantity)}
                       </span>
-                      <span className="w-20 text-left font-mono text-base font-black text-gray-900">
+                      <span className="w-20 text-left font-mono text-base font-black text-black">
                         {formatPrice(item.price * item.quantity)}
                       </span>
                     </div>
 
-                    {/* سعر الوحدة الفردية للتوضيح */}
-                    <div className="flex justify-between items-center text-[10px] text-gray-500 mt-0.5 font-mono">
-                      <span>سعر القطعة: {formatNumber(item.price)} ج</span>
+                    {/* سعر القطعة واضح وأسود */}
+                    <div className="flex justify-between items-center text-xs text-gray-800 font-bold mt-0.5 font-mono">
+                      <span>سعر القطعة الواحدة: {formatNumber(item.price)} جنيه</span>
                     </div>
 
                     {/* تحذير العجز */}
                     {hasShortage && (
-                      <div className="text-[11px] font-bold text-red-700 mt-0.5">
+                      <div className="text-xs font-black text-red-700 mt-0.5">
                         ⚠️ نافذ: {itemShortages!.join(' — ')}
                       </div>
                     )}
@@ -390,24 +385,24 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             </div>
           </div>
 
-          {/* الإجمالي */}
-          <div className="py-3 border-b-2 border-gray-400 space-y-1.5">
-            <div className="flex justify-between text-xs text-gray-700 font-bold" dir="rtl">
+          {/* الإجمالي وسداد الفاتورة */}
+          <div className="py-3 border-b-2 border-black space-y-1.5">
+            <div className="flex justify-between text-xs text-black font-black" dir="rtl">
               <span>إجمالي عدد القطع:</span>
-              <span className="font-mono font-black text-sm">{formatNumber(totalItemsCount)} قطعة</span>
+              <span className="font-mono text-sm font-black">{formatNumber(totalItemsCount)} قطعة</span>
             </div>
-            <div className="flex justify-between items-center pt-1.5 border-t-2 border-gray-900" dir="rtl">
-              <span className="text-base font-black text-gray-900">المطلوب سداده</span>
-              <span className="font-mono text-2xl font-black text-gray-900">
+            <div className="flex justify-between items-center pt-2 border-t-2 border-black" dir="rtl">
+              <span className="text-base font-black text-black">المطلوب سداده:</span>
+              <span className="font-mono text-2xl font-black text-black">
                 {formatPrice(order.totalAmount)}
               </span>
             </div>
           </div>
 
-          {/* Footer — بدون خطوط باركود */}
-          <div className="mt-3 text-center space-y-1">
-            <p className="text-xs font-bold text-gray-800">أهلاً وسهلاً بكم في مقهى الفيشاوي</p>
-            <p className="text-xs text-gray-600 font-mono">شكراً لزيارتكم — نتمنى لكم يوماً سعيداً</p>
+          {/* Footer — أسود واضح وكامل */}
+          <div className="mt-3 text-center space-y-1 text-black">
+            <p className="text-xs font-black">أهلاً وسهلاً بكم دائماً في مقهى الفيشاوي</p>
+            <p className="text-xs font-bold font-mono">شكراً لزيارتكم — نتمنى لكم يوماً سعيداً</p>
           </div>
         </div>
 
