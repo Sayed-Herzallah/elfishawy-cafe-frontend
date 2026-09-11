@@ -31,7 +31,7 @@ const RECEIPT_FONT = "'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif";
 const RECEIPT_RULES: Array<[string, string]> = [
   ['*', 'box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact;'],
   ['html, body', `margin: 0; padding: 0; width: 80mm; background: #ffffff; color: #000000; font-family: ${RECEIPT_FONT};`],
-  ['#receipt', 'width: 70mm; max-width: 70mm; padding: 0 3mm 4mm 3mm; margin: 0 auto; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
+  ['#receipt', 'width: 70mm; max-width: 70mm; padding: 2mm 3mm 2mm 3mm; margin: 0 auto; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
   ['.r-header', 'margin: 0; padding: 0 0 1.5mm 0; text-align: center; border-bottom: 0.6mm solid #000000;'],
   ['.r-title', 'margin: 0; padding: 0; font-size: 15pt; font-weight: 900; line-height: 1.15;'],
   ['.r-invoice-row', 'margin-top: 1.5mm; border: 0.5mm solid #000000; border-radius: 2mm; padding: 0.8mm 2mm; display: flex; justify-content: space-between; align-items: center; font-size: 8.5pt; font-weight: 800;'],
@@ -53,7 +53,7 @@ const RECEIPT_RULES: Array<[string, string]> = [
   ['.r-total-row', 'display: flex; justify-content: space-between; align-items: center; border-top: 0.6mm solid #000000; padding-top: 1.2mm; margin-top: 1.2mm; font-size: 9pt; font-weight: 900;'],
   ['.r-grand', 'font-size: 15pt; font-weight: 900; white-space: nowrap; padding-left: 1mm;'],
   ['.r-footer', 'margin-top: 1.5mm; text-align: center; font-size: 8.5pt; font-weight: 900;'],
-  ['.r-feed', 'height: 4mm; flex-shrink: 0;'],
+  ['.r-feed', 'height: 0; display: none;'],
 ];
 
 /** توليد CSS الفاتورة — مع prefix اختياري للاستخدام داخل النافذة الرئيسية */
@@ -569,16 +569,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             <div className="mt-1.5 text-center text-black">
               <p className="text-xs font-black">أهلاً وسهلاً بكم دائماً في كافيه الفيشاوي</p>
             </div>
-
-            {/* مسافة سحب الورقة صغيرة جداً لمنع قص الإجمالي والفوتر وتقليل المسافة بين الفواتير */}
-            <div
-              style={{
-                height: '3mm',
-                minHeight: '3mm'
-              }}
-              className="w-full select-none"
-              aria-hidden="true"
-            />
           </div>
         </div>
 
