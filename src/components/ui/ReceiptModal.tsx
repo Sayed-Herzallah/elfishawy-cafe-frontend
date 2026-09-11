@@ -333,17 +333,16 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             </div>
           )}
 
-          {/* جدول الأصناف — واضح، عريض، محاذاة مضبوطة للأعمدة الثلاثة */}
+          {/* جدول الأصناف — عمودان فقط: الصنف (مع كميته وسعره) والإجمالي */}
           <div className="py-3 border-b-2 border-black">
-            {/* رأس الجدول */}
+            {/* رأس الجدول: الصنف يميناً والإجمالي يساراً */}
             <div className="flex justify-between text-xs font-black text-black mb-2 border-b-2 border-black pb-1" dir="rtl">
               <span className="flex-1 text-right">الصنف</span>
-              <span className="w-16 text-center">الكمية</span>
-              <span className="w-20 text-left">الإجمالي</span>
+              <span className="w-24 text-left font-mono">الإجمالي</span>
             </div>
 
             {/* الأصناف */}
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               {receiptItems.map((item, idx) => {
                 const prodName = resolveProductName(item);
                 const pId =
@@ -354,23 +353,21 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
                 const hasShortage = itemShortages && itemShortages.length > 0;
 
                 return (
-                  <div key={idx} dir="rtl" className="border-b border-gray-400 pb-1.5 pt-0.5">
-                    {/* صف الصنف: الاسم + الكمية في عمودها + الإجمالي */}
+                  <div key={idx} dir="rtl" className="border-b border-gray-400 pb-2 pt-0.5">
+                    {/* اسم الصنف وإجمالي السعر */}
                     <div className="flex justify-between items-center text-sm font-black text-black">
-                      <span className="flex-1 text-right truncate">
+                      <span className="flex-1 text-right">
                         {hasShortage && '⚠️ '}{prodName}
+                        {item.quantity > 1 ? ` (${formatNumber(item.quantity)})` : ''}
                       </span>
-                      <span className="w-16 text-center font-mono text-base font-black text-black bg-gray-200 px-1 py-0.5 rounded">
-                        × {formatNumber(item.quantity)}
-                      </span>
-                      <span className="w-20 text-left font-mono text-base font-black text-black">
+                      <span className="w-24 text-left font-mono text-base font-black text-black">
                         {formatPrice(item.price * item.quantity)}
                       </span>
                     </div>
 
-                    {/* سعر القطعة واضح وأسود */}
-                    <div className="flex justify-between items-center text-xs text-gray-800 font-bold mt-0.5 font-mono">
-                      <span>سعر القطعة الواحدة: {formatNumber(item.price)} جنيه</span>
+                    {/* سطر توضيحي نقي بدون خلفيات: الكمية × سعر القطعة */}
+                    <div className="text-xs text-gray-800 font-bold mt-0.5 font-mono">
+                      {formatNumber(item.quantity)} × {formatNumber(item.price)} جنيه
                     </div>
 
                     {/* تحذير العجز */}
