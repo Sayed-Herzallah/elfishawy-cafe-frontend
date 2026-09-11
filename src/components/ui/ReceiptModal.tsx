@@ -30,8 +30,8 @@ const RECEIPT_FONT = "'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif";
 /** كل قواعد CSS الخاصة بفاتورة الطباعة (مقاسات ملم — مناسبة لطابعة حرارية 80mm) */
 const RECEIPT_RULES: Array<[string, string]> = [
   ['*', 'box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact;'],
-  ['html, body', `margin: 0; padding: 0; width: 80mm; background: #ffffff; color: #000000; font-family: ${RECEIPT_FONT};`],
-  ['#receipt', 'width: 70mm; max-width: 70mm; padding: 2mm 3mm 2mm 3mm; margin: 0 auto; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
+  ['html, body', `margin: 0; padding: 2mm 0; width: 80mm; background: #ffffff; color: #000000; font-family: ${RECEIPT_FONT};`],
+  ['#receipt', 'width: 70mm; max-width: 70mm; padding: 0 3mm; margin: 0 auto; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
   ['.r-header', 'margin: 0; padding: 0 0 1.5mm 0; text-align: center; border-bottom: 0.6mm solid #000000;'],
   ['.r-title', 'margin: 0; padding: 0; font-size: 15pt; font-weight: 900; line-height: 1.15;'],
   ['.r-invoice-row', 'margin-top: 1.5mm; border: 0.5mm solid #000000; border-radius: 2mm; padding: 0.8mm 2mm; display: flex; justify-content: space-between; align-items: center; font-size: 8.5pt; font-weight: 800;'],
@@ -68,7 +68,7 @@ const wrapReceiptDocument = (bodyHTML: string, pageHeightMm: number | null): str
     ? `size: 80mm ${pageHeightMm}mm;`
     : 'size: 80mm auto;';
   const heightLockRule = pageHeightMm
-    ? `width: 80mm !important; height: ${pageHeightMm}mm !important; min-height: ${pageHeightMm}mm !important; max-height: ${pageHeightMm}mm !important; overflow: hidden !important;`
+    ? `width: 80mm !important; height: ${pageHeightMm}mm !important; min-height: ${pageHeightMm}mm !important; max-height: none !important; overflow: visible !important;`
     : 'width: 80mm !important; height: auto !important; min-height: 0 !important; overflow: visible !important;';
 
   return `<!DOCTYPE html>
@@ -207,11 +207,11 @@ const printViaMainWindow = (bodyHTML: string, heightMm: number): Promise<void> =
           max-width: none !important;
           height: ${heightMm}mm !important;
           min-height: ${heightMm}mm !important;
-          max-height: ${heightMm}mm !important;
+          max-height: none !important;
           margin: 0 !important;
           padding: 0 !important;
           background: #ffffff !important;
-          overflow: hidden !important;
+          overflow: visible !important;
         }
         body > *:not(#${holderId}) { display: none !important; }
         #${holderId} {
@@ -327,9 +327,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
         await new Promise((r) => setTimeout(r, 250));
 
         const receiptEl = measureDoc.getElementById('receipt');
-        const receiptHeight = receiptEl?.getBoundingClientRect().height ?? 0;
+        const receiptHeight = receiptEl ? receiptEl.getBoundingClientRect().height : 0;
         const bodyHeight = measureDoc.body?.scrollHeight ?? 0;
         const docHeight = measureDoc.documentElement?.scrollHeight ?? 0;
+        // نستخدم الأكبر بين القياسات الثلاثة لضمان عدم قطع أي محتوى
         heightPx = Math.max(receiptHeight, bodyHeight, docHeight);
       } finally {
         measureFrame.remove();
@@ -337,9 +338,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
 
       if (!heightPx || heightPx <= 0) heightPx = 300;
 
-      // تحويل البكسل إلى ملم (96px = 25.4mm) + هامش أمان صغير فقط لمنع أي قطع
+      // تحويل البكسل إلى ملم (96px = 25.4mm) + 2mm هامش أمان لمنع قطع آخر سطر
       const PX_PER_MM = 96 / 25.4;
-      const heightMm = Math.min(1500, Math.max(40, Math.ceil(heightPx / PX_PER_MM) + 1));
+      const heightMm = Math.min(1500, Math.max(40, Math.ceil(heightPx / PX_PER_MM) + 2));
 
       // تشخيص: تسجيل القياس الفعلي
       setPrintInfo(`iframe · ${heightMm}mm`);
