@@ -14,6 +14,11 @@ interface ComparisonStatCardProps {
   className?: string;
 }
 
+const safeNum = (val: number | undefined | null): number => {
+  const n = Number(val);
+  return isNaN(n) ? 0 : n;
+};
+
 const colorMap = {
   rose: {
     topStrip: 'from-rose-400 via-pink-400 to-rose-500',
@@ -63,7 +68,7 @@ export const ComparisonStatCard: React.FC<ComparisonStatCardProps> = ({
   className = '',
 }) => {
   const scheme = colorMap[accentColor];
-  const hasComparison = comparison !== undefined && comparison.changePercent !== 0;
+  const hasComparison = comparison !== undefined && comparison.changePercent !== 0 && !Number.isNaN(comparison.changePercent);
   const isPositive = comparison ? comparison.trend === 'up' : false;
   const isNegative = comparison ? comparison.trend === 'down' : false;
   const isNeutral = comparison ? comparison.trend === 'neutral' : true;
@@ -89,7 +94,7 @@ export const ComparisonStatCard: React.FC<ComparisonStatCardProps> = ({
 
   const getTooltip = () => {
     if (!comparison) return '';
-    return `${comparison.currentPeriodLabel}: ${comparison.current.toLocaleString('en-US')}\n${comparison.previousPeriodLabel}: ${comparison.previous.toLocaleString('en-US')}\nالتغير: ${comparison.changeAbsolute >= 0 ? '+' : ''}${comparison.changeAbsolute.toLocaleString('en-US')} (${comparison.trend === 'up' ? 'ارتفاع' : comparison.trend === 'down' ? 'انخفاض' : 'ثبات'} ${Math.abs(comparison.changePercent)}%)`;
+    return `${comparison.currentPeriodLabel}: ${safeNum(comparison.current).toLocaleString('en-US')}\n${comparison.previousPeriodLabel}: ${safeNum(comparison.previous).toLocaleString('en-US')}\nالتغير: ${safeNum(comparison.changeAbsolute) >= 0 ? '+' : ''}${safeNum(comparison.changeAbsolute).toLocaleString('en-US')} (${comparison.trend === 'up' ? 'ارتفاع' : comparison.trend === 'down' ? 'انخفاض' : 'ثبات'} ${Math.abs(comparison.changePercent)}%)`;
   };
 
   return (
@@ -128,7 +133,7 @@ export const ComparisonStatCard: React.FC<ComparisonStatCardProps> = ({
           <span className="text-gray-500 font-medium truncate flex items-center gap-1">
             {comparison.previousPeriodLabel}:{' '}
             <span className="font-mono font-bold text-gray-700">
-              {comparison.previous.toLocaleString('en-US')}
+              {safeNum(comparison.previous).toLocaleString('en-US')}
             </span>
           </span>
         )}

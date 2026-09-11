@@ -25,14 +25,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
 
     const receiptHTML = receiptEl.innerHTML;
 
-    // نفتح نافذة بعرض 302px (= 80mm تقريباً على شاشات 96dpi)
+    // نفتح نافذة بعرض 302px (= 80mm على 96dpi) — بدون تحديد height حتى تتحجم للمحتوى
     const printWindow = window.open(
       '',
       '_blank',
-      'width=302,height=800,toolbar=0,menubar=0,scrollbars=0,resizable=0,status=0,location=0'
+      'width=320,toolbar=0,menubar=0,scrollbars=0,resizable=0,status=0,location=0'
     );
     if (!printWindow) {
-      // Fallback لو المتصفح منع الـ popup
       window.print();
       return;
     }
@@ -45,15 +44,24 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
   <style>
     @page {
       size: 80mm auto;
-      margin: 0;
+      margin: 0mm;
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+    }
     html {
       width: 80mm;
+      max-width: 80mm;
+      overflow: hidden;
     }
     body {
       width: 80mm;
       max-width: 80mm;
+      overflow: hidden;
       font-family: 'Tahoma', Arial, sans-serif;
       font-size: 11px;
       color: #000 !important;

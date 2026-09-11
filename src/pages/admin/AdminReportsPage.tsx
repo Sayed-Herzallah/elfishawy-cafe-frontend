@@ -312,7 +312,7 @@ export const AdminReportsPage: React.FC = () => {
   const operatingFiltered = totalExpensesFiltered - purchasesFiltered;
   // ✅ صافي الربح الحقيقي = المبيعات − (المشتريات + المصروفات التشغيلية) — والسالب يعني خسارة
   const netProfit = totalRevenue - totalExpensesFiltered;
-  const isLoss = netProfit < 0;
+  const isLoss = profitComparison.current < 0;
   const profitMargin = totalRevenue > 0 ? Math.round((netProfit / totalRevenue) * 100) : 0;
 
   // Real percentage indicators for the KPI cards

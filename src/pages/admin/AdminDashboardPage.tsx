@@ -270,12 +270,12 @@ export const AdminDashboardPage: React.FC = () => {
     prevEnd = new Date(now.getTime() - 7 * oneDayMs);
     prevPeriodLabel = 'الأسبوع السابق';
   } else if (timeRange === 'month') {
-    prevStart = new Date(now.getFullYear(), now.getMonth() - 2, now.getDate());
-    prevEnd = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate());
+    prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    prevEnd = new Date(now.getFullYear(), now.getMonth(), 1);
     prevPeriodLabel = 'الشهر السابق';
   } else {
-    prevStart = new Date(now.getFullYear() - 2, now.getMonth(), now.getDate());
-    prevEnd = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+    prevStart = new Date(now.getFullYear() - 1, 0, 1);
+    prevEnd = new Date(now.getFullYear(), 0, 1);
     prevPeriodLabel = 'العام السابق';
   }
 
@@ -301,8 +301,8 @@ export const AdminDashboardPage: React.FC = () => {
   const prevNetProfit = prevSales - prevExpenses;
 
   const getChangePct = (curr: number, prev: number) => {
-    if (prev === 0) return curr > 0 ? 100 : 0;
-    return Math.round(((curr - prev) / prev) * 100);
+    if (prev === 0) return curr > 0 ? 100 : curr < 0 ? -100 : 0;
+    return Math.round(((curr - prev) / Math.abs(prev)) * 100);
   };
 
   const salesChange = getChangePct(totalSales, prevSales);
@@ -427,11 +427,16 @@ export const AdminDashboardPage: React.FC = () => {
     }
 
     if (timeRange === 'month') {
-      const weeks = ['الأسبوع 1', 'الأسبوع 2', 'الأسبوع 3', 'الأسبوع 4'];
-      return weeks.map((w, idx) => {
+      const weeks = [
+        { label: 'الأسبوع 1', startDay: 1, endDay: 7 },
+        { label: 'الأسبوع 2', startDay: 8, endDay: 14 },
+        { label: 'الأسبوع 3', startDay: 15, endDay: 21 },
+        { label: 'الأسبوع 4', startDay: 22, endDay: 31 },
+      ];
+      return weeks.map(({ label, startDay, endDay }) => {
         const weekOrders = filteredOrders.filter((o) => {
-          const day = new Date(o.createdAt).getDate();
-          return day >= idx * 7 + 1 && day <= (idx + 1) * 7;
+          const d = new Date(o.createdAt);
+          return d.getDate() >= startDay && d.getDate() <= endDay && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
         });
 
         const s = weekOrders.reduce((sum, o) => sum + o.totalAmount, 0);
@@ -440,13 +445,13 @@ export const AdminDashboardPage: React.FC = () => {
         const exp = Math.round(
           expenses
             .filter((e) => {
-              const day = new Date(e.date || e.createdAt || '').getDate();
-              return day >= idx * 7 + 1 && day <= (idx + 1) * 7;
+              const d = new Date(e.date || e.createdAt || '');
+              return d.getDate() >= startDay && d.getDate() <= endDay && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
             })
             .reduce((sum, e) => sum + e.amount, 0)
         );
         return {
-          label: w,
+          label: label,
           sales: s,
           orders: ords,
           expenses: exp,

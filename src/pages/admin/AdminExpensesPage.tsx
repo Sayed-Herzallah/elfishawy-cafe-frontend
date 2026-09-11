@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { expenseService, inventoryService } from '../../services/opsService';
 import { Expense, InventoryItem, ExpenseCategory } from '../../types';
 import { useNotification } from '../../contexts/NotificationContext';
@@ -415,7 +415,7 @@ export const AdminExpensesPage: React.FC = () => {
   // 📊 كل الإحصائيات بتتحسب من النتائج المفلترة المعروضة فعلاً — مش من كل السجلات
   const shownTotal = filteredExpenses.reduce((s, e) => s + e.amount, 0);
   const todayKey = new Date().toDateString();
-  const shownTodayTotal = filteredExpenses
+  const shownTodayTotal = expenses
     .filter((e) => new Date(e.date || e.createdAt).toDateString() === todayKey)
     .reduce((s, e) => s + e.amount, 0);
   const shownUnits = filteredExpenses.reduce((s, e) => s + (e.inventoryQuantityAdded || 0), 0);

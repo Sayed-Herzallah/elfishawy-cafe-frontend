@@ -51,7 +51,7 @@ export const AttaStatCard: React.FC<AttaStatCardProps> = ({
   invertColors = false,
 }) => {
   const scheme = colorMap[accentColor];
-  const hasChange = changePct !== undefined && changePct !== 0;
+  const hasChange = changePct !== undefined && !Number.isNaN(changePct) && changePct !== 0;
   const isPositive = (changePct || 0) > 0;
   const isGood = invertColors ? !isPositive : isPositive;
 

@@ -36,7 +36,9 @@ export const StatCard: React.FC<StatCardProps> = ({
     neutral: 'bg-gradient-to-l from-gray-300 via-gray-200 to-gray-300',
   };
 
-  const clampedPercentage = percentage === undefined ? 0 : Math.max(0, Math.min(100, Math.round(percentage)));
+  const clampedPercentage = percentage === undefined || percentage === null || Number.isNaN(percentage)
+    ? 0
+    : Math.max(0, Math.min(100, Math.round(percentage)));
 
   return (
     <div
