@@ -245,8 +245,16 @@ ${buildReceiptCss(`#${holderId}`)}
       }, 1000);
       resolve();
     };
-    // كتم قواعد receipt-modal-open في index.css أثناء الطباعة الاحتياطية
-    // (لأن الحاوية هنا holder مستقل مش #printable-receipt)
+    // فحص ما إذا كان التطبيق يعمل داخل Electron على سطح المكتب لدعم الطباعة الصامتة المباشرة
+    if ((window as any).desktopApi?.printReceipt) {
+      (window as any).desktopApi.printReceipt(bodyHTML).then(() => {
+        cleanup();
+      }).catch(() => {
+        window.print();
+      });
+      return;
+    }
+
     document.body.classList.add('receipt-main-print');
     window.addEventListener('afterprint', cleanup);
     window.print();

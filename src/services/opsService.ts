@@ -1,5 +1,7 @@
 import { ApiClient } from './api/apiClient';
 import { ApiResponse, Order, InventoryItem, Expense, KPIStats, ChartsData, OrderStatus } from '../types';
+import { SyncEngine } from './offline/syncEngine';
+import { offlineDb } from './offline/offlineDb';
 
 export const orderService = {
   getOrders: (params?: { status?: string; searchDate?: string; cashierId?: string }): Promise<ApiResponse<Order[]>> => {
@@ -15,15 +17,24 @@ export const orderService = {
     return ApiClient.request<Order>(`/orders/${id}`, { method: 'GET' });
   },
 
-  createOrder: (payload: {
+  createOrder: async (payload: {
     items: { product: string; quantity: number }[];
     tableNumber: number;
     notes?: string;
   }): Promise<ApiResponse<Order>> => {
-    return ApiClient.request<Order>('/orders', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
+    try {
+      const { order } = await SyncEngine.createOrderOfflineFirst(payload);
+      return {
+        success: true,
+        message: 'Order created successfully',
+        data: order,
+      };
+    } catch {
+      return ApiClient.request<Order>('/orders', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+    }
   },
 
   updateOrderStatus: (id: string, status: OrderStatus): Promise<ApiResponse<Order>> => {
