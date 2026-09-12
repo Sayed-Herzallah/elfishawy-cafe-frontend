@@ -30,18 +30,8 @@
     <link rel="apple-touch-icon" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.json" />
 
-    <!-- ⚡ أداء: الخطوط تُحمّل بشكل غير حاجز للرندر (كانت بتأخر أول عرض ~2.8 ثانية) -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="preconnect" href="https://images.unsplash.com">
-    <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@400;500;600;700;800;900&display=swap" />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@400;500;600;700;800;900&display=swap" media="print" onload="this.media='all'" />
-    <noscript>
-      <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Cairo:wght@400;500;600;700;800;900&display=swap" />
-    </noscript>
-
-    <!-- ⚡ LCP: صورة الهيرو في الصفحة الرئيسية تُكتشف فوراً بدل انتظار CSS/JS -->
-    <link rel="preload" as="image" href="https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?q=75&w=1200&auto=format&fit=crop" fetchpriority="high" />
+    <!-- ⚡ الخطوط العربية محلية بالكامل — لا تحتاج إنترنت (Cairo + Amiri) -->
+    <link rel="stylesheet" href="/fonts/local-fonts.css" />
 
     <!-- بيانات منظمة: كيان الموقع + المقهى (معلومات حقيقية فقط) -->
     <script type="application/ld+json">
