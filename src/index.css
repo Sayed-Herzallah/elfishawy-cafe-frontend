@@ -18,6 +18,11 @@
   .font-calligraphy {
     font-family: var(--font-amiri);
   }
+
+  ::selection {
+    background-color: #2e5b9f !important;
+    color: #ffffff !important;
+  }
 }
 
 /* Global Input validation & Focus styles */
