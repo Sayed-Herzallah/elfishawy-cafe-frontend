@@ -1,23 +1,10 @@
 import React from 'react';
 import { Order } from '../../types';
 import { Button } from './Button';
-import { X, Printer, AlertTriangle, PackageX, Eye } from 'lucide-react';
-import { formatPrice, formatNumber, formatDateTime, formatDate, formatTime } from '../../utils/formatters';
+import { X, Printer, AlertTriangle, Eye } from 'lucide-react';
+import { formatPrice, formatNumber, formatDate, formatTime } from '../../utils/formatters';
 import { getCleanNotes } from '../../utils/orderShortageJournal';
 
-/* ============================================================================
- * نظام طباعة الفواتير المستقل (Self-Contained Receipt Printing)
- * ----------------------------------------------------------------------------
- * المشكلة السابقة: كنا بننسخ كل ستايلات التطبيق (Tailwind) جوه iframe الطباعة
- * ونقيس الارتفاع بـ timeout ثابت قبل ما الـ CSS والخطوط تتحمّل → قياس غلط →
- * فاتورة بتتقطع أو صفحة فيها فراغ جامد قبل/بين الفواتير.
- *
- * الحل: فاتورة طباعة مستقلة تماماً (HTML + CSS مدمج) لا تعتمد على أي ستايل
- * خارجي، مع قياس دقيق للارتفاع بعد تحميل الخطوط، وحجم صفحة @page مطابق
- * للمحتوى بالمللي → الفاتورة تطلع كاملة بدون قطع وبدون فراغات.
- * ==========================================================================*/
-
-/** حماية النصوص العربية والأسماء من كسر الـ HTML */
 const escapeHtmlText = (value: string): string =>
   String(value)
     .replace(/&/g, '&amp;')
@@ -25,73 +12,8 @@ const escapeHtmlText = (value: string): string =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-const RECEIPT_FONT = "'Cairo', 'Segoe UI', Tahoma, Arial, sans-serif";
-
-/** كل قواعد CSS الخاصة بفاتورة الطباعة (مقاسات ملم — مناسبة لطابعة حرارية 80mm) */
-const RECEIPT_RULES: Array<[string, string]> = [
-  ['*', 'box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact;'],
-  ['html, body', `margin: 0; padding: 0; width: 100%; background: #ffffff; color: #000000; font-family: ${RECEIPT_FONT};`],
-  ['#receipt', 'width: 70mm; max-width: 70mm; padding: 0 2.5mm; margin: 0 auto; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
-  ['.r-header', 'margin: 0; padding: 0 0 1mm 0; text-align: center; border-bottom: 0.6mm solid #000000;'],
-  ['.r-title', 'margin: 0; padding: 0; font-size: 13pt; font-weight: 900; line-height: 1.15;'],
-  ['.r-invoice-row', 'margin-top: 1.5mm; border: 0.5mm solid #000000; border-radius: 2mm; padding: 0.8mm 2mm; display: flex; justify-content: space-between; align-items: center; font-size: 8.5pt; font-weight: 800;'],
-  ['.r-dt-row', 'margin-top: 1.2mm; padding: 0 1mm; display: flex; justify-content: space-between; font-size: 8.5pt; font-weight: 800;'],
-  ['.r-notes', 'margin-top: 1.2mm; border: 0.35mm solid #000000; border-radius: 1.5mm; padding: 1mm 1.5mm; font-size: 8.5pt; font-weight: 700; text-align: right;'],
-  ['.r-shortage', 'margin-top: 1.5mm; border: 0.5mm solid #000000; background: #f3f4f6; padding: 1.5mm; font-size: 8.5pt; font-weight: 700; text-align: right;'],
-  ['.r-shortage-title', 'color: #b91c1c; font-weight: 900; margin-bottom: 0.8mm;'],
-  ['.r-shortage-line', 'font-weight: 700;'],
-  ['.r-items', 'padding: 1mm 0; border-bottom: 0.6mm solid #000000;'],
-  ['.r-items-head', 'display: flex; justify-content: space-between; font-size: 8.5pt; font-weight: 900; border-bottom: 0.5mm solid #000000; padding-bottom: 0.6mm; margin-bottom: 1mm;'],
-  ['.r-item', 'padding-bottom: 0.8mm;'],
-  ['.r-item-main', 'display: flex; justify-content: space-between; align-items: center; font-size: 9pt; font-weight: 900;'],
-  ['.r-name', 'flex: 1; text-align: right;'],
-  ['.r-amt', 'width: 14mm; text-align: left; font-weight: 900; white-space: nowrap;'],
-  ['.r-totals', 'padding: 1mm 2mm; border-bottom: 0.6mm solid #000000;'],
-  ['.r-count-total', 'display: flex; justify-content: space-between; align-items: center; padding-top: 1mm; font-size: 10.5pt; font-weight: 900;'],
-  ['.r-warn', 'color: #b91c1c; font-size: 8pt; font-weight: 900; margin-top: 0.5mm; text-align: right;'],
-];
-
-/** توليد CSS الفاتورة — مع prefix اختياري للاستخدام داخل النافذة الرئيسية */
-const buildReceiptCss = (scope?: string): string =>
-  RECEIPT_RULES.filter(([sel]) => !(scope && sel === 'html, body'))
-    .map(([sel, body]) => `${scope ? `${scope} ${sel}` : sel} { ${body} }`)
-    .join('\n');
-
-/** لفّ فاتورة مستقلة في مستند HTML كامل — pageHeightMm = null لوضع القياس */
-const wrapReceiptDocument = (bodyHTML: string, pageHeightMm: number | null): string => {
-  const pageSizeRule = pageHeightMm
-    ? `size: 80mm ${pageHeightMm}mm;`
-    : 'size: 80mm auto;';
-  const heightLockRule = pageHeightMm
-    ? `width: 100% !important; height: ${pageHeightMm}mm !important; min-height: ${pageHeightMm}mm !important; max-height: none !important; overflow: visible !important;`
-    : 'width: 100% !important; height: auto !important; min-height: 0 !important; overflow: visible !important;';
-
-  return `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="utf-8">
-  <title>فاتورة كافيه الفيشاوي</title>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;800;900&display=swap">
-  <style>
-    @page { ${pageSizeRule} margin: 0 !important; }
-    html, body {
-      margin: 0 !important;
-      padding: 0 !important;
-      ${heightLockRule}
-      background: #ffffff !important;
-    }
-    body { display: block !important; position: relative !important; top: 0 !important; left: 0 !important; }
-${buildReceiptCss()}
-  </style>
-</head>
-<body>${bodyHTML}</body>
-</html>`;
-};
-
-/** بناء HTML الفاتورة كاملة (هيدر + أصناف + عدد القطع + فوتر) بستايل مدمج
- *  ملاحظة: الفاتورة المطبوعة بتروح للبار — فبنشيل المبلغ الإجمالي منها تماماً،
- *  والإجمالي يفضل ظاهر على الشاشة (كاشير/أدمن) بس. */
-const buildReceiptBodyHTML = (
+/** HTML فاتورة البار للطباعة — صنف + عدد + إجمالي القطع (بدون أسعار) */
+const buildBarReceiptHTML = (
   order: Order,
   products?: Array<{ _id: string; name: string }>,
   shortageMap?: Record<string, string[]>
@@ -112,7 +34,6 @@ const buildReceiptBodyHTML = (
       ? (item.product as any)._id
       : String(item?.product || '');
 
-  // تجميع الخامات النافذة لكل صنف
   const shortagesPerProduct = new Map<string, string[]>();
   items.forEach((item) => {
     const pId = getProductId(item);
@@ -147,7 +68,7 @@ const buildReceiptBodyHTML = (
         ${Array.from(shortagesPerProduct.entries())
           .map(
             ([productName, shortages]) =>
-              `<div class="r-shortage-line">${escapeHtmlText(productName)}: <span style="color:#b91c1c;font-weight:900">${escapeHtmlText(shortages.join('، '))} (نافذ)</span></div>`
+              `<div class="r-shortage-line">${escapeHtmlText(productName)}: <span class="r-shortage-missing">${escapeHtmlText(shortages.join('، '))} (نافذ)</span></div>`
           )
           .join('')}
       </div>`
@@ -161,8 +82,8 @@ const buildReceiptBodyHTML = (
     <div class="r-header">
       <div class="r-title">كافيه الفيشاوي</div>
       <div class="r-invoice-row">
-        <span>رقم الفاتورة: <strong>${escapeHtmlText(String(order.orderNumber || order._id || '').slice(-6))}</strong></span>
-        <span>طاولة: <strong>${escapeHtmlText(String(order.tableNumber ?? '—'))}</strong></span>
+        <span>رقم الفاتورة :  <strong>${escapeHtmlText(String(order.orderNumber || order._id || '').slice(-6))}</strong></span>
+        <span>طاولة :  <strong>${escapeHtmlText(String(order.tableNumber ?? '—'))}</strong></span>
       </div>
       <div class="r-dt-row">
         <span>التاريخ: <strong>${formatDate(order.createdAt)}</strong></span>
@@ -178,82 +99,97 @@ const buildReceiptBodyHTML = (
     <div class="r-totals">
       <div class="r-count-total"><span>إجمالي عدد القطع:</span><span>${formatNumber(totalItemsCount)} قطعة</span></div>
     </div>
+    <div class="r-feed" aria-hidden="true">&nbsp;</div>
   </div>`;
 };
 
-/** حلقة أمان أخيرة: طباعة من النافذة الرئيسية بإخفاء كل شيء ما عدا الفاتورة */
-const printViaMainWindow = (bodyHTML: string, heightMm: number): Promise<void> => {
-  return new Promise((resolve) => {
-    const holderId = 'receipt-print-fallback';
-    const styleId = 'receipt-print-fallback-style';
-    document.getElementById(holderId)?.remove();
-    document.getElementById(styleId)?.remove();
+/** CSS كامل داخل iframe الطباعة — معزول عن Tailwind حتى لا يُقصّ المحتوى */
+const BAR_RECEIPT_PRINT_CSS = `
+  @page { size: 72mm 297mm; margin: 0mm !important; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  html, body {
+    width: 72mm !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    overflow: visible !important;
+    font-family: Tahoma, 'Segoe UI', Arial, sans-serif;
+  }
+  #receipt {
+    width: 70mm;
+    max-width: 70mm;
+    margin: 0 auto;
+    padding: 0 1mm 15mm 1mm;
+    direction: rtl;
+    text-align: right;
+    overflow: visible !important;
+  }
+  .r-header { padding: 0 0 1.5mm 0; text-align: center; border-bottom: 0.6mm solid #000; }
+  .r-title { font-size: 14pt; font-weight: 900; line-height: 1.2; }
+  .r-invoice-row {
+    margin-top: 1.5mm; border: 0.5mm solid #000; border-radius: 2mm; padding: 1mm 2mm;
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 8.5pt; font-weight: 800;
+  }
+  .r-dt-row {
+    margin-top: 1.2mm; padding: 0 1mm;
+    display: flex; justify-content: space-between; font-size: 8.5pt; font-weight: 800;
+  }
+  .r-notes {
+    margin-top: 1.2mm; border: 0.35mm solid #000; border-radius: 1.5mm;
+    padding: 1mm 1.5mm; font-size: 8.5pt; font-weight: 700; text-align: right;
+  }
+  .r-shortage {
+    margin-top: 1.5mm; border: 0.5mm solid #000; background: #f3f4f6;
+    padding: 1.5mm; font-size: 8.5pt; font-weight: 700; text-align: right;
+  }
+  .r-shortage-title { color: #b91c1c; font-weight: 900; margin-bottom: 0.8mm; }
+  .r-shortage-missing { color: #b91c1c; font-weight: 900; }
+  .r-items { padding: 1.5mm 0; border-bottom: 0.6mm solid #000; }
+  .r-items-head {
+    display: flex; justify-content: space-between; align-items: center; gap: 3mm;
+    font-size: 9pt; font-weight: 900; border-bottom: 0.5mm solid #000;
+    padding-bottom: 1mm; margin-bottom: 0.5mm;
+  }
+  .r-items-head .r-name { flex: 1; text-align: right; border: none; padding: 0; }
+  .r-items-head .r-amt { min-width: 20mm; text-align: center; border: none; padding: 0; font-size: 9pt; }
+  .r-item { padding: 1.2mm 0; border-bottom: 0.25mm dashed #999; }
+  .r-item:last-child { border-bottom: none; }
+  .r-item-main {
+    display: flex; justify-content: space-between; align-items: center; gap: 3mm;
+    font-size: 10pt; font-weight: 900;
+  }
+  .r-name { flex: 1; text-align: right; font-size: 10.5pt; font-weight: 900; line-height: 1.35; word-break: break-word; }
+  .r-amt {
+    min-width: 20mm; max-width: 22mm; text-align: center; font-weight: 900; font-size: 14pt;
+    line-height: 1.1; white-space: nowrap; border: 0.6mm solid #000; border-radius: 2mm; padding: 0.8mm 1mm;
+  }
+  .r-warn { color: #b91c1c; font-size: 8pt; font-weight: 900; margin-top: 0.5mm; text-align: right; }
+  .r-totals { padding: 1.5mm 1mm 0; }
+  .r-count-total {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-top: 1mm; font-size: 11pt; font-weight: 900;
+  }
+  .r-feed { height: 10mm; width: 100%; }
+`;
 
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = `
-      #${holderId} { display: none; }
-      @media print {
-        @page { size: 80mm ${heightMm}mm; margin: 0 !important; }
-        html, body {
-          width: 80mm !important;
-          max-width: none !important;
-          height: ${heightMm}mm !important;
-          min-height: ${heightMm}mm !important;
-          max-height: none !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          background: #ffffff !important;
-          overflow: visible !important;
-        }
-        body > *:not(#${holderId}) { display: none !important; }
-        #${holderId} {
-          display: block !important;
-          position: fixed !important;
-          top: 0 !important;
-          left: 0 !important;
-          right: 0 !important;
-          margin: 0 auto !important;
-          width: 70mm !important;
-        }
-${buildReceiptCss(`#${holderId}`)}
-      }
-    `;
-    document.head.appendChild(style);
-
-    const holder = document.createElement('div');
-    holder.id = holderId;
-    holder.innerHTML = bodyHTML;
-    document.body.appendChild(holder);
-
-    let done = false;
-    const cleanup = () => {
-      if (done) return;
-      done = true;
-      window.removeEventListener('afterprint', cleanup);
-      document.body.classList.remove('receipt-main-print');
-      setTimeout(() => {
-        holder.remove();
-        style.remove();
-      }, 1000);
-      resolve();
-    };
-    // فحص ما إذا كان التطبيق يعمل داخل Electron على سطح المكتب لدعم الطباعة الصامتة المباشرة
-    if ((window as any).desktopApi?.printReceipt) {
-      (window as any).desktopApi.printReceipt(bodyHTML).then(() => {
-        cleanup();
-      }).catch(() => {
-        window.print();
-      });
-      return;
-    }
-
-    document.body.classList.add('receipt-main-print');
-    window.addEventListener('afterprint', cleanup);
-    window.print();
-    setTimeout(cleanup, 60000);
-  });
-};
+const buildBarReceiptDocument = (
+  order: Order,
+  products?: Array<{ _id: string; name: string }>,
+  shortageMap?: Record<string, string[]>
+): string => `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <title>فاتورة كافيه الفيشاوي</title>
+  <style>${BAR_RECEIPT_PRINT_CSS}</style>
+</head>
+<body>${buildBarReceiptHTML(order, products, shortageMap)}</body>
+</html>`;
 
 interface ReceiptModalProps {
   order: Order | null;
@@ -269,163 +205,53 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
   if (!isOpen || !order) return null;
 
   const [isPrinting, setIsPrinting] = React.useState(false);
-  // معلومات تشخيصية لآخر عملية طباعة — للتأكد من إن النظام المستقل v2 شغال
-  const [printInfo, setPrintInfo] = React.useState('');
 
-  // وسم body + حقن @page مخصص لطابعة 80mm أثناء فتح الفاتورة
-  React.useEffect(() => {
-    if (!isOpen) return undefined;
-    const pageStyleId = 'receipt-print-page-style';
-    document.getElementById(pageStyleId)?.remove();
-
-    const pageStyle = document.createElement('style');
-    pageStyle.id = pageStyleId;
-    pageStyle.textContent = `
-      @media print {
-        @page { size: 80mm auto !important; margin: 0 !important; }
-      }
-    `;
-    document.head.appendChild(pageStyle);
-    document.body.classList.add('receipt-modal-open');
-
-    return () => {
-      document.body.classList.remove('receipt-modal-open');
-      document.getElementById(pageStyleId)?.remove();
-    };
-  }, [isOpen]);
-
-  const handlePrint = async () => {
+  const handlePrint = () => {
     if (isPrinting) return;
     setIsPrinting(true);
 
-    try {
-      // 1) بناء فاتورة مستقلة تماماً — CSS مدمج بداخلها بدون أي اعتماد على ستايلات التطبيق
-      const bodyHTML = buildReceiptBodyHTML(order, products, shortageMap);
+    document.getElementById('print-portal')?.remove();
+    document.getElementById('receipt-print-frame')?.remove();
 
-      // 2) قياس الارتفاع الفعلي بعد تحميل الخطوط واستقرار الرندر (القياس الخاطئ هو سبب القطع)
-      const measureFrame = document.createElement('iframe');
-      measureFrame.style.position = 'fixed';
-      measureFrame.style.top = '-99999px';
-      measureFrame.style.left = '-99999px';
-      measureFrame.style.width = '80mm';
-      // ⚠️ كان 4000px — documentElement.scrollHeight كان بيرجع ارتفاع الـ iframe نفسه
-      // (4000px) بدل ارتفاع الفاتورة → @page بيطول أكتر من الفاتورة → صفحات فاضية بعد الفاتورة.
-      // نقيس جوه iframe قصير: scrollHeight وقتها = ارتفاع محتوى الفاتورة الفعلي بالظبط.
-      measureFrame.style.height = '120px';
-      measureFrame.style.border = 'none';
-      measureFrame.style.visibility = 'hidden';
-      document.body.appendChild(measureFrame);
+    const iframe = document.createElement('iframe');
+    iframe.id = 'receipt-print-frame';
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText =
+      'position:fixed;top:0;left:0;width:0;height:0;border:0;visibility:hidden;pointer-events:none;';
+    document.body.appendChild(iframe);
 
-      let heightPx = 0;
+    const printWindow = iframe.contentWindow;
+    const doc = printWindow?.document;
+    if (!doc) {
+      window.print();
+      setTimeout(() => setIsPrinting(false), 2000);
+      return;
+    }
+
+    doc.open();
+    doc.write(buildBarReceiptDocument(order, products, shortageMap));
+    doc.close();
+
+    let done = false;
+    const cleanup = () => {
+      if (done) return;
+      done = true;
+      printWindow?.removeEventListener('afterprint', cleanup);
+      iframe.remove();
+      setTimeout(() => setIsPrinting(false), 1500);
+    };
+    printWindow?.addEventListener('afterprint', cleanup);
+
+    setTimeout(() => {
       try {
-        const measureWin = measureFrame.contentWindow;
-        const measureDoc = measureWin?.document;
-        if (!measureWin || !measureDoc) throw new Error('measure-frame-unavailable');
-
-        measureDoc.open();
-        measureDoc.write(wrapReceiptDocument(bodyHTML, null));
-        measureDoc.close();
-
-        // ننتظر تحميل الخطوط (Cairo) — بحّرس زمني 1.5 ثانية: لو promise الخطوط
-        // مش بيحل (iframe مخفي مثلاً) ما يعلّقش الطباعة كلها ومفيش ورق يطلع
-        await Promise.race([
-          (async () => { try { await measureWin.document.fonts.ready; } catch { /* تجاهل */ } })(),
-          new Promise((r) => setTimeout(r, 1500)),
-        ]);
-        await new Promise((r) => setTimeout(r, 250));
-
-        const receiptEl = measureDoc.getElementById('receipt');
-        const receiptHeight = receiptEl ? receiptEl.getBoundingClientRect().height : 0;
-        const bodyHeight = measureDoc.body?.scrollHeight ?? 0;
-        const docHeight = measureDoc.documentElement?.scrollHeight ?? 0;
-        // نستخدم الأكبر بين القياسات الثلاثة لضمان عدم قطع أي محتوى
-        heightPx = Math.max(receiptHeight, bodyHeight, docHeight);
-      } finally {
-        measureFrame.remove();
-      }
-
-      if (!heightPx || heightPx <= 0) heightPx = 300;
-
-      // تحويل البكسل إلى ملم (96px = 25.4mm) + 1mm هامش أمان لمنع قطع آخر سطر
-      const PX_PER_MM = 96 / 25.4;
-      const heightMm = Math.min(1500, Math.max(30, Math.ceil(heightPx / PX_PER_MM) + 1));
-
-      // تشخيص: تسجيل القياس الفعلي
-      setPrintInfo(`iframe · ${heightMm}mm`);
-      console.log(`[Receipt v2] heightPx=${heightPx.toFixed(1)} → page=${heightMm}mm`);
-
-      // 3) الطباعة عبر iframe معزول — حجم الصفحة @page مطابق تماماً لحجم الفاتورة
-      const oldFrame = document.getElementById('receipt-print-frame');
-      if (oldFrame) oldFrame.remove();
-
-      const printFrame = document.createElement('iframe');
-      printFrame.id = 'receipt-print-frame';
-      printFrame.setAttribute('title', 'فاتورة كافيه الفيشاوي');
-      printFrame.style.position = 'fixed';
-      printFrame.style.top = '0px';
-      printFrame.style.left = '0px';
-      printFrame.style.width = '80mm';
-      printFrame.style.height = `${Math.ceil(heightPx + 120)}px`;
-      printFrame.style.border = 'none';
-      printFrame.style.zIndex = '-99999';
-      printFrame.style.opacity = '0.01';
-      printFrame.style.pointerEvents = 'none';
-      document.body.appendChild(printFrame);
-
-      const printWin = printFrame.contentWindow;
-      const printDoc = printWin?.document;
-      if (!printWin || !printDoc) throw new Error('print-frame-unavailable');
-
-      printDoc.open();
-      printDoc.write(wrapReceiptDocument(bodyHTML, heightMm));
-      printDoc.close();
-
-      // نفس الحرس الزمني في مرحلة الطباعة الفعلية — لو الخطوط علّقت نكمل عادي
-      await Promise.race([
-        (async () => { try { await printWin.document.fonts.ready; } catch { /* تجاهل */ } })(),
-        new Promise((r) => setTimeout(r, 1500)),
-      ]);
-      await new Promise((r) => setTimeout(r, 300));
-
-      try {
-        printWin.focus();
-        printWin.print();
-      } catch {
-        setPrintInfo(`main-window · ${heightMm}mm`);
-        await printViaMainWindow(bodyHTML, heightMm);
-      }
-
-      // تنظيف مؤجل بعد انتهاء حوار الطباعة
-      setTimeout(() => printFrame.remove(), 60000);
-    } catch {
-      // آخر حلقة أمان: طباعة من النافذة الرئيسية بمقاس افتراضي
-      setPrintInfo('fallback · 200mm');
-      try {
-        await printViaMainWindow(buildReceiptBodyHTML(order, products, shortageMap), 200);
+        printWindow?.focus();
+        printWindow?.print();
       } catch {
         window.print();
       }
-    } finally {
-      setTimeout(() => setIsPrinting(false), 2000);
-    }
+      setTimeout(cleanup, 60000);
+    }, 250);
   };
-
-  // اعتراض Ctrl+P: أي طباعة أثناء فتح الفاتورة تمر تلقائياً عبر نظام الطباعة المستقل v2
-  // (حتى لو المستخدم ضغط Ctrl+P أو Print من قائمة المتصفح بدل زرار الطباعة)
-  React.useEffect(() => {
-    if (!isOpen) return undefined;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P')) {
-        e.preventDefault();
-        handlePrint();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, order, products, shortageMap]);
-
-  const formattedDate = formatDateTime(order.createdAt);
 
   const receiptItems = Array.isArray(order.items) ? order.items : [];
   const totalItemsCount = receiptItems.reduce((acc, item) => acc + (item?.quantity || 0), 0);
@@ -457,18 +283,13 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
 
   const hasAnyShortage = shortagesPerProduct.size > 0;
 
-  // قائمة موحّدة بكل الخامات الناقصة فريدة في الفاتورة
-  const uniqueShortageIngredients = Array.from(
-    new Set(Array.from(shortagesPerProduct.values()).flat())
-  );
-
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto flex justify-center p-4 min-h-screen print:p-0 print:m-0 print:static print:min-h-0 print:block">
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/50 backdrop-blur-xs print:hidden" onClick={onClose} />
 
       {/* Modal Dialog */}
-      <div className="relative bg-white rounded-3xl shadow-2xl border border-gray-100 w-full max-w-md p-5 z-10 text-right animate-in fade-in zoom-in-95 duration-150 my-auto print:my-0 print:p-0 print:border-none print:shadow-none print:rounded-none print:w-auto print:max-w-none">
+      <div className="relative bg-white rounded-3xl shadow-2xl border border-gray-100 w-full max-w-lg p-5 z-10 text-right animate-in fade-in zoom-in-95 duration-150 my-auto print:my-0 print:p-0 print:border-none print:shadow-none print:rounded-none print:w-auto print:max-w-none">
         <button
           onClick={onClose}
           className="absolute top-4 left-4 text-red-600 bg-red-50 hover:text-white hover:bg-red-600 border border-red-200 p-1.5 rounded-xl transition-colors print:hidden"
@@ -483,32 +304,32 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
           <span>معاينة الفاتورة — مشاهدة فقط</span>
         </div>
 
-        {/* معاينة الفاتورة داخل إطار عرض — للشاشة فقط (الطباعة بتتم عبر iframe مستقل) */}
-        <div className="rounded-2xl border border-gray-200/80 bg-[#faf8f5] p-2.5 print:p-0 print:border-none print:bg-white print:rounded-none">
+        {/* معاينة الفاتورة للشاشة — الطباعة الفعلية تتم عبر iframe معزول بفاتورة البار (صنف + عدد) */}
+        <div className="rounded-2xl border border-gray-200/80 bg-[#faf8f5] p-2.5 flex justify-center print:block print:p-0 print:border-none print:bg-white print:rounded-none">
         {/* Printable Receipt Section */}
-        <div id="printable-receipt" className="relative text-black font-sans p-3 print:p-0 text-right bg-white rounded-xl border border-gray-200/60 shadow-sm print:rounded-none print:shadow-none print:border-none" dir="rtl">
+        <div id="printable-receipt" className="relative w-full text-black font-sans p-4 print:p-0 print:w-auto text-right bg-white rounded-xl border border-gray-200/60 shadow-sm print:rounded-none print:shadow-none print:border-none" dir="rtl">
 
           {/* Cafe Header */}
           <div className="text-center pb-3 border-b border-dashed border-gray-300">
-            <h2 className="text-xl font-black font-arabic-heading text-gray-900 tracking-wide">
+            <h2 className="text-3xl font-black font-arabic-heading text-gray-900 tracking-wide">
               كافيه الفيشاوي
             </h2>
-            <p className="text-[10px] font-bold text-gray-400 mt-0.5">فاتورة مبيعات — نقطة البيع</p>
+            <p className="text-xs font-bold text-gray-400 mt-1">فاتورة مبيعات — نقطة البيع</p>
 
             {/* رقم الفاتورة والطاولة — شرائح */}
             <div className="mt-2.5 flex items-center justify-center gap-1.5 flex-wrap" dir="rtl">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#2e5b9f]/10 border border-[#2e5b9f]/20 text-[#2e5b9f] text-[11px] font-black">
-                <span>رقم الفاتورة:</span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#2e5b9f]/10 border border-[#2e5b9f]/20 text-[#2e5b9f] text-sm font-black">
+                <span>رقم الفاتورة :  </span>
                 <strong className="font-mono">{String(order.orderNumber || order._id || '').slice(-6)}</strong>
               </span>
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 border border-gray-200 text-gray-700 text-[11px] font-black">
-                <span>طاولة:</span>
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-100 border border-gray-200 text-gray-700 text-sm font-black">
+                <span>طاولة : </span>
                 <strong className="font-mono">{order.tableNumber || '—'}</strong>
               </span>
             </div>
 
             {/* التاريخ والوقت */}
-            <div className="mt-2 flex items-center justify-center gap-2 text-[11px] font-bold text-gray-500 font-mono" dir="rtl">
+            <div className="mt-2.5 flex items-center justify-center gap-2 text-sm font-bold text-gray-500 font-mono" dir="rtl">
               <span>{formatDate(order.createdAt)}</span>
               <span className="w-1 h-1 rounded-full bg-gray-300" />
               <span>{formatTime(order.createdAt)}</span>
@@ -518,7 +339,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
               const cleanNotes = getCleanNotes(order.notes);
               if (!cleanNotes) return null;
               return (
-                <div className="mt-2.5 bg-amber-50/70 border border-amber-200/70 p-1.5 rounded-lg text-[11px] text-amber-900 text-right font-bold">
+                <div className="mt-2.5 bg-amber-50/70 border border-amber-200/70 p-2 rounded-lg text-xs text-amber-900 text-right font-bold">
                   <span className="font-black">ملاحظات:</span> <span className="mr-1">{cleanNotes}</span>
                 </div>
               );
@@ -527,7 +348,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
 
           {/* بانر العجز الثانوي */}
           {hasAnyShortage && (
-            <div className="my-2.5 bg-rose-50/80 border border-rose-200 rounded-xl p-2.5 text-xs font-bold text-gray-800">
+            <div className="my-2.5 bg-rose-50/80 border border-rose-200 rounded-xl p-3 text-sm font-bold text-gray-800">
               <div className="flex items-center gap-1.5 text-rose-700 font-black mb-1">
                 <AlertTriangle className="w-3.5 h-3.5" />
                 <span>تنبيه: عجز في مواد الفاتورة</span>
@@ -541,11 +362,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             </div>
           )}
 
-          {/* جدول الأصناف */}
+          {/* جدول الأصناف — العدد في خانة واضحة ببوكس مميز */}
           <div className="py-3 border-b border-dashed border-gray-300">
-            <div className="flex justify-between text-[10px] font-black text-gray-400 tracking-wide mb-1" dir="rtl">
+            <div className="flex items-center justify-between text-xs font-black text-gray-500 tracking-wide mb-2" dir="rtl">
               <span className="flex-1 text-right">الصنف</span>
-              <span className="w-20 text-left">الإجمالي</span>
+              <span className="w-20 shrink-0 text-center">العدد</span>
+              <span className="w-24 shrink-0 text-left">الإجمالي</span>
             </div>
 
             <div className="space-y-2.5">
@@ -559,21 +381,25 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
                 const hasShortage = itemShortages && itemShortages.length > 0;
 
                 return (
-                  <div key={idx} dir="rtl" className="flex items-start justify-between gap-2">
+                  <div key={idx} dir="rtl" className="flex items-center justify-between gap-2">
                     <div className="flex-1 min-w-0 text-right">
-                      <div className="text-sm font-black text-gray-900 leading-snug">
+                      <div className="text-base font-black text-gray-900 leading-snug">
                         {hasShortage && '⚠️ '}{prodName}
                       </div>
-                      <div className="text-[11px] text-gray-500 font-bold font-mono mt-0.5">
-                        {formatNumber(item.quantity)} × {formatNumber(item.price)} جنيه
+                      <div className="text-xs text-gray-500 font-bold font-mono mt-0.5">
+                        {formatNumber(item.price)} جنيه للقطعة
                       </div>
                       {hasShortage && (
-                        <div className="text-[11px] font-black text-rose-600 mt-0.5">
+                        <div className="text-xs font-black text-rose-600 mt-0.5">
                           ⚠️ نافذ: {itemShortages!.join(' — ')}
                         </div>
                       )}
                     </div>
-                    <span className="w-20 shrink-0 text-left font-mono text-sm font-black text-gray-900">
+                    {/* ✅ خانة العدد — بوكس عريض بخط كبير، نفس شكل الفاتورة المطبوعة */}
+                    <span className="w-20 shrink-0 text-center font-mono text-xl font-black text-gray-900 bg-gray-100 border-2 border-gray-900 rounded-lg px-1 py-0.5 leading-none">
+                      {formatNumber(item.quantity)}
+                    </span>
+                    <span className="w-24 shrink-0 text-left font-mono text-base font-black text-gray-900">
                       {formatPrice(item.price * item.quantity)}
                     </span>
                   </div>
@@ -584,21 +410,21 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
 
           {/* قسم الإجمالي والفوتر — الإجمالي ظاهر على الشاشة فقط (فاتورة الطباعة للبار بدون مبلغ) */}
           <div>
-            <div className="pt-3 space-y-1.5">
-              <div className="flex justify-between text-xs font-bold text-gray-500" dir="rtl">
+            <div className="pt-3 space-y-2">
+              <div className="flex justify-between text-sm font-bold text-gray-500" dir="rtl">
                 <span>إجمالي عدد القطع</span>
                 <span className="font-mono">{formatNumber(totalItemsCount)} قطعة</span>
               </div>
-              <div className="flex justify-between items-center bg-[#2e5b9f]/5 border border-[#2e5b9f]/15 rounded-xl px-3 py-2.5 mt-1" dir="rtl">
-                <span className="text-sm font-black text-gray-900">المطلوب سداده</span>
-                <span className="font-mono text-xl font-black text-[#2e5b9f]">
+              <div className="flex justify-between items-center bg-[#2e5b9f]/5 border border-[#2e5b9f]/15 rounded-xl px-3 py-3 mt-1" dir="rtl">
+                <span className="text-base font-black text-gray-900">المطلوب سداده</span>
+                <span className="font-mono text-2xl font-black text-[#2e5b9f]">
                   {formatPrice(order.totalAmount)}
                 </span>
               </div>
             </div>
 
             <div className="mt-3 text-center">
-              <p className="text-[11px] font-bold text-gray-400">أهلاً وسهلاً بكم دائماً في كافيه الفيشاوي</p>
+              <p className="text-xs font-bold text-gray-400">أهلاً وسهلاً بكم دائماً في كافيه الفيشاوي</p>
             </div>
           </div>
         </div>

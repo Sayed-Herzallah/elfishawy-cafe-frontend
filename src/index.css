@@ -88,79 +88,214 @@ input[type='number'] {
   @apply ring-2 ring-[#2e5b9f]/20 bg-[#faf8f5];
 }
 
-/* Print Styles */
+/* Print Styles — print-portal approach avoids all modal layout constraints */
 @media print {
   @page {
-    size: portrait;
+    size: 72mm 297mm;
     margin: 0mm !important;
   }
 
   html, body {
-    width: 80mm !important;
-    max-width: 80mm !important;
+    width: 72mm !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
     margin: 0 !important;
     padding: 0 !important;
     background: #ffffff !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
-  }
-
-  /*
-    طباعة الفاتورة من النافذة الرئيسية (Ctrl+P / fallback):
-    لما فاتورة تكون مفتوحة (body.receipt-modal-open):
-    1) أي عنصر مفيش جواه الفاتورة يتمسح من الـ layout نهائياً
-       - مفيش صفحات بيضاء إضافية ولا فراغات.
-    2) حاويات المودال يتم إلغاء تمركزها تماماً لتلتصق الفاتورة بأعلى الورقة.
-  */
-  body.receipt-modal-open:not(.receipt-main-print) {
-    display: block !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    background: #ffffff !important;
-    min-height: 0 !important;
-    height: auto !important;
     overflow: visible !important;
   }
 
-  body.receipt-modal-open:not(.receipt-main-print) :not(:has(#printable-receipt)):not(#printable-receipt):not(#printable-receipt *) {
+  /* إخفاء التطبيق بالكامل أثناء الطباعة حتى لا يترك مساحات بيضاء فارغة */
+  body > *:not(#print-portal) {
     display: none !important;
   }
 
-  body.receipt-modal-open:not(.receipt-main-print) :has(#printable-receipt) {
+  /* حاوية الفاتورة تملأ الورقة وتبدأ من أول ملليمتر وبطول طبيعي كامل */
+  #print-portal {
     display: block !important;
     position: static !important;
-    inset: auto !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    transform: none !important;
-    border: none !important;
-    box-shadow: none !important;
-    background: transparent !important;
-    min-height: 0 !important;
-    height: auto !important;
-    overflow: visible !important;
-    flex: none !important;
-    align-items: flex-start !important;
-    justify-content: flex-start !important;
-  }
-
-  body.receipt-modal-open:not(.receipt-main-print) #printable-receipt {
     width: 70mm !important;
     max-width: 70mm !important;
-    position: fixed !important;
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
     margin: 0 auto !important;
-    padding: 2mm 2.5mm 2mm 2.5mm !important;
+    padding: 0 1mm 15mm 1mm !important;
     background: #ffffff !important;
     color: #000000 !important;
-    display: block !important;
-    page-break-after: avoid !important;
-    page-break-inside: avoid !important;
+    overflow: visible !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    page-break-inside: auto !important;
   }
 
-  /* إخفاء أزرار الطباعة والعناصر غير المطلوبة */
+  #print-portal #receipt {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    page-break-inside: auto !important;
+  }
+
+  #print-portal .r-header {
+    margin: 0;
+    padding: 0 0 1.5mm 0;
+    text-align: center;
+    border-bottom: 0.6mm solid #000000;
+  }
+
+  #print-portal .r-title {
+    margin: 0;
+    font-size: 14pt;
+    font-weight: 900;
+    line-height: 1.2;
+  }
+
+  #print-portal .r-invoice-row {
+    margin-top: 1.5mm;
+    border: 0.5mm solid #000000;
+    border-radius: 2mm;
+    padding: 1mm 2mm;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 8.5pt;
+    font-weight: 800;
+  }
+
+  #print-portal .r-dt-row {
+    margin-top: 1.2mm;
+    padding: 0 1mm;
+    display: flex;
+    justify-content: space-between;
+    font-size: 8.5pt;
+    font-weight: 800;
+  }
+
+  #print-portal .r-notes {
+    margin-top: 1.2mm;
+    border: 0.35mm solid #000000;
+    border-radius: 1.5mm;
+    padding: 1mm 1.5mm;
+    font-size: 8.5pt;
+    font-weight: 700;
+    text-align: right;
+  }
+
+  #print-portal .r-shortage {
+    margin-top: 1.5mm;
+    border: 0.5mm solid #000000;
+    background: #f3f4f6;
+    padding: 1.5mm;
+    font-size: 8.5pt;
+    font-weight: 700;
+    text-align: right;
+  }
+
+  #print-portal .r-shortage-title {
+    color: #b91c1c;
+    font-weight: 900;
+    margin-bottom: 0.8mm;
+  }
+
+  #print-portal .r-shortage-missing {
+    color: #b91c1c;
+    font-weight: 900;
+  }
+
+  #print-portal .r-items {
+    padding: 1.5mm 0;
+    border-bottom: 0.6mm solid #000000;
+  }
+
+  #print-portal .r-items-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 3mm;
+    font-size: 9pt;
+    font-weight: 900;
+    border-bottom: 0.5mm solid #000000;
+    padding-bottom: 1mm;
+    margin-bottom: 0.5mm;
+  }
+
+  #print-portal .r-items-head .r-name {
+    flex: 1;
+    text-align: right;
+  }
+
+  #print-portal .r-items-head .r-amt {
+    min-width: 20mm;
+    max-width: 22mm;
+    text-align: center;
+    border: none;
+    padding: 0;
+  }
+
+  #print-portal .r-item {
+    padding: 1.2mm 0;
+    border-bottom: 0.25mm dashed #999999;
+  }
+
+  #print-portal .r-item:last-child {
+    border-bottom: none;
+  }
+
+  #print-portal .r-item-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 3mm;
+    font-size: 10pt;
+    font-weight: 900;
+  }
+
+  #print-portal .r-name {
+    flex: 1;
+    text-align: right;
+    font-size: 10.5pt;
+    font-weight: 900;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+
+  #print-portal .r-amt {
+    min-width: 20mm;
+    max-width: 22mm;
+    text-align: center;
+    font-weight: 900;
+    font-size: 14pt;
+    line-height: 1.1;
+    white-space: nowrap;
+    border: 0.6mm solid #000000;
+    border-radius: 2mm;
+    padding: 0.8mm 1mm;
+  }
+
+  #print-portal .r-warn {
+    color: #b91c1c;
+    font-size: 8pt;
+    font-weight: 900;
+    margin-top: 0.5mm;
+    text-align: right;
+  }
+
+  #print-portal .r-totals {
+    padding: 1.5mm 1mm 0;
+  }
+
+  #print-portal .r-count-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 1mm;
+    font-size: 11pt;
+    font-weight: 900;
+  }
+
+  /* إخفاء أي أزرار متبقية */
   .print\:hidden {
     display: none !important;
   }
