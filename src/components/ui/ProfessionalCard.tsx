@@ -62,6 +62,18 @@ const statusStyles: Record<CardStatus, { bg: string; text: string; border: strin
   draft: { bg: 'bg-gray-50', text: 'text-gray-800', border: 'border-gray-200', icon: <FileText className="w-3.5 h-3.5" /> },
 };
 
+/** تسميات الحالة بالعربي — بدل عرض القيم الإنجليزية الخام (completed/pending...) */
+const statusLabels: Record<CardStatus, string> = {
+  pending: 'قيد التحضير',
+  completed: 'مكتمل',
+  cancelled: 'ملغي',
+  processing: 'جاري المعالجة',
+  low: 'منخفض',
+  out: 'نافد',
+  available: 'متوفر',
+  draft: 'مسودة',
+};
+
 const variantIcons: Record<CardVariant, ReactNode> = {
   default: <Box className="w-5 h-5" />,
   invoice: <FileText className="w-5 h-5" />,
@@ -160,7 +172,7 @@ const handleClick = (e: React.MouseEvent) => {
             </div>
             <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}>
               {statusStyle.icon}
-              <span className="ml-1">{status}</span>
+              <span className="ml-1">{statusLabels[status] || status}</span>
             </span>
           </div>
         </div>
@@ -202,7 +214,7 @@ const handleClick = (e: React.MouseEvent) => {
               className={`inline-flex items-center gap-1 shrink-0 font-bold rounded-full border px-2 py-0.5 text-[10px] ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
             >
               {statusStyle.icon}
-              <span className="capitalize">{status}</span>
+              <span>{statusLabels[status] || status}</span>
             </span>
           </div>
 
@@ -276,7 +288,7 @@ const handleClick = (e: React.MouseEvent) => {
                 className={`inline-flex items-center gap-1 font-bold rounded-full border px-2.5 py-1 text-xs ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
               >
                 {statusStyle.icon}
-                <span className="ml-1 capitalize">{status}</span>
+                <span className="ml-1">{statusLabels[status] || status}</span>
               </span>
             </div>
           </div>

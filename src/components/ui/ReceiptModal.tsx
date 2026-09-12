@@ -47,7 +47,7 @@ const RECEIPT_RULES: Array<[string, string]> = [
   ['.r-name', 'flex: 1; text-align: right;'],
   ['.r-amt', 'width: 14mm; text-align: left; font-weight: 900; white-space: nowrap;'],
   ['.r-totals', 'padding: 1mm 2mm; border-bottom: 0.6mm solid #000000;'],
-  ['.r-count-total', 'display: flex; justify-content: space-between; align-items: center; border-top: 0.6mm solid #000000; padding-top: 1mm; font-size: 10.5pt; font-weight: 900;'],
+  ['.r-count-total', 'display: flex; justify-content: space-between; align-items: center; padding-top: 1mm; font-size: 10.5pt; font-weight: 900;'],
   ['.r-warn', 'color: #b91c1c; font-size: 8pt; font-weight: 900; margin-top: 0.5mm; text-align: right;'],
 ];
 
@@ -308,7 +308,10 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       measureFrame.style.top = '-99999px';
       measureFrame.style.left = '-99999px';
       measureFrame.style.width = '80mm';
-      measureFrame.style.height = '4000px';
+      // ⚠️ كان 4000px — documentElement.scrollHeight كان بيرجع ارتفاع الـ iframe نفسه
+      // (4000px) بدل ارتفاع الفاتورة → @page بيطول أكتر من الفاتورة → صفحات فاضية بعد الفاتورة.
+      // نقيس جوه iframe قصير: scrollHeight وقتها = ارتفاع محتوى الفاتورة الفعلي بالظبط.
+      measureFrame.style.height = '120px';
       measureFrame.style.border = 'none';
       measureFrame.style.visibility = 'hidden';
       document.body.appendChild(measureFrame);
@@ -323,8 +326,12 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
         measureDoc.write(wrapReceiptDocument(bodyHTML, null));
         measureDoc.close();
 
-        // ننتظر تحميل الخطوط (Cairo) ثم هامش استقرار بسيط قبل القياس
-        try { await measureWin.document.fonts.ready; } catch { /* تجاهل */ }
+        // ننتظر تحميل الخطوط (Cairo) — بحّرس زمني 1.5 ثانية: لو promise الخطوط
+        // مش بيحل (iframe مخفي مثلاً) ما يعلّقش الطباعة كلها ومفيش ورق يطلع
+        await Promise.race([
+          (async () => { try { await measureWin.document.fonts.ready; } catch { /* تجاهل */ } })(),
+          new Promise((r) => setTimeout(r, 1500)),
+        ]);
         await new Promise((r) => setTimeout(r, 250));
 
         const receiptEl = measureDoc.getElementById('receipt');
@@ -358,7 +365,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       printFrame.style.top = '0px';
       printFrame.style.left = '0px';
       printFrame.style.width = '80mm';
-      printFrame.style.height = `${Math.ceil(heightPx + 60)}px`;
+      printFrame.style.height = `${Math.ceil(heightPx + 120)}px`;
       printFrame.style.border = 'none';
       printFrame.style.zIndex = '-99999';
       printFrame.style.opacity = '0.01';
@@ -373,7 +380,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       printDoc.write(wrapReceiptDocument(bodyHTML, heightMm));
       printDoc.close();
 
-      try { await printWin.document.fonts.ready; } catch { /* تجاهل */ }
+      // نفس الحرس الزمني في مرحلة الطباعة الفعلية — لو الخطوط علّقت نكمل عادي
+      await Promise.race([
+        (async () => { try { await printWin.document.fonts.ready; } catch { /* تجاهل */ } })(),
+        new Promise((r) => setTimeout(r, 1500)),
+      ]);
       await new Promise((r) => setTimeout(r, 300));
 
       try {
@@ -473,34 +484,42 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
         </div>
 
         {/* معاينة الفاتورة داخل إطار عرض — للشاشة فقط (الطباعة بتتم عبر iframe مستقل) */}
-        <div className="rounded-2xl border border-gray-200 bg-[#faf8f5] p-2 print:p-0 print:border-none print:bg-white print:rounded-none">
+        <div className="rounded-2xl border border-gray-200/80 bg-[#faf8f5] p-2.5 print:p-0 print:border-none print:bg-white print:rounded-none">
         {/* Printable Receipt Section */}
-        <div id="printable-receipt" className="text-black font-sans p-2 print:p-0 text-right bg-white" dir="rtl">
+        <div id="printable-receipt" className="relative text-black font-sans p-3 print:p-0 text-right bg-white rounded-xl border border-gray-200/60 shadow-sm print:rounded-none print:shadow-none print:border-none" dir="rtl">
 
           {/* Cafe Header */}
-          <div className="text-center pb-1.5 border-b-2 border-black">
-            <h2 className="text-xl font-black font-arabic-heading text-black">
+          <div className="text-center pb-3 border-b border-dashed border-gray-300">
+            <h2 className="text-xl font-black font-arabic-heading text-gray-900 tracking-wide">
               كافيه الفيشاوي
             </h2>
+            <p className="text-[10px] font-bold text-gray-400 mt-0.5">فاتورة مبيعات — نقطة البيع</p>
 
-            {/* رقم الفاتورة والطاولة */}
-            <div className="mt-1 border-2 border-black rounded-lg py-0.5 px-2 flex items-center justify-between text-xs font-black text-black" dir="rtl">
-              <span>رقم الفاتورة: <strong className="font-mono text-sm font-black">{String(order.orderNumber || order._id || '').slice(-6)}</strong></span>
-              <span>طاولة: <strong className="font-mono text-sm font-black">{order.tableNumber || '—'}</strong></span>
+            {/* رقم الفاتورة والطاولة — شرائح */}
+            <div className="mt-2.5 flex items-center justify-center gap-1.5 flex-wrap" dir="rtl">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#2e5b9f]/10 border border-[#2e5b9f]/20 text-[#2e5b9f] text-[11px] font-black">
+                <span>رقم الفاتورة:</span>
+                <strong className="font-mono">{String(order.orderNumber || order._id || '').slice(-6)}</strong>
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 border border-gray-200 text-gray-700 text-[11px] font-black">
+                <span>طاولة:</span>
+                <strong className="font-mono">{order.tableNumber || '—'}</strong>
+              </span>
             </div>
 
             {/* التاريخ والوقت */}
-            <div className="mt-1 flex items-center justify-between text-xs font-black text-black px-1" dir="rtl">
-              <span>التاريخ: <strong className="font-mono font-black">{formatDate(order.createdAt)}</strong></span>
-              <span>الوقت: <strong className="font-mono font-black">{formatTime(order.createdAt)}</strong></span>
+            <div className="mt-2 flex items-center justify-center gap-2 text-[11px] font-bold text-gray-500 font-mono" dir="rtl">
+              <span>{formatDate(order.createdAt)}</span>
+              <span className="w-1 h-1 rounded-full bg-gray-300" />
+              <span>{formatTime(order.createdAt)}</span>
             </div>
 
             {(() => {
               const cleanNotes = getCleanNotes(order.notes);
               if (!cleanNotes) return null;
               return (
-                <div className="mt-1 border border-black p-1 rounded text-xs text-black text-right font-bold">
-                  <span>ملاحظات:</span> <span className="mr-1">{cleanNotes}</span>
+                <div className="mt-2.5 bg-amber-50/70 border border-amber-200/70 p-1.5 rounded-lg text-[11px] text-amber-900 text-right font-bold">
+                  <span className="font-black">ملاحظات:</span> <span className="mr-1">{cleanNotes}</span>
                 </div>
               );
             })()}
@@ -508,25 +527,28 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
 
           {/* بانر العجز الثانوي */}
           {hasAnyShortage && (
-            <div className="my-1.5 border-2 border-black bg-gray-100 p-1.5 text-xs font-bold text-black">
-              <div className="text-red-700 font-black mb-1">⚠️ تنبيه: عجز في مواد الفاتورة</div>
+            <div className="my-2.5 bg-rose-50/80 border border-rose-200 rounded-xl p-2.5 text-xs font-bold text-gray-800">
+              <div className="flex items-center gap-1.5 text-rose-700 font-black mb-1">
+                <AlertTriangle className="w-3.5 h-3.5" />
+                <span>تنبيه: عجز في مواد الفاتورة</span>
+              </div>
               {Array.from(shortagesPerProduct.entries()).map(([productName, shortages]) => (
-                <div key={productName} dir="rtl">
-                  <span>{productName}: </span>
-                  <span className="text-red-700 font-black">{shortages.join('، ')} (نافذ)</span>
+                <div key={productName} dir="rtl" className="leading-relaxed">
+                  <span className="font-black text-gray-900">{productName}: </span>
+                  <span className="text-rose-700 font-black">{shortages.join('، ')} (نافذ)</span>
                 </div>
               ))}
             </div>
           )}
 
           {/* جدول الأصناف */}
-          <div className="py-1.5 border-b-2 border-black">
-            <div className="flex justify-between text-xs font-black text-black mb-1 border-b-2 border-black pb-0.5" dir="rtl">
+          <div className="py-3 border-b border-dashed border-gray-300">
+            <div className="flex justify-between text-[10px] font-black text-gray-400 tracking-wide mb-1" dir="rtl">
               <span className="flex-1 text-right">الصنف</span>
-              <span className="w-20 text-left font-mono">الإجمالي</span>
+              <span className="w-20 text-left">الإجمالي</span>
             </div>
 
-            <div className="space-y-1">
+            <div className="space-y-2.5">
               {receiptItems.map((item, idx) => {
                 const prodName = resolveProductName(item);
                 const pId =
@@ -537,47 +559,46 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
                 const hasShortage = itemShortages && itemShortages.length > 0;
 
                 return (
-                  <div key={idx} dir="rtl" className="pb-0.5">
-                    <div className="flex justify-between items-center text-sm font-black text-black">
-                      <span className="flex-1 text-right">
+                  <div key={idx} dir="rtl" className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0 text-right">
+                      <div className="text-sm font-black text-gray-900 leading-snug">
                         {hasShortage && '⚠️ '}{prodName}
-                        {' '}({formatNumber(item.quantity)})
-                      </span>
-                      <span className="w-20 text-left font-mono text-sm font-black text-black">
-                        {formatPrice(item.price * item.quantity)}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-gray-600 font-bold font-mono leading-tight">
-                      {formatNumber(item.quantity)} × {formatNumber(item.price)} جنيه
-                    </div>
-                    {hasShortage && (
-                      <div className="text-xs font-black text-red-700 mt-0.5">
-                        ⚠️ نافذ: {itemShortages!.join(' — ')}
                       </div>
-                    )}
+                      <div className="text-[11px] text-gray-500 font-bold font-mono mt-0.5">
+                        {formatNumber(item.quantity)} × {formatNumber(item.price)} جنيه
+                      </div>
+                      {hasShortage && (
+                        <div className="text-[11px] font-black text-rose-600 mt-0.5">
+                          ⚠️ نافذ: {itemShortages!.join(' — ')}
+                        </div>
+                      )}
+                    </div>
+                    <span className="w-20 shrink-0 text-left font-mono text-sm font-black text-gray-900">
+                      {formatPrice(item.price * item.quantity)}
+                    </span>
                   </div>
                 );
               })}
             </div>
           </div>
 
-          {/* قسم الإجمالي والفوتر — شكل الفاتورة القديمة (الإجمالي ظاهر على الشاشة فقط) */}
+          {/* قسم الإجمالي والفوتر — الإجمالي ظاهر على الشاشة فقط (فاتورة الطباعة للبار بدون مبلغ) */}
           <div>
-            <div className="py-1.5 px-1 border-b-2 border-black space-y-0.5">
-              <div className="flex justify-between text-xs text-black font-black" dir="rtl">
-                <span>إجمالي عدد القطع:</span>
-                <span className="font-mono text-xs font-black pl-1">{formatNumber(totalItemsCount)} قطعة</span>
+            <div className="pt-3 space-y-1.5">
+              <div className="flex justify-between text-xs font-bold text-gray-500" dir="rtl">
+                <span>إجمالي عدد القطع</span>
+                <span className="font-mono">{formatNumber(totalItemsCount)} قطعة</span>
               </div>
-              <div className="flex justify-between items-center pt-1" dir="rtl">
-                <span className="text-sm font-black text-black">المطلوب سداده:</span>
-                <span className="font-mono text-xl font-black text-black pl-1">
+              <div className="flex justify-between items-center bg-[#2e5b9f]/5 border border-[#2e5b9f]/15 rounded-xl px-3 py-2.5 mt-1" dir="rtl">
+                <span className="text-sm font-black text-gray-900">المطلوب سداده</span>
+                <span className="font-mono text-xl font-black text-[#2e5b9f]">
                   {formatPrice(order.totalAmount)}
                 </span>
               </div>
             </div>
 
-            <div className="mt-1.5 text-center text-black">
-              <p className="text-xs font-black">أهلاً وسهلاً بكم دائماً في كافيه الفيشاوي</p>
+            <div className="mt-3 text-center">
+              <p className="text-[11px] font-bold text-gray-400">أهلاً وسهلاً بكم دائماً في كافيه الفيشاوي</p>
             </div>
           </div>
         </div>

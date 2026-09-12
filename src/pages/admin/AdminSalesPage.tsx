@@ -3,7 +3,6 @@ import { orderService, inventoryService } from '../../services/opsService';
 import { productService, recipeService } from '../../services/catalogService';
 import { Order, OrderStatus, Product } from '../../types';
 import { getOrderShortages, appendShortagesToNotes, extractShortagesFromNotes } from '../../utils/orderShortageJournal';
-import { Badge } from '../../components/ui/Badge';
 import { StatCard } from '../../components/ui/StatCard';
 import { ReceiptModal } from '../../components/ui/ReceiptModal';
 import { Modal } from '../../components/ui/Modal';
@@ -23,7 +22,6 @@ import {
   ReceiptText,
   Search,
   Printer,
-  Calendar,
   Filter,
   ChevronLeft,
   MoreVertical,
@@ -484,31 +482,20 @@ export const AdminSalesPage: React.FC = () => {
                   id={order._id}
                   status={statusStyle as any}
                   title={String(order.orderNumber || `طلب #${String(order._id || '').slice(-6)}`)}
-                  subtitle={`#${order._id.slice(-6)} • ${formatDate(order.createdAt)}`}
+                  subtitle={`${formatDate(order.createdAt)} • ${formatTime(order.createdAt)}`}
                   onClick={() => setSelectedReceiptOrder(order)}
                   onDoubleClick={() => setSelectedReceiptOrder(order)}
-                  amounts={{
-                    primary: formatNumber(order.totalAmount),
-                    currency: '',
-                  }}
+                  amounts={{ primary: Number(order.totalAmount) || 0 }}
                   metadata={[
                     { label: 'الطاولة', value: `#${order.tableNumber || '—'}`, icon: <ShoppingBag className="w-3.5 h-3.5" /> },
-                    { label: 'الوقت', value: formatTime(order.createdAt), icon: <Calendar className="w-3.5 h-3.5" /> },
-                    { label: 'عدد الأصناف', value: formatNumber(safeItems.length), icon: <ShoppingBag className="w-3.5 h-3.5" /> },
+                    { label: 'الأصناف', value: formatNumber(safeItems.length), icon: <ShoppingBag className="w-3.5 h-3.5" /> },
                   ]}
-                  tags={[`طاولة #${order.tableNumber || '—'}`]}
                   actions={[
-                    {
-                      icon: <Printer className="w-3.5 h-3.5" />,
-                      label: 'طباعة',
-                      onClick: (e) => { e.stopPropagation(); setSelectedReceiptOrder(order); },
-                      variant: 'primary',
-                    },
                     {
                       icon: <Eye className="w-3.5 h-3.5" />,
                       label: 'عرض',
                       onClick: (e) => { e.stopPropagation(); setSelectedReceiptOrder(order); },
-                      variant: 'default',
+                      variant: 'primary',
                     },
                     ...(order.status !== 'cancelled' ? [{
                       icon: <Edit2 className="w-3.5 h-3.5" />,
@@ -537,58 +524,24 @@ export const AdminSalesPage: React.FC = () => {
                     }] : []),
                   ]}
                 >
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-                    <div className="flex flex-col">
-                      <span className="text-gray-500">الطاولة</span>
-                      <span className="font-medium text-gray-900">
-                        #{order.tableNumber || '—'}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {itemsPreview}
+                    {remaining > 0 && (
+                      <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded text-[10px]">
+                        +{formatNumber(remaining)} المزيد
                       </span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-gray-500">الإجمالي</span>
-                      <span className="font-bold font-mono text-[#2e5b9f]">{formatPrice(order.totalAmount)}</span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-gray-500">الوقت</span>
-                      <span className="font-mono text-gray-700 text-[10px]">
-                        {formatTime(order.createdAt)}
+                    )}
+                    {hasShortage ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
+                        <AlertTriangle className="w-3 h-3" />
+                        عجز: {shortageItems.join('، ')}
                       </span>
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-gray-500">الحالة</span>
-                      <Badge
-                        variant={
-                          order.status === 'completed' ? 'completed' :
-                          order.status === 'pending' ? 'pending' : 'cancelled'
-                        }
-                        size="sm"
-                      >
-                        {order.status === 'completed' ? 'مكتمل' :
-                         order.status === 'pending' ? 'قيد التحضير' : 'ملغي'}
-                      </Badge>
-                    </div>
-                    {/* ✅ حالة المكونات للموبايل */}
-                    <div className="sm:col-span-2 flex items-center gap-1">
-                      {hasShortage ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
-                          <AlertTriangle className="w-3 h-3" />
-                          عجز ثانوي: {shortageItems.join('، ')}
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
-                          <CheckCircle2 className="w-3 h-3" />
-                          مكتمل المكونات
-                        </span>
-                      )}
-                    </div>
-                    <div className="sm:col-span-2 flex flex-wrap gap-1">
-                      {itemsPreview}
-                      {remaining > 0 && (
-                        <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded text-[10px]">
-                          +{formatNumber(remaining)} المزيد
-                        </span>
-                      )}
-                    </div>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                        <CheckCircle2 className="w-3 h-3" />
+                        مكتمل المكونات
+                      </span>
+                    )}
                   </div>
                 </OrderCard>
               );

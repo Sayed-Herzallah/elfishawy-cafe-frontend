@@ -1376,9 +1376,22 @@ export const AdminProductsPage: React.FC = () => {
                         })()}
                       </span>
                     ) : (
-                      <span className="text-purple-700 font-medium flex items-center gap-1">
-                        <Info className="w-3.5 h-3.5" />
-                        خامة مساعدة (مثل السكر) — تُخصم من المخزن مع كل طلب ولا تقيّد رصيد الأكواب
+                      <span className="text-purple-700 font-medium flex items-center gap-1 flex-wrap">
+                        <Info className="w-3.5 h-3.5 shrink-0" />
+                        {(() => {
+                          if (!selectedInv || !Number(row.consumeQty)) {
+                            return 'خامة مساعدة (مثل السكر) — تُخصم من المخزن مع كل طلب، وأدخل كمية الاستهلاك لمعرفة العدد الجاهز للبيع قبل العجز';
+                          }
+                          const invBase = getQtyInBase(selectedInv.quantity, selectedInv.unit);
+                          const repaired = repairConsumeQty(Number(row.consumeQty), row.consumeUnit || 'GRAM', selectedInv.quantity, selectedInv.unit, 1);
+                          const consumeBase = getQtyInBase(repaired.qty, repaired.unit);
+                          if (consumeBase <= 0) return 'خامة مساعدة (مثل السكر) — أدخل كمية استهلاك صحيحة';
+                          const cups = Math.floor(invBase / consumeBase);
+                          if (cups <= 0) {
+                            return `نافذة الآن — رصيد ${selectedInv.name} (${formatNumber(selectedInv.quantity)} ${selectedInv.unit}) لا يكفي كوب واحد`;
+                          }
+                          return `جاهزة للبيع: ${formatNumber(cups)} كوب (عجز ${selectedInv.name} بعد ${formatNumber(cups)} كوب)`;
+                        })()}
                       </span>
                     )}
                   </div>

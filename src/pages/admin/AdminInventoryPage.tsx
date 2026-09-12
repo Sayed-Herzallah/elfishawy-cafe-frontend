@@ -570,18 +570,23 @@ export const AdminInventoryPage: React.FC = () => {
 return (
                      <div
                        key={item._id}
-                       className="bg-[#faf8f5]/50 border border-gray-200/60 rounded-2xl p-4 space-y-3 text-right"
+                       className="bg-white border border-gray-200/70 rounded-2xl p-4 space-y-3 text-right shadow-2xs hover:shadow-sm hover:border-[#2e5b9f]/30 transition"
                        onClick={() => setViewingItem(item)}
                      >
                       <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="font-bold text-gray-900 text-sm block">{item.name}</span>
-                          {item.lastRestocked && (
-                            <span className="text-[10px] text-gray-400 font-mono mt-0.5 block">
-                              آخر تعديل: {formatDate(item.lastRestocked)}
-                              {restockerName ? ` • ${restockerName}` : ''}
-                            </span>
-                          )}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`w-9 h-9 shrink-0 rounded-xl flex items-center justify-center border ${isOut ? 'bg-rose-50 text-rose-600 border-rose-200/60' : isLow ? 'bg-amber-50 text-amber-600 border-amber-200/60' : 'bg-[#2e5b9f]/10 text-[#2e5b9f] border-[#2e5b9f]/15'}`}>
+                            <Boxes className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0">
+                            <span className="font-bold text-gray-900 text-sm block truncate">{item.name}</span>
+                            {item.lastRestocked && (
+                              <span className="text-[10px] text-gray-400 font-mono mt-0.5 block truncate">
+                                آخر توريد: {formatDate(item.lastRestocked)}
+                                {restockerName ? ` • ${restockerName}` : ''}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <Badge
                           variant={isOut ? 'out' : isLow ? 'low' : 'available'}
@@ -591,31 +596,32 @@ return (
                         </Badge>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3 pt-2.5 border-t border-gray-100 text-xs">
-                        <div>
-                          <span className="text-[10px] text-gray-400 block mb-0.5">الكمية الحالية</span>
-                          <span className="font-bold text-gray-900 font-mono">
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="bg-[#faf8f5] rounded-xl px-2.5 py-2 text-center">
+                          <span className="text-[9px] font-bold text-gray-400 block mb-0.5">الكمية الحالية</span>
+                          <span className="font-black text-gray-900 font-mono text-xs">
                             {formatNumber(item.quantity)} {item.unit}
                           </span>
                         </div>
-                        <div>
-                          <span className="text-[10px] text-gray-400 block mb-0.5">حد الأمان</span>
-                          <span className="font-bold text-gray-700 font-mono text-sm">
+                        <div className="bg-[#faf8f5] rounded-xl px-2.5 py-2 text-center">
+                          <span className="text-[9px] font-bold text-gray-400 block mb-0.5">حد الأمان</span>
+                          <span className="font-black text-gray-700 font-mono text-xs">
                             {formatNumber(item.minLimit)} {item.unit}
                           </span>
                         </div>
-                        <div className="col-span-2 text-left">
-                          <span className="text-[10px] text-gray-400 block mb-0.5">التكلفة الإجمالية المستثمرة</span>
-                          <span className={`font-bold font-mono ${costInfo.total > 0 ? 'text-[#2e5b9f]' : 'text-gray-300'}`}>
-                            {costInfo.total > 0 ? formatPrice(costInfo.total) : '—'}
-                          </span>
-                          {costInfo.hasPurchases && (
-                            <span className="text-[10px] text-gray-400 font-sans block">
-                              {formatNumber(costInfo.count)} فاتورة شراء • {formatNumber(costInfo.qty)} {item.unit}
-                            </span>
-                          )}
-                        </div>
                       </div>
+
+                      <div className="flex items-center justify-between bg-[#2e5b9f]/5 border border-[#2e5b9f]/15 rounded-xl px-3 py-2 gap-2">
+                        <span className="text-[10px] font-bold text-[#2e5b9f]">التكلفة الإجمالية المستثمرة</span>
+                        <span className={`font-black font-mono text-sm ${costInfo.total > 0 ? 'text-[#2e5b9f]' : 'text-gray-300'}`}>
+                          {costInfo.total > 0 ? formatPrice(costInfo.total) : '—'}
+                        </span>
+                      </div>
+                      {costInfo.hasPurchases && (
+                        <p className="text-[9px] text-gray-400 text-left -mt-1.5 font-medium">
+                          محسوبة من {formatNumber(costInfo.count)} فاتورة شراء • {formatNumber(costInfo.qty)} {item.unit}
+                        </p>
+                      )}
 
                       <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100/50">
 <button
