@@ -32,7 +32,6 @@ export const AdminCategoriesPage: React.FC = () => {
 
   const [formData, setFormData] = useState({
     name: '',
-    description: '',
   });
   const [formErrors, setFormErrors] = useState<{ name?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -61,7 +60,7 @@ export const AdminCategoriesPage: React.FC = () => {
   const handleOpenAddModal = () => {
     setEditingCategory(null);
     setFormErrors({});
-    setFormData({ name: '', description: '' });
+    setFormData({ name: '' });
     setIsFormSubmitted(false);
     setIsAddModalOpen(true);
   };
@@ -69,7 +68,7 @@ export const AdminCategoriesPage: React.FC = () => {
   const handleOpenEditModal = (cat: Category) => {
     setEditingCategory(cat);
     setFormErrors({});
-    setFormData({ name: cat.name, description: cat.description || '' });
+    setFormData({ name: cat.name });
     setIsFormSubmitted(false);
     setIsAddModalOpen(true);
   };
@@ -95,18 +94,17 @@ export const AdminCategoriesPage: React.FC = () => {
       setIsSubmitting(true);
       let res;
       if (editingCategory) {
-        res = await categoryService.updateCategory(editingCategory._id, formData.name.trim(), formData.description.trim());
+        res = await categoryService.updateCategory(editingCategory._id, formData.name.trim());
       } else {
         res = await categoryService.createCategory({
           name: formData.name.trim(),
-          description: formData.description.trim(),
         });
       }
 
       if (res.success) {
         showToast(editingCategory ? `تم تحديث التصنيف "${formData.name.trim()}" بنجاح` : `تم إنشاء التصنيف "${formData.name.trim()}" بنجاح`);
         setIsAddModalOpen(false);
-        setFormData({ name: '', description: '' });
+        setFormData({ name: '' });
         loadCategories();
       }
     } catch (err) {
@@ -135,9 +133,8 @@ export const AdminCategoriesPage: React.FC = () => {
     }
   };
 
-  const filteredCategories = categories.filter((c) => 
-    c.name.toLowerCase().includes(searchQuery.trim().toLowerCase()) ||
-    (c.description || '').toLowerCase().includes(searchQuery.trim().toLowerCase())
+  const filteredCategories = categories.filter((c) =>
+    c.name.toLowerCase().includes(searchQuery.trim().toLowerCase())
   );
 
   // Filter Dialog Config
@@ -148,7 +145,7 @@ export const AdminCategoriesPage: React.FC = () => {
         name: 'search',
         label: 'بحث',
         type: 'input' as const,
-        placeholder: 'اسم التصنيف أو الوصف...',
+        placeholder: 'اسم التصنيف...',
         defaultValue: searchQuery,
       },
     ],
@@ -197,7 +194,7 @@ export const AdminCategoriesPage: React.FC = () => {
             <Search className="w-4 h-4 text-gray-400 absolute right-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="ابحث باسم التصنيف أو الوصف — مثال: قهوة، حلويات، مخبوزات"
+              placeholder="ابحث باسم التصنيف — مثال: قهوة، حلويات، مخبوزات"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-[#faf8f5] hover:bg-white focus:bg-white border border-gray-200 rounded-xl pr-10 pl-3 py-2.5 text-sm text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-[#2e5b9f]/20 focus:border-[#2e5b9f]"
@@ -259,13 +256,6 @@ export const AdminCategoriesPage: React.FC = () => {
                       {cat.createdAt ? formatDate(cat.createdAt) : '—'}
                     </span>
                   </div>
-                  {cat.description ? (
-                    <p className="text-xs text-gray-600 font-normal line-clamp-2">
-                      {cat.description}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-gray-400 font-normal italic">لا يوجد وصف</p>
-                  )}
                   <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100/50">
                     <button
                       onClick={() => handleOpenEditModal(cat)}
@@ -293,7 +283,6 @@ export const AdminCategoriesPage: React.FC = () => {
                 <thead>
                   <tr className="border-b border-gray-100 text-gray-400 font-semibold">
                     <th className="pb-3 px-3">اسم التصنيف</th>
-                    <th className="pb-3 px-3">الوصف</th>
                     <th className="pb-3 px-3">تاريخ الإنشاء</th>
                     <th className="pb-3 px-3 text-left">الإجراء</th>
                   </tr>
@@ -303,10 +292,6 @@ export const AdminCategoriesPage: React.FC = () => {
                     <tr key={cat._id} className="hover:bg-[#faf8f5]/60 transition">
                       <td className="py-3.5 px-3">
                         <span className="font-bold text-gray-900 block">{cat.name}</span>
-                      </td>
-
-                      <td className="py-3.5 px-3 text-gray-600 max-w-xs truncate">
-                        {cat.description || <span className="text-gray-400">لا يوجد وصف</span>}
                       </td>
 
                       <td className="py-3.5 px-3 font-mono text-gray-500 text-[11px]">
@@ -366,19 +351,6 @@ export const AdminCategoriesPage: React.FC = () => {
             autoFocus
             isSubmitted={isFormSubmitted}
           />
-
-          <div>
-            <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-              الوصف (اختياري)
-            </label>
-            <textarea
-              rows={3}
-              placeholder="وصف مختصر للتصنيف..."
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full bg-[#faf8f5] hover:bg-white focus:bg-white border border-gray-200 rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#2e5b9f]/20 focus:border-[#2e5b9f]"
-            />
-          </div>
 
           <div className="pt-4 flex items-center justify-end gap-2 border-t border-gray-100">
             <Button

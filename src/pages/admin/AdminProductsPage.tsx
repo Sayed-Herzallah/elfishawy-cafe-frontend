@@ -56,8 +56,8 @@ export const AdminProductsPage: React.FC = () => {
 
   // Category Modal
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
-  const [categoryErrors, setCategoryErrors] = useState<{ name?: string; description?: string }>({});
+  const [categoryForm, setCategoryForm] = useState({ name: '' });
+  const [categoryErrors, setCategoryErrors] = useState<{ name?: string }>({});
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [isCategoryFormSubmitted, setIsCategoryFormSubmitted] = useState(false);
 
@@ -66,13 +66,12 @@ export const AdminProductsPage: React.FC = () => {
 
   const [formData, setFormData] = useState({
     name: '',
-    description: '',
     price: '',
     category: '',
     stockQuantity: '',
     imageFile: null as File | null,
   });
-  const [formErrors, setFormErrors] = useState<{ name?: string; description?: string; price?: string; category?: string; stockQuantity?: string; imageFile?: string }>({});
+  const [formErrors, setFormErrors] = useState<{ name?: string; price?: string; category?: string; stockQuantity?: string; imageFile?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFormSubmitted, setIsFormSubmitted] = useState(false);
 
@@ -280,7 +279,6 @@ export const AdminProductsPage: React.FC = () => {
     setComputedAvailable(null);
     setFormData({
       name: '',
-      description: '',
       price: '',
       category: categories[0]?._id || '',
       stockQuantity: '',
@@ -299,7 +297,6 @@ export const AdminProductsPage: React.FC = () => {
     const catId = typeof prod.category === 'string' ? prod.category : prod.category._id;
     setFormData({
       name: prod.name,
-      description: prod.description || '',
       price: String(prod.price),
       category: catId,
       stockQuantity: String(prod.stockQuantity),
@@ -368,16 +365,10 @@ export const AdminProductsPage: React.FC = () => {
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsCategoryFormSubmitted(true);
-    const errors: { name?: string; description?: string } = {};
+    const errors: { name?: string } = {};
 
     if (!categoryForm.name.trim()) {
       errors.name = 'اسم التصنيف مطلوب';
-    }
-    // ✅ وصف التصنيف إجباري — برسالة واضحة توضح المطلوب
-    if (!categoryForm.description.trim()) {
-      errors.description = 'وصف التصنيف مطلوب — اكتب سطراً يوضح ما يحتويه هذا التصنيف (مثال: مشروبات ساخنة زي الشاي والقهوة والأعشاب)';
-    } else if (categoryForm.description.trim().length < 5) {
-      errors.description = `الوصف قصير جداً (${categoryForm.description.trim().length} حرف) — اكتب 5 أحرف على الأقل لتوضيح محتوى التصنيف`;
     }
 
     if (Object.keys(errors).length > 0) {
@@ -392,13 +383,12 @@ export const AdminProductsPage: React.FC = () => {
       setIsAddingCategory(true);
       const res = await categoryService.createCategory({
         name: categoryForm.name.trim(),
-        description: categoryForm.description.trim(),
       });
 
       if (res.success) {
         showToast(`تم إنشاء التصنيف "${categoryForm.name.trim()}" بنجاح`);
         setIsCategoryModalOpen(false);
-        setCategoryForm({ name: '', description: '' });
+        setCategoryForm({ name: '' });
         loadData();
       }
     } catch (err) {
@@ -425,16 +415,10 @@ export const AdminProductsPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsFormSubmitted(true);
-    const errors: { name?: string; description?: string; price?: string; category?: string; stockQuantity?: string; imageFile?: string } = {};
+    const errors: { name?: string; price?: string; category?: string; stockQuantity?: string; imageFile?: string } = {};
 
     if (!formData.name.trim()) {
       errors.name = 'اسم المنتج مطلوب';
-    }
-    if (!formData.description.trim()) {
-      errors.description = 'وصف المنتج مطلوب';
-    }
-    if (formData.description.trim() && formData.description.trim().length < 2) {
-      errors.description = 'يجب أن يكون الوصف حرفين على الأقل';
     }
     if (!formData.price || Number(formData.price) <= 0) {
       errors.price = 'الرجاء إدخال سعر صحيح أكبر من صفر';
@@ -474,7 +458,6 @@ export const AdminProductsPage: React.FC = () => {
       setIsSubmitting(true);
       const data = new FormData();
       data.append('name', formData.name.trim());
-      data.append('description', formData.description.trim());
       data.append('price', formData.price);
       data.append('category', formData.category);
       const finalStockQty = recipeRows.length > 0 
@@ -595,8 +578,7 @@ export const AdminProductsPage: React.FC = () => {
     const matchesCat = activeCategory === 'all' || catId === activeCategory;
     const matchesSearch =
       searchQuery.trim() === '' ||
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.description || '').toLowerCase().includes(searchQuery.toLowerCase());
+      p.name.toLowerCase().includes(searchQuery.toLowerCase());
 
     let matchesStock = true;
     if (stockFilter === 'in') matchesStock = productStockState(p) === 'available';
@@ -647,7 +629,7 @@ export const AdminProductsPage: React.FC = () => {
           <Button
             onClick={() => {
               setCategoryErrors({});
-              setCategoryForm({ name: '', description: '' });
+              setCategoryForm({ name: '' });
               setIsCategoryModalOpen(true);
             }}
             variant="outline"
@@ -662,7 +644,7 @@ export const AdminProductsPage: React.FC = () => {
       <DashboardFilterBar
         searchValue={searchQuery}
         onSearchChange={setSearchQuery}
-        searchPlaceholder="ابحث باسم المنتج أو الوصف — مثال: كابتشينو، كرواسون"
+        searchPlaceholder="ابحث باسم المنتج — مثال: كابتشينو، كرواسون"
         groupLabel="الحالة:"
         periods={[
           { id: 'all', label: `الكل (${formatNumber(products.length)})` },
@@ -796,12 +778,6 @@ export const AdminProductsPage: React.FC = () => {
                         )}
                       </div>
                     </div>
-
-                    {prod.description && (
-                      <p className="text-[11px] text-gray-400 line-clamp-2">
-                        {prod.description}
-                      </p>
-                    )}
 
                     <div className="flex items-center justify-between pt-2.5 border-t border-gray-100 text-xs">
                       <div>
@@ -990,18 +966,29 @@ export const AdminProductsPage: React.FC = () => {
               />
               <div className="flex-1">
                 <h3 className="text-lg font-bold text-gray-900">{viewingProduct.name}</h3>
-                <p className="text-xs text-gray-500 mt-1">{viewingProduct.description || 'لا يوجد وصف'}</p>
               </div>
             </div>
 
-            {/* الأكواب المتاحة — بارز في الأعلى */}
+            {/* الأكواب المتاحة — تظهر فوراً من الرصيد المحفوظ، وتتحدث تلقائياً لما حساب الوصفة يرجع من السيرفر */}
             <div className="p-4 bg-gradient-to-l from-[#eef3fc] to-[#f5f8ff] rounded-2xl border border-[#c5d5f0] flex items-center justify-between">
               <div>
                 <span className="text-[11px] text-[#2e5b9f] font-bold block mb-0.5">الأكواب المتاحة (من المكونات الأساسية)</span>
-                <span className="text-3xl font-bold font-mono text-[#2e5b9f]">
-                  {recipeData ? formatNumber(recipeData.availableProductQty) : '…'}
-                </span>
-                <span className="text-sm text-[#2e5b9f] mr-1">كوب</span>
+                {(() => {
+                  const cupsNow = recipeData?.availableProductQty ?? viewingProduct.stockQuantity;
+                  if (Number(cupsNow) > 0) {
+                    return (
+                      <>
+                        <span className="text-3xl font-bold font-mono text-[#2e5b9f]">
+                          {formatNumber(cupsNow)}
+                        </span>
+                        <span className="text-sm text-[#2e5b9f] mr-1">كوب</span>
+                      </>
+                    );
+                  }
+                  return (
+                    <span className="text-xl font-bold text-gray-500">لا توجد أكواب</span>
+                  );
+                })()}
               </div>
               <div className="text-right">
                 <Badge
@@ -1418,24 +1405,6 @@ export const AdminProductsPage: React.FC = () => {
               </button>
             )}
           </div>
-          <div>
-            <label className={`block text-xs font-semibold mb-1.5 ${formErrors.description && isFormSubmitted ? 'text-rose-600 font-bold' : 'text-gray-700'}`}>
-              الوصف والمكونات *
-            </label>
-            <textarea
-              rows={2}
-              placeholder="وصف مختصر للمنتج يظهر في المنيو..."
-              value={formData.description}
-              onChange={(e) => {
-                setFormData({ ...formData, description: e.target.value });
-                if (formErrors.description) setFormErrors({ ...formErrors, description: undefined });
-              }}
-              className={`w-full bg-[#faf8f5] hover:bg-white focus:bg-white border rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#2e5b9f]/20 focus:border-[#2e5b9f] ${formErrors.description && isFormSubmitted ? 'border-rose-500 bg-rose-50/30' : 'border-gray-200'}`}
-            />
-            {formErrors.description && isFormSubmitted && (
-              <p className="text-[11px] text-rose-600 font-bold mt-1">⚠️ {formErrors.description}</p>
-            )}
-          </div>
 
           <div>
             <label className={`block text-xs font-semibold mb-1.5 ${formErrors.imageFile && isFormSubmitted ? 'text-rose-600 font-bold' : 'text-gray-700'}`}>
@@ -1519,34 +1488,6 @@ export const AdminProductsPage: React.FC = () => {
             autoFocus
             isSubmitted={isCategoryFormSubmitted}
           />
-
-          <div>
-            <label className={`block text-xs font-bold mb-1.5 ${categoryErrors.description && isCategoryFormSubmitted ? 'text-rose-600' : 'text-gray-700'}`}>
-              وصف التصنيف *
-              <span className="text-gray-400 font-normal"> (إجباري — يوضح محتوى التصنيف)</span>
-            </label>
-            <textarea
-              rows={2}
-              placeholder="مثال: مشروبات ساخنة زي الشاي، القهوة، الأعشاب..."
-              value={categoryForm.description}
-              onChange={(e) => {
-                setCategoryForm({ ...categoryForm, description: e.target.value });
-                if (categoryErrors.description) setCategoryErrors({ ...categoryErrors, description: undefined });
-              }}
-              className={`w-full bg-[#faf8f5] hover:bg-white focus:bg-white border rounded-xl p-3 text-xs outline-none focus:ring-2 focus:ring-[#2e5b9f]/20 focus:border-[#2e5b9f] ${
-                categoryErrors.description && isCategoryFormSubmitted
-                  ? 'border-rose-500 bg-rose-50/30'
-                  : 'border-gray-200'
-              }`}
-              required
-            />
-            {categoryErrors.description && isCategoryFormSubmitted && (
-              <p className="flex items-start gap-1 text-[11px] font-bold text-rose-600 mt-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-rose-600 inline-block shrink-0 mt-1" />
-                {categoryErrors.description}
-              </p>
-            )}
-          </div>
 
           <div className="pt-4 flex items-center justify-end gap-2 border-t border-gray-100">
             <Button
