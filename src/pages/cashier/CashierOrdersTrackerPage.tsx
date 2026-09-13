@@ -366,10 +366,14 @@ export const CashierOrdersTrackerPage: React.FC = () => {
         <div className="flex items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-100 font-mono">
           <div className="flex items-center gap-4">
             <span>
-              إجمالي فواتير البحث: <strong className="text-gray-900">{filteredOrders.length}</strong>
+              إجمالي فواتير البحث: <strong className="text-gray-900">
+                {isLoading ? <span className="inline-block h-3 w-8 rounded bg-gray-200/90 animate-pulse align-middle" /> : filteredOrders.length}
+              </strong>
             </span>
             <span>
-              إجمالي المبيعات المكتملة: <strong className="text-emerald-700">{formatPrice(totalRevenue)}</strong>
+              إجمالي المبيعات المكتملة: <strong className="text-emerald-700">
+                {isLoading ? <span className="inline-block h-3 w-16 rounded bg-gray-200/90 animate-pulse align-middle" /> : formatPrice(totalRevenue)}
+              </strong>
             </span>
           </div>
           <span className="text-gray-400 text-[11px]">مرتب: الأحدث في الأعلى ↓</span>

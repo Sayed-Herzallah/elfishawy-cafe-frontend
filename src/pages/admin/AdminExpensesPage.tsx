@@ -574,6 +574,7 @@ export const AdminExpensesPage: React.FC = () => {
             subtitle={`من إجمالي ${formatStat(totalExpenses, 'جنيها')} مدفوعات`}
             icon={<Boxes className="w-5 h-5 text-[#2e5b9f]" />}
             variant="blue"
+            isLoading={isLoading}
           />
           <StatCard
             title="مشتريات اليوم"
@@ -581,6 +582,7 @@ export const AdminExpensesPage: React.FC = () => {
             subtitle="توريدات مسجلة النهاردة"
             icon={<Calendar className="w-5 h-5 text-gray-500" />}
             variant="neutral"
+            isLoading={isLoading}
           />
           <StatCard
             title="أكثر صنف بتشتريه"
@@ -588,6 +590,7 @@ export const AdminExpensesPage: React.FC = () => {
             subtitle={shownPurchaseBreakdown[0] ? `${formatStat(shownPurchaseBreakdown[0].amount, 'جنيها')} • ${formatStat(shownPurchaseBreakdown[0].count, 'توريدة')}` : undefined}
             icon={<PieChart className="w-5 h-5 text-emerald-600" />}
             variant="neutral"
+            isLoading={isLoading}
           />
           <StatCard
             title="إجمالي الكميات المشتراة"
@@ -595,6 +598,7 @@ export const AdminExpensesPage: React.FC = () => {
             subtitle={`${formatStat(purchaseEntries.length, 'قيد')} توريد`}
             icon={<CheckCircle2 className="w-5 h-5 text-emerald-600" />}
             variant="neutral"
+            isLoading={isLoading}
           />
         </div>
       ) : (
@@ -605,24 +609,28 @@ export const AdminExpensesPage: React.FC = () => {
             subtitle="بدون مشتريات المخزن"
             icon={<ReceiptText className="w-5 h-5 text-[#9f1239]" />}
             variant="pink"
+            isLoading={isLoading}
           />
           <StatCard
             title="مصروفات اليوم"
             value={formatStat(shownTodayTotal, 'جنيها')}
             icon={<DollarSign className="w-5 h-5 text-gray-500" />}
             variant="neutral"
+            isLoading={isLoading}
           />
           <StatCard
             title="أكبر فئة تشغيلية"
             value={topCategory && topCategory.category !== 'inventory' ? `${categoryLabels[topCategory.category]} (${formatNumber(topCategory.percentage)}%)` : '—'}
             icon={<PieChart className="w-5 h-5 text-[#2e5b9f]" />}
             variant="blue"
+            isLoading={isLoading}
           />
           <StatCard
             title="عدد القيود المسجلة"
             value={formatStat(filteredExpenses.length, 'قيد')}
             icon={<Calendar className="w-5 h-5 text-gray-500" />}
             variant="neutral"
+            isLoading={isLoading}
           />
         </div>
       )}
@@ -861,28 +869,36 @@ export const AdminExpensesPage: React.FC = () => {
             return (
               <div className="space-y-2">
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#faf8f5] border border-gray-100 text-xs">
-                  <span className="font-bold font-mono text-[#9f1239]">{formatPrice(shownTotal)}</span>
+                  <span className="font-bold font-mono text-[#9f1239]">
+                    {isLoading ? <span className="inline-block h-3.5 w-16 rounded bg-gray-200/90 animate-pulse align-middle" /> : formatPrice(shownTotal)}
+                  </span>
                   <span className="font-bold text-gray-700 flex items-center gap-1.5">
                     <DollarSign className="w-3.5 h-3.5 text-gray-400" />
                     إجمالي المعروض
                   </span>
                 </div>
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#faf8f5] border border-gray-100 text-xs">
-                  <span className="font-bold font-mono text-gray-900">{formatPrice(avgExpense)}</span>
+                  <span className="font-bold font-mono text-gray-900">
+                    {isLoading ? <span className="inline-block h-3.5 w-16 rounded bg-gray-200/90 animate-pulse align-middle" /> : formatPrice(avgExpense)}
+                  </span>
                   <span className="font-bold text-gray-700 flex items-center gap-1.5">
                     <ReceiptText className="w-3.5 h-3.5 text-gray-400" />
                     متوسط القيد
                   </span>
                 </div>
                 <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#faf8f5] border border-gray-100 text-xs">
-                  <span className="font-bold font-mono text-gray-900">{formatPrice(biggestExpense)}</span>
+                  <span className="font-bold font-mono text-gray-900">
+                    {isLoading ? <span className="inline-block h-3.5 w-16 rounded bg-gray-200/90 animate-pulse align-middle" /> : formatPrice(biggestExpense)}
+                  </span>
                   <span className="font-bold text-gray-700 flex items-center gap-1.5">
                     <PieChart className="w-3.5 h-3.5 text-gray-400" />
                     أكبر قيد
                   </span>
                 </div>
                 <div className="flex items-center justify-between px-2.5 py-2 text-[11px] text-gray-500">
-                  <span className="font-bold font-mono">{formatNumber(shownCount)} قيد</span>
+                  <span className="font-bold font-mono">
+                    {isLoading ? <span className="inline-block h-3.5 w-10 rounded bg-gray-200/90 animate-pulse align-middle" /> : formatNumber(shownCount)} قيد
+                  </span>
                   <span>عدد القيود المعروضة بعد التصفية</span>
                 </div>
               </div>
@@ -897,7 +913,9 @@ export const AdminExpensesPage: React.FC = () => {
                 <h3 className="font-bold text-base text-gray-900">توزيع المشتريات على الأصناف</h3>
               </div>
 
-              {shownPurchaseBreakdown.length === 0 ? (
+              {isLoading ? (
+                <LoadingSkeleton type="text" count={3} />
+              ) : shownPurchaseBreakdown.length === 0 ? (
                 <div className="text-center py-8 text-gray-400 text-xs">
                   لا توجد مشتريات مسجلة لعرض التحليل.
                 </div>
@@ -934,7 +952,9 @@ export const AdminExpensesPage: React.FC = () => {
                 <h3 className="font-bold text-base text-gray-900">توزيع المصروفات</h3>
               </div>
 
-              {shownCategoryBreakdown.length === 0 ? (
+              {isLoading ? (
+                <LoadingSkeleton type="text" count={3} />
+              ) : shownCategoryBreakdown.length === 0 ? (
                 <div className="text-center py-8 text-gray-400 text-xs">
                   لا توجد بيانات مصروفات لعرض التحليل.
                 </div>

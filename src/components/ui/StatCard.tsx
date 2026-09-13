@@ -19,6 +19,8 @@ interface StatCardProps {
   isPositive?: boolean;
   icon?: ReactNode;
   variant?: 'blue' | 'pink' | 'neutral';
+  /** البيانات لسه بتحمّل؟ → هيكل نابض بدل "لا يوجد" الوهمية قبل وصول الأرقام */
+  isLoading?: boolean;
   className?: string;
 }
 
@@ -31,6 +33,7 @@ export const StatCard: React.FC<StatCardProps> = ({
   isPositive = true,
   icon,
   variant = 'blue',
+  isLoading = false,
   className = '',
 }) => {
   const variantStyles = {
@@ -64,9 +67,17 @@ export const StatCard: React.FC<StatCardProps> = ({
 
       <div className="my-1.5">
         <div className="text-lg sm:text-xl font-bold font-mono tracking-tight">
-          {isEmptyValue(value) ? EMPTY_LABEL : value}
+          {isLoading ? (
+            <span className="inline-block h-5 w-20 rounded bg-gray-300/70 animate-pulse align-middle" />
+          ) : (
+            isEmptyValue(value) ? EMPTY_LABEL : value
+          )}
         </div>
-        {subtitle && <div className="text-[10px] opacity-75 mt-0.5">{subtitle}</div>}
+        {isLoading ? (
+          subtitle !== undefined && <span className="inline-block h-2.5 w-16 rounded bg-gray-200/80 animate-pulse" />
+        ) : (
+          subtitle && <div className="text-[10px] opacity-75 mt-0.5">{subtitle}</div>
+        )}
       </div>
 
       {percentage !== undefined && (

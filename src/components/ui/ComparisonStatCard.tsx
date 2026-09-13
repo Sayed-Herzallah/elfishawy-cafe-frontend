@@ -3,6 +3,11 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { ComparisonResult } from '../../hooks/useStatisticsComparison';
 import { EMPTY_LABEL } from '../../utils/formatters';
 
+/** هيكل نابض بدل القيمة أثناء التحميل — "لا يوجد" مبتظهرش وهمياً قبل وصول الأرقام */
+const LoadingValue: React.FC<{ className?: string }> = ({ className = 'h-8 w-28' }) => (
+  <span className={`inline-block rounded-lg bg-gray-200/90 animate-pulse align-middle ${className}`} />
+);
+
 interface ComparisonStatCardProps {
   title: string;
   value: string | number;
@@ -12,6 +17,8 @@ interface ComparisonStatCardProps {
   invertColors?: boolean;
   /** Optional static label shown instead of a comparison tag (e.g. quality indicators) */
   periodLabel?: string;
+  /** البيانات لسه بتحمّل؟ → نعرض هيكل نابض بدل "لا يوجد" المؤقتة */
+  isLoading?: boolean;
   className?: string;
 }
 
@@ -76,6 +83,7 @@ export const ComparisonStatCard: React.FC<ComparisonStatCardProps> = ({
   comparison,
   invertColors = false,
   periodLabel,
+  isLoading = false,
   className = '',
 }) => {
   const scheme = colorMap[accentColor];
@@ -129,7 +137,7 @@ export const ComparisonStatCard: React.FC<ComparisonStatCardProps> = ({
         {/* Right Side: Value & Title */}
         <div className="text-right min-w-0 flex-1">
           <span className="text-2xl sm:text-3xl font-bold font-mono text-gray-900 tracking-tight block break-words leading-tight">
-            {isEmptyValue(value) ? EMPTY_LABEL : value}
+            {isLoading ? <LoadingValue /> : isEmptyValue(value) ? EMPTY_LABEL : value}
           </span>
           <span className="text-xs font-bold text-gray-500 mt-1 block font-arabic-heading truncate">
             {title}
@@ -143,7 +151,9 @@ export const ComparisonStatCard: React.FC<ComparisonStatCardProps> = ({
         {comparison && (
           <span className="text-gray-500 font-medium truncate flex items-center gap-1">
             {comparison.previousPeriodLabel}:{' '}
-            {isEmptyValue(comparison.previous) ? (
+            {isLoading ? (
+              <LoadingValue className="h-3 w-14" />
+            ) : isEmptyValue(comparison.previous) ? (
               <span className="font-mono font-bold text-gray-400">{EMPTY_LABEL}</span>
             ) : (
               <span className="font-mono font-bold text-gray-700">
@@ -187,6 +197,7 @@ export const ComparisonStatCardGrid: React.FC<{
     accentColor: 'rose' | 'amber' | 'blue' | 'purple' | 'emerald';
     comparison?: ComparisonResult;
     invertColors?: boolean;
+    isLoading?: boolean;
   }>;
   columns?: 1 | 2 | 3 | 4;
   gap?: number;

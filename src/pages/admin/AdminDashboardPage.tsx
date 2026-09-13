@@ -28,7 +28,7 @@ import {
   useExplicitRangeComparison,
   type ComparisonResult
 } from '../../hooks/useStatisticsComparison';
-import { usePersistentState, readSessionCache, writeSessionCache } from '../../hooks/usePersistentState';
+import { usePersistentState, readSessionCache, writeSessionCache, isSessionCacheUsable } from '../../hooks/usePersistentState';
 import {
   TrendingUp,
   TrendingDown,
@@ -63,8 +63,11 @@ export const AdminDashboardPage: React.FC = () => {
   // ✅ الفلاتر محفوظة في localStorage — بعد أي Refresh بترجع نفس الفترة اللي كانت مختارة
   const [timeRange, setTimeRange] = usePersistentState<'today' | 'week' | 'month' | 'year'>('dash_timeRange', 'today');
   const [dateRange, setDateRange] = usePersistentState<DateRange>('dash_dateRange', { from: null, to: null, preset: 'custom' });
-  // ✅ لو فيه كاش من آخر مرة، نبدأ بعرضه فورًا بدون سكيليتون فاضي (التحديث الصامت هيجي بعدها)
-  const [isLoading, setIsLoading] = useState<boolean>(!readSessionCache<any>(DASH_CACHE_KEY));
+  // ✅ لو فيه كاش صالح من آخر مرة، نبدأ بعرضه فورًا بدون سكيليتون فاضي (التحديث الصامت هيجي بعدها)
+  // ⚠️ الكاش الفاضي/التالف ميتحترمش — لازم الصفحة تدخل حالة تحميل عادية بدل عرض "لا يوجد" وهمية
+  const [isLoading, setIsLoading] = useState<boolean>(
+    !isSessionCacheUsable<{ orders: Order[] }>(DASH_CACHE_KEY, ['orders'])
+  );
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   // مرجع لمحتوى التقرير عشان تصدير الـ PDF
@@ -97,16 +100,17 @@ export const AdminDashboardPage: React.FC = () => {
       if (expRes.success && expRes.data) setExpenses(expRes.data);
       if (prodRes?.success && prodRes.data) setAllProducts(prodRes.data);
 
-      // ✅ حفظ آخر داتا ناجحة في كاش الجلسة — بعد أي Refresh الصفحة تظهر فورًا بيها
-      writeSessionCache(DASH_CACHE_KEY, {
-        savedAt: Date.now(),
-        stats: statsRes.success ? statsRes.data : null,
-        charts: chartsRes.success ? chartsRes.data : null,
-        orders: ordersRes.success ? ordersRes.data : null,
-        inventory: invRes.success ? invRes.data : null,
-        expenses: expRes.success ? expRes.data : null,
-        products: prodRes?.success ? prodRes.data : null,
-      });
+      // ✅ حفظ الداتا الناجحة فقط في كاش الجلسة — الحقول اللي فشلت بتفضل بقيمها القديمة الصالحة
+      // (ممنوع نكتب null على الكاش عشان الـ Refresh الجاي ميتوهمش إن عنده داتا وهو فاضي → "لا يوجد" لفترة طويلة)
+      const prevCache = readSessionCache<any>(DASH_CACHE_KEY) || {};
+      const nextCache: Record<string, any> = { ...prevCache, savedAt: Date.now() };
+      if (statsRes.success && statsRes.data) nextCache.stats = statsRes.data;
+      if (chartsRes.success && chartsRes.data) nextCache.charts = chartsRes.data;
+      if (ordersRes.success && ordersRes.data) nextCache.orders = ordersRes.data;
+      if (invRes.success && invRes.data) nextCache.inventory = invRes.data;
+      if (expRes.success && expRes.data) nextCache.expenses = expRes.data;
+      if (prodRes?.success && prodRes.data) nextCache.products = prodRes.data;
+      writeSessionCache(DASH_CACHE_KEY, nextCache);
     } catch (err) {
       console.error('Failed to load dashboard metrics', err);
       // اعرض الخطأ للمستخدم بدل الهياكل المعلقة بصمت
@@ -139,7 +143,13 @@ export const AdminDashboardPage: React.FC = () => {
       /* تجاهل — الكاش تحسيني */
     }
 
-    fetchData();
+    // ✅ لو فيه كاش صالح، التحديث الأولي يكون صامت — بدل إعادة دخول حالة التحميل فوق داتا معروضة
+    // (التحميل الصامت مش بيرفع isLoading فالكروت تفضل تعرض الداتا المخزنة بدل skeleton أو "لا يوجد")
+    if (isSessionCacheUsable<{ orders: Order[] }>(DASH_CACHE_KEY, ['orders'])) {
+      fetchData(true);
+    } else {
+      fetchData();
+    }
     // ⚡ تحديث ديناميكي تلقائي كل دقيقة عندما تكون الصفحة ظاهرة (بدون وميض التحميل)
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
@@ -787,6 +797,7 @@ export const AdminDashboardPage: React.FC = () => {
           icon={<TrendingUp className="w-6 h-6" />}
           accentColor="blue"
           comparison={salesComparison}
+          isLoading={isLoading}
         />
 
         {/* Card 2: المصروفات التشغيلية — منفصلة عن مشتريات المخزن */}
@@ -797,6 +808,7 @@ export const AdminDashboardPage: React.FC = () => {
           accentColor="rose"
           invertColors
           comparison={operatingComparison}
+          isLoading={isLoading}
         />
 
         {/* Card 3: صافي الأرباح — بالسالب لو خسارة */}
@@ -806,6 +818,7 @@ export const AdminDashboardPage: React.FC = () => {
           icon={profitComparison.current < 0 ? <TrendingDown className="w-6 h-6" /> : <Coins className="w-6 h-6" />}
           accentColor={profitComparison.current < 0 ? 'rose' : 'emerald'}
           comparison={profitComparison}
+          isLoading={isLoading}
         />
 
         {/* Card 4: حجم الطلبات */}
@@ -815,6 +828,7 @@ export const AdminDashboardPage: React.FC = () => {
           icon={<ShoppingBag className="w-6 h-6" />}
           accentColor="purple"
           comparison={ordersComparison}
+          isLoading={isLoading}
         />
       </div>
 
@@ -829,6 +843,7 @@ export const AdminDashboardPage: React.FC = () => {
         netProfit={netProfit}
         growthRate={salesComparison.changePercent}
         title="مخطط نشاط ومبيعات الكافيه"
+        isLoading={isLoading}
       />
 
       {/* Lower Section: Top Products & Low Stock Alert */}
@@ -842,7 +857,9 @@ export const AdminDashboardPage: React.FC = () => {
             </h3>
           </div>
 
-          {topProducts.length === 0 ? (
+          {isLoading ? (
+            <LoadingSkeleton type="card" count={1} />
+          ) : topProducts.length === 0 ? (
             <div className="text-center py-8 text-gray-400 text-xs font-bold">
               لا توجد مبيعات مسجلة في هذه الفترة بعد.
             </div>
@@ -887,14 +904,16 @@ export const AdminDashboardPage: React.FC = () => {
           {/* 💰 قيمة المخزون الحالية */}
           <div className="flex items-center justify-between gap-2 bg-[#faf8f5] border border-gray-100 rounded-xl px-3 py-2">
             <span className="font-mono font-bold text-[#2e5b9f] text-xs">
-              {formatPrice(inventoryValue)}
+              {isLoading ? <span className="inline-block h-3.5 w-16 rounded bg-gray-200/90 animate-pulse align-middle" /> : formatPrice(inventoryValue)}
             </span>
             <span className="text-[11px] text-gray-500 font-bold">
               💰 قيمة المخزون الحالية (كمية × تكلفة)
             </span>
           </div>
 
-          {lowStockItems.length === 0 ? (
+          {isLoading ? (
+            <LoadingSkeleton type="text" count={3} />
+          ) : lowStockItems.length === 0 ? (
             <div className="text-center py-6 text-emerald-600 bg-emerald-50/50 rounded-2xl border border-emerald-100 text-xs font-bold">
               ✓ كافة خامات المخزن متوفرة وبأرصدة آمنة.
             </div>
@@ -944,13 +963,18 @@ export const AdminDashboardPage: React.FC = () => {
         {/* 🛒 بتشتري إيه؟ (7 cols) */}
         <div className="lg:col-span-7 bg-white rounded-3xl border border-gray-200/80 p-5 shadow-2xs">
           <div className="flex items-center justify-between pb-3 mb-3 border-b border-gray-100">
-            <span className="text-[11px] text-gray-400 font-mono">إجمالي الفترة: {formatPrice(totalPurchases)}</span>
+            <span className="text-[11px] text-gray-400 font-mono">
+              إجمالي الفترة:{' '}
+              {isLoading ? <span className="inline-block h-3.5 w-16 rounded bg-gray-200/90 animate-pulse align-middle" /> : formatPrice(totalPurchases)}
+            </span>
             <h3 className="font-bold text-sm text-gray-900 flex items-center gap-1.5">
               🛒 المشتريات والتوريد — بتشتري إيه للمخزن؟
             </h3>
           </div>
 
-          {purchasesBreakdown.length === 0 ? (
+          {isLoading ? (
+            <LoadingSkeleton type="text" count={3} />
+          ) : purchasesBreakdown.length === 0 ? (
             <div className="text-center py-8 text-gray-400 text-xs font-bold">
               لا توجد مشتريات مخزن مسجلة في هذه الفترة بعد.
             </div>
@@ -1091,7 +1115,9 @@ export const AdminDashboardPage: React.FC = () => {
           <h3 className="font-bold text-sm text-gray-900">🧾 أحدث الفواتير المسجلة</h3>
         </div>
 
-        {filteredOrders.length === 0 ? (
+        {isLoading ? (
+          <LoadingSkeleton type="table" count={4} />
+        ) : filteredOrders.length === 0 ? (
           <div className="text-center py-10 bg-white border border-dashed border-gray-200 rounded-2xl text-gray-400 mx-2">
             <ShoppingBag className="w-8 h-8 mx-auto mb-2 text-gray-300" />
             <p className="text-gray-600 font-bold text-xs">لا توجد طلبات مسجلة في هذه الفترة</p>

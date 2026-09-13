@@ -451,6 +451,7 @@ export const AdminInventoryPage: React.FC = () => {
           percentage={availablePct}
           icon={<Boxes className="w-5 h-5 text-gray-500" />}
           variant="neutral"
+          isLoading={isLoading}
         />
         <StatCard
           title="مخزون منخفض"
@@ -460,6 +461,7 @@ export const AdminInventoryPage: React.FC = () => {
           isPositive={false}
           icon={<AlertTriangle className="w-5 h-5 text-amber-600" />}
           variant="neutral"
+          isLoading={isLoading}
         />
         <StatCard
           title="نفد من المخزون"
@@ -469,12 +471,14 @@ export const AdminInventoryPage: React.FC = () => {
           isPositive={false}
           icon={<AlertTriangle className="w-5 h-5 text-rose-600" />}
           variant="pink"
+          isLoading={isLoading}
         />
         <StatCard
           title="قيمة المخزون المعروض"
           value={formatStat(shownValue, 'جنيها')}
           icon={<CheckCircle2 className="w-5 h-5 text-[#2e5b9f]" />}
           variant="blue"
+          isLoading={isLoading}
         />
       </div>
 

@@ -245,18 +245,21 @@ export const AdminSalesPage: React.FC = () => {
           percentage={completedRatio}
           icon={<TrendingUp className="w-5 h-5" />}
           variant="blue"
+          isLoading={isLoading}
         />
         <StatCard
           title="عدد الطلبات المعروضة"
           value={formatStat(filteredOrders.length, 'طلب')}
           icon={<ShoppingBag className="w-5 h-5" />}
           variant="neutral"
+          isLoading={isLoading}
         />
         <StatCard
           title="متوسط قيمة الفاتورة"
           value={formatStat(averageOrderValue, 'جنيها')}
           icon={<ReceiptText className="w-5 h-5" />}
           variant="neutral"
+          isLoading={isLoading}
         />
         <StatCard
           title="الطلبات المكتملة"
@@ -264,6 +267,7 @@ export const AdminSalesPage: React.FC = () => {
           percentage={completedRatio}
           icon={<CreditCard className="w-5 h-5 text-emerald-600" />}
           variant="neutral"
+          isLoading={isLoading}
         />
       </div>
 

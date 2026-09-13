@@ -50,3 +50,22 @@ export function writeSessionCache<T>(key: string, value: T): void {
     /* تجاهل — الكاش تحسيني مش حرج */
   }
 }
+
+/**
+ * ✅ هل الكاش صالح للاستخدام كداتا استرجاع فورية؟
+ * الكاش الفاضي/التالف (اتكتب وقت فشل التحميل) ميتحترمش — لازم الصفحة تبدأ في حالة تحميل
+ * بدل ما تعرض أصفار و"لا يوجد" طول مدة جلب البيانات من الـ API.
+ *
+ * @param requiredKeys مفاتيح أساسية لازم تكون موجودة بقيمة حقيقية (مصفوفة أو كائن أو رقم) في الكاش
+ */
+export function isSessionCacheUsable<T extends Record<string, any>>(
+  key: string,
+  requiredKeys: Array<keyof T> = []
+): boolean {
+  const cached = readSessionCache<T>(key);
+  if (!cached || typeof cached !== 'object') return false;
+  return requiredKeys.every((k) => {
+    const v = cached[k as string];
+    return Array.isArray(v) || (v !== null && v !== undefined && typeof v === 'object') || typeof v === 'number';
+  });
+}

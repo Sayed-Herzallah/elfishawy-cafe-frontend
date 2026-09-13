@@ -16,6 +16,11 @@ export interface ChartDataPoint {
   profit: number;
 }
 
+/** هيكل نابض بدل القيمة أثناء التحميل — عشان "لا يوجد" مبتظهرش وهمياً قبل وصول الأرقام */
+const LoadingValue: React.FC<{ className?: string }> = ({ className = 'h-7 w-24' }) => (
+  <span className={`inline-block rounded-lg bg-gray-200/90 animate-pulse align-middle ${className}`} />
+);
+
 interface AttaGlowingChartProps {
   data: ChartDataPoint[];
   timeRange: 'today' | 'week' | 'month' | 'year';
@@ -26,6 +31,8 @@ interface AttaGlowingChartProps {
   netProfit: number;
   growthRate?: number;
   title?: string;
+  /** البيانات لسه بتحمّل؟ → نعرض هيكل نابض بدل "لا يوجد" المؤقتة */
+  isLoading?: boolean;
 }
 
 // Generate smooth cubic bezier SVG path from points
@@ -74,6 +81,7 @@ export const AttaGlowingChart: React.FC<AttaGlowingChartProps> = ({
   netProfit,
   growthRate = 18.5,
   title = 'نشاط ومبيعات الكافيه',
+  isLoading = false,
 }) => {
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [activeSeries, setActiveSeries] = useState<{
@@ -228,7 +236,7 @@ export const AttaGlowingChart: React.FC<AttaGlowingChartProps> = ({
             <span className="text-sm text-gray-500 font-bold">المبيعات</span>
           </div>
           <span className="text-2xl font-bold text-blue-600 font-mono block">
-            {isEmptyValue(totalSales) ? EMPTY_LABEL : formatPrice(totalSales)}
+            {isLoading ? <LoadingValue /> : isEmptyValue(totalSales) ? EMPTY_LABEL : formatPrice(totalSales)}
           </span>
         </div>
 
@@ -245,7 +253,7 @@ export const AttaGlowingChart: React.FC<AttaGlowingChartProps> = ({
             <span className="text-sm text-gray-500 font-bold">حجم الطلبات</span>
           </div>
           <span className="text-2xl font-bold text-purple-600 font-mono block">
-            {formatNumber(totalOrders)} <span className="text-xs text-gray-500 font-normal">طلب</span>
+            {isLoading ? <LoadingValue /> : formatNumber(totalOrders)} <span className="text-xs text-gray-500 font-normal">طلب</span>
           </span>
         </div>
 
@@ -262,7 +270,7 @@ export const AttaGlowingChart: React.FC<AttaGlowingChartProps> = ({
             <span className="text-sm text-gray-500 font-bold">المصروفات</span>
           </div>
           <span className="text-2xl font-bold text-rose-500 font-mono block">
-            {isEmptyValue(totalExpenses) ? EMPTY_LABEL : formatPrice(totalExpenses)}
+            {isLoading ? <LoadingValue /> : isEmptyValue(totalExpenses) ? EMPTY_LABEL : formatPrice(totalExpenses)}
           </span>
         </div>
 
@@ -281,7 +289,7 @@ export const AttaGlowingChart: React.FC<AttaGlowingChartProps> = ({
             <span className="text-sm text-gray-500 font-bold">{netProfit < 0 ? 'صافي الخسارة' : 'صافي الأرباح'}</span>
           </div>
           <span className={`text-2xl font-bold font-mono block ${netProfit < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-            {isEmptyValue(netProfit) ? EMPTY_LABEL : formatPrice(netProfit)}
+            {isLoading ? <LoadingValue /> : isEmptyValue(netProfit) ? EMPTY_LABEL : formatPrice(netProfit)}
           </span>
         </div>
       </div>

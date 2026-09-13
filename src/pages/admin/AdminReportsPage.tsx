@@ -8,7 +8,7 @@ import { DateRangeFilter, DateRange } from '../../components/ui/DateRangeFilter'
 import { FilterConfig } from '../../components/ui/FilterDialog';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { ExportModal } from '../../components/ui/ExportModal';
-import { usePersistentState, readSessionCache, writeSessionCache } from '../../hooks/usePersistentState';
+import { usePersistentState, readSessionCache, writeSessionCache, isSessionCacheUsable } from '../../hooks/usePersistentState';
 import { exportElementToPdf } from '../../utils/pdfExport';
 import { useNotification } from '../../contexts/NotificationContext';
 import { BarChart3, TrendingUp, TrendingDown, DollarSign, Download, Award, AlertCircle, Calendar, PieChart, Medal, Info, X, ReceiptText } from 'lucide-react';
@@ -66,7 +66,10 @@ export const AdminReportsPage: React.FC = () => {
   /** productId → estimated cost per unit, derived from active recipes + inventory cost prices */
   const [unitCostMap, setUnitCostMap] = useState<Map<string, number>>(new Map());
   // ✅ كاش الجلسة — الصفحة تظهر فورًا بآخر داتا بعد Refresh بدل شاشة تحميل فاضية
-  const [isLoading, setIsLoading] = useState<boolean>(!readSessionCache<any>(REPORTS_CACHE_KEY));
+  // ⚠️ الكاش الفاضي/التالف ميتحترمش — لازم الصفحة تدخل حالة تحميل عادية بدل عرض "لا يوجد" وهمية
+  const [isLoading, setIsLoading] = useState<boolean>(
+    !isSessionCacheUsable<{ orders: Order[] }>(REPORTS_CACHE_KEY, ['orders'])
+  );
   const contentRef = useRef<HTMLDivElement>(null);
 
   // ✅ فلترة التاريخ — بتشتغل على الطلبات والمصروفات بأي نطاق يختاره المستخدم
@@ -200,7 +203,10 @@ export const AdminReportsPage: React.FC = () => {
   useEffect(() => {
     const loadReports = async () => {
       try {
-        setIsLoading(true);
+        // ✅ التحديث الصامت لو فيه كاش صالح — ممنوع شاشة تحميل كاملة فوق داتا معروضة
+        if (!isSessionCacheUsable<{ orders: Order[] }>(REPORTS_CACHE_KEY, ['orders'])) {
+          setIsLoading(true);
+        }
         const [statsRes, chartsRes, ordersRes, expRes, recipesRes, invRes] = await Promise.all([
           analyticsService.getStats(),
           analyticsService.getCharts(),
@@ -235,14 +241,14 @@ export const AdminReportsPage: React.FC = () => {
           console.warn('Cost estimation skipped:', costErr);
         }
 
-        // ✅ حفظ آخر داتا ناجحة — بعد أي Refresh الصفحة تظهر فورًا بيها
-        writeSessionCache(REPORTS_CACHE_KEY, {
-          savedAt: Date.now(),
-          stats: statsRes?.success ? statsRes.data : null,
-          charts: chartsRes?.success ? chartsRes.data : null,
-          orders: ordersRes?.success ? ordersRes.data : null,
-          expenses: expRes?.success ? expRes.data : null,
-        });
+        // ✅ حفظ الداتا الناجحة فقط — الحقول اللي فشلت بتفضل بقيمها القديمة الصالحة في الكاش
+        const prevCache = readSessionCache<any>(REPORTS_CACHE_KEY) || {};
+        const nextCache: Record<string, any> = { ...prevCache, savedAt: Date.now() };
+        if (statsRes?.success && statsRes.data) nextCache.stats = statsRes.data;
+        if (chartsRes?.success && chartsRes.data) nextCache.charts = chartsRes.data;
+        if (ordersRes?.success && ordersRes.data) nextCache.orders = ordersRes.data;
+        if (expRes?.success && expRes.data) nextCache.expenses = expRes.data;
+        writeSessionCache(REPORTS_CACHE_KEY, nextCache);
       } catch (err) {
         console.error('Error loading reports', err);
       } finally {

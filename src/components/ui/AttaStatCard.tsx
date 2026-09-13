@@ -11,6 +11,11 @@ const isEmptyValue = (val: string | number | undefined | null): boolean => {
   return !isNaN(asNumber) && asNumber === 0;
 };
 
+/** هيكل نابض بدل القيمة أثناء التحميل — "لا يوجد" مبتظهرش وهمياً قبل وصول الأرقام */
+const LoadingValue: React.FC<{ className?: string }> = ({ className = 'h-8 w-28' }) => (
+  <span className={`inline-block rounded-lg bg-gray-200/90 animate-pulse align-middle ${className}`} />
+);
+
 interface AttaStatCardProps {
   title: string;
   value: string | number;
@@ -20,6 +25,8 @@ interface AttaStatCardProps {
   periodLabel?: string;
   previousValueText?: string;
   invertColors?: boolean;
+  /** البيانات لسه بتحمّل؟ → نعرض هيكل نابض بدل "لا يوجد" المؤقتة */
+  isLoading?: boolean;
 }
 
 const colorMap = {
@@ -59,6 +66,7 @@ export const AttaStatCard: React.FC<AttaStatCardProps> = ({
   periodLabel = 'هذا اليوم',
   previousValueText,
   invertColors = false,
+  isLoading = false,
 }) => {
   const scheme = colorMap[accentColor];
   const hasChange = changePct !== undefined && !Number.isNaN(changePct) && changePct !== 0;
@@ -80,7 +88,7 @@ export const AttaStatCard: React.FC<AttaStatCardProps> = ({
         {/* Right Side: Value & Title */}
         <div className="text-right min-w-0">
           <span className="text-2xl sm:text-3xl font-bold font-mono text-gray-900 tracking-tight block truncate">
-            {isEmptyValue(value) ? EMPTY_LABEL : value}
+            {isLoading ? <LoadingValue /> : isEmptyValue(value) ? EMPTY_LABEL : value}
           </span>
           <span className="text-xs font-bold text-gray-500 mt-1 block font-arabic-heading truncate">
             {title}
