@@ -10,7 +10,7 @@ import { ReceiptModal } from '../components/ui/ReceiptModal';
 import { Modal } from '../components/ui/Modal';
 import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { formatPrice, formatNumber, formatTime } from '../utils/formatters';
+import { formatPrice, formatNumber, formatTime, EMPTY_LABEL } from '../utils/formatters';
 import { toBase } from '../utils/stockSync';
 import { productStockState } from '../utils/stockStatus';
 import { playAlertSound } from '../utils/soundFeedback';
@@ -693,7 +693,7 @@ export const CashierPOSPage: React.FC = () => {
             <div className="mt-4 p-5 rounded-2xl bg-blue-50/80 border border-blue-100 flex items-center justify-between text-gray-900 shadow-2xs">
               <span className="text-base font-bold font-arabic-heading">المجموع الإجمالي:</span>
               <span className="font-mono text-3xl font-bold text-[#2e5b9f] leading-none">
-                {formatPrice(totalAmount)}
+                {cart.length === 0 ? EMPTY_LABEL : formatPrice(totalAmount)}
               </span>
             </div>
           </div>
@@ -1144,7 +1144,7 @@ export const CashierPOSPage: React.FC = () => {
               />
               <div className="flex-1">
                 <h3 className="text-xl font-bold text-gray-900">{viewingProduct.name}</h3>
-                <p className="text-sm text-gray-500 mt-1">{viewingProduct.description || 'لا يوجد وصف'}</p>
+                <p className="text-sm text-gray-500 mt-1">{viewingProduct.description || '—'}</p>
                 <span className="inline-block mt-2 font-mono font-extrabold text-xl text-[#2e5b9f]">
                   {formatPrice(viewingProduct.price)}
                 </span>

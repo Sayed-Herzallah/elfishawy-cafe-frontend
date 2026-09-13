@@ -56,7 +56,8 @@ const calcRecipeAvailability = (recipe: any, allInventory: any[]): number | null
   if (!recipe?.ingredients?.length) return null;
 
   // الخامات الأساسية فقط هي التي تحدد عدد الأكواب المتاحة (مثل البن للقهوة أو الشاي للشاي).
-  // الخامات المساعدة (مثل السكر) تُخصم عند البيع ولا تقيّد رصيد الأكواب.
+  // الخامات المساعدة (سكر/لبن/شوكولاتة...) تُخصم عند البيع ولا تقيّد رصيد الأكواب —
+  // التصنيف أساسي/ثانوي بيتحكم فيه الأدمن من صفحة المنتجات (زرار التبديل في كل خامة).
   const primaryIngredients = recipe.ingredients.filter((ing: any) => ing.isPrimary !== false);
   const targetIngredients = primaryIngredients.length > 0 ? primaryIngredients : recipe.ingredients;
 

@@ -16,7 +16,7 @@ import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
 import { ConfirmDialog } from '../../components/ui/ConfirmDialog';
 import { Pagination } from '../../components/ui/Pagination';
 import { ProfessionalCard, ExpenseCard } from '../../components/ui/ProfessionalCard';
-import { formatPrice, formatNumber, formatDate, formatDateTime } from '../../utils/formatters';
+import { formatPrice, formatNumber, formatDate, formatDateTime, formatStat } from '../../utils/formatters';
 import {
   ReceiptText,
   DollarSign,
@@ -75,7 +75,7 @@ export const AdminExpensesPage: React.FC = () => {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [inventoryItems, setInventoryItems] = useState<InventoryItem[]>([]);
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month' | 'year'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
@@ -398,6 +398,8 @@ export const AdminExpensesPage: React.FC = () => {
       } else if (dateFilter === 'month') {
         matchesDate =
           expDate.getMonth() === now.getMonth() && expDate.getFullYear() === now.getFullYear();
+      } else if (dateFilter === 'year') {
+        matchesDate = expDate.getFullYear() === now.getFullYear();
       }
     }
 
@@ -568,14 +570,14 @@ export const AdminExpensesPage: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
             title="إجمالي المشتريات"
-            value={formatPrice(shownTotal)}
-            subtitle={`من إجمالي ${formatPrice(totalExpenses)} مدفوعات`}
+            value={formatStat(shownTotal, 'جنيها')}
+            subtitle={`من إجمالي ${formatStat(totalExpenses, 'جنيها')} مدفوعات`}
             icon={<Boxes className="w-5 h-5 text-[#2e5b9f]" />}
             variant="blue"
           />
           <StatCard
             title="مشتريات اليوم"
-            value={formatPrice(shownTodayTotal)}
+            value={formatStat(shownTodayTotal, 'جنيها')}
             subtitle="توريدات مسجلة النهاردة"
             icon={<Calendar className="w-5 h-5 text-gray-500" />}
             variant="neutral"
@@ -583,14 +585,14 @@ export const AdminExpensesPage: React.FC = () => {
           <StatCard
             title="أكثر صنف بتشتريه"
             value={shownPurchaseBreakdown[0]?.name || '—'}
-            subtitle={shownPurchaseBreakdown[0] ? `${formatPrice(shownPurchaseBreakdown[0].amount)} • ${formatNumber(shownPurchaseBreakdown[0].count)} توريدة` : undefined}
+            subtitle={shownPurchaseBreakdown[0] ? `${formatStat(shownPurchaseBreakdown[0].amount, 'جنيها')} • ${formatStat(shownPurchaseBreakdown[0].count, 'توريدة')}` : undefined}
             icon={<PieChart className="w-5 h-5 text-emerald-600" />}
             variant="neutral"
           />
           <StatCard
             title="إجمالي الكميات المشتراة"
-            value={`${formatNumber(shownUnits)} وحدة`}
-            subtitle={`${formatNumber(purchaseEntries.length)} قيد توريد`}
+            value={formatStat(shownUnits, 'وحدة')}
+            subtitle={`${formatStat(purchaseEntries.length, 'قيد')} توريد`}
             icon={<CheckCircle2 className="w-5 h-5 text-emerald-600" />}
             variant="neutral"
           />
@@ -599,14 +601,14 @@ export const AdminExpensesPage: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
             title="المصروفات التشغيلية"
-            value={formatPrice(shownTotal)}
+            value={formatStat(shownTotal, 'جنيها')}
             subtitle="بدون مشتريات المخزن"
             icon={<ReceiptText className="w-5 h-5 text-[#9f1239]" />}
             variant="pink"
           />
           <StatCard
             title="مصروفات اليوم"
-            value={formatPrice(shownTodayTotal)}
+            value={formatStat(shownTodayTotal, 'جنيها')}
             icon={<DollarSign className="w-5 h-5 text-gray-500" />}
             variant="neutral"
           />
@@ -618,7 +620,7 @@ export const AdminExpensesPage: React.FC = () => {
           />
           <StatCard
             title="عدد القيود المسجلة"
-            value={`${formatNumber(filteredExpenses.length)} قيد`}
+            value={formatStat(filteredExpenses.length, 'قيد')}
             icon={<Calendar className="w-5 h-5 text-gray-500" />}
             variant="neutral"
           />
@@ -639,6 +641,7 @@ export const AdminExpensesPage: React.FC = () => {
               { id: 'today', label: 'اليوم' },
               { id: 'week', label: 'آخر ٧ أيام' },
               { id: 'month', label: 'هذا الشهر' },
+              { id: 'year', label: 'هذه السنة' },
             ]}
             activePeriod={hasCustomRange ? '' : dateFilter}
             onPeriodChange={(id) => {
@@ -1009,7 +1012,7 @@ export const AdminExpensesPage: React.FC = () => {
               required
             />
 
-            {/* 🚫 مفيش خيار شراء/مخزون هنا — المصروفات التشغيلية للحاجات الخارجة بس،
+            {/* 🚫 لا يوجد خيار شراء/مخزون هنا — المصروفات التشغيلية للحاجات الخارجة بس،
                 والمشتريات ليها تبويبها الخاص (المشتريات والتوريدات) */}
             {viewMode !== 'purchases' && (
               <Select

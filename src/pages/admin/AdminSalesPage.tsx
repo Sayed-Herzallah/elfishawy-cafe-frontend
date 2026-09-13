@@ -14,7 +14,7 @@ import { DateRangeFilter, DateRange } from '../../components/ui/DateRangeFilter'
 import { DashboardFilterBar } from '../../components/ui/DashboardFilterBar';
 import { ProfessionalCard, OrderCard } from '../../components/ui/ProfessionalCard';
 import { useNotification } from '../../contexts/NotificationContext';
-import { formatPrice, formatNumber, formatDate, formatTime } from '../../utils/formatters';
+import { formatPrice, formatNumber, formatDate, formatTime, formatStat } from '../../utils/formatters';
 import {
   ShoppingBag,
   TrendingUp,
@@ -22,6 +22,7 @@ import {
   ReceiptText,
   Search,
   Printer,
+  Calendar,
   Filter,
   ChevronLeft,
   MoreVertical,
@@ -240,26 +241,26 @@ export const AdminSalesPage: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="إجمالي مبيعات الفلتر"
-          value={formatPrice(totalSalesAmount)}
+          value={formatStat(totalSalesAmount, 'جنيها')}
           percentage={completedRatio}
           icon={<TrendingUp className="w-5 h-5" />}
           variant="blue"
         />
         <StatCard
           title="عدد الطلبات المعروضة"
-          value={`${formatNumber(filteredOrders.length)} طلب`}
+          value={formatStat(filteredOrders.length, 'طلب')}
           icon={<ShoppingBag className="w-5 h-5" />}
           variant="neutral"
         />
         <StatCard
           title="متوسط قيمة الفاتورة"
-          value={formatPrice(averageOrderValue)}
+          value={formatStat(averageOrderValue, 'جنيها')}
           icon={<ReceiptText className="w-5 h-5" />}
           variant="neutral"
         />
         <StatCard
           title="الطلبات المكتملة"
-          value={`${formatNumber(completedOrders.length)} طلب`}
+          value={formatStat(completedOrders.length, 'طلب')}
           percentage={completedRatio}
           icon={<CreditCard className="w-5 h-5 text-emerald-600" />}
           variant="neutral"
@@ -482,20 +483,32 @@ export const AdminSalesPage: React.FC = () => {
                   id={order._id}
                   status={statusStyle as any}
                   title={String(order.orderNumber || `طلب #${String(order._id || '').slice(-6)}`)}
-                  subtitle={`${formatDate(order.createdAt)} • ${formatTime(order.createdAt)}`}
+                  subtitle={`#${order._id.slice(-6)} • ${formatDate(order.createdAt)}`}
                   onClick={() => setSelectedReceiptOrder(order)}
                   onDoubleClick={() => setSelectedReceiptOrder(order)}
-                  amounts={{ primary: Number(order.totalAmount) || 0 }}
+                  amounts={{
+                    // 💰 نمرر الرقم الخام الصحيح — قبل كده formatNumber كان بيرجّع "1,880"
+                    // و formatCurrency بتعمل parseFloat فتُظهر "1 جنيها" بدل القيمة الحقيقية
+                    primary: order.totalAmount,
+                    currency: 'جنيها',
+                  }}
                   metadata={[
                     { label: 'الطاولة', value: `#${order.tableNumber || '—'}`, icon: <ShoppingBag className="w-3.5 h-3.5" /> },
-                    { label: 'الأصناف', value: formatNumber(safeItems.length), icon: <ShoppingBag className="w-3.5 h-3.5" /> },
+                    { label: 'الوقت', value: formatTime(order.createdAt), icon: <Calendar className="w-3.5 h-3.5" /> },
+                    { label: 'عدد الأصناف', value: formatStat(safeItems.length), icon: <ShoppingBag className="w-3.5 h-3.5" /> },
                   ]}
                   actions={[
+                    {
+                      icon: <Printer className="w-3.5 h-3.5" />,
+                      label: 'طباعة',
+                      onClick: (e) => { e.stopPropagation(); setSelectedReceiptOrder(order); },
+                      variant: 'primary',
+                    },
                     {
                       icon: <Eye className="w-3.5 h-3.5" />,
                       label: 'عرض',
                       onClick: (e) => { e.stopPropagation(); setSelectedReceiptOrder(order); },
-                      variant: 'primary',
+                      variant: 'default',
                     },
                     ...(order.status !== 'cancelled' ? [{
                       icon: <Edit2 className="w-3.5 h-3.5" />,
@@ -524,7 +537,9 @@ export const AdminSalesPage: React.FC = () => {
                     }] : []),
                   ]}
                 >
+                  {/* ✅ الأصناف + حالة المكونات فقط — البيانات الأساسية (الطاولة/الوقت/المبلغ/الحالة) معروضة أعلاه في الـ metadata */}
                   <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] text-gray-400 font-bold shrink-0">الأصناف:</span>
                     {itemsPreview}
                     {remaining > 0 && (
                       <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded text-[10px]">
@@ -534,7 +549,7 @@ export const AdminSalesPage: React.FC = () => {
                     {hasShortage ? (
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md">
                         <AlertTriangle className="w-3 h-3" />
-                        عجز: {shortageItems.join('، ')}
+                        عجز ثانوي: {shortageItems.join('، ')}
                       </span>
                     ) : (
                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">

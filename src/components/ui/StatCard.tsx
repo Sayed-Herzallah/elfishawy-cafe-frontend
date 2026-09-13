@@ -1,4 +1,14 @@
 import React, { ReactNode } from 'react';
+import { EMPTY_LABEL } from '../../utils/formatters';
+
+const isEmptyValue = (val: string | number | undefined | null): boolean => {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'number') return val === 0;
+  const trimmed = String(val).trim();
+  if (!trimmed || trimmed === '0' || trimmed === EMPTY_LABEL || trimmed === '—' || trimmed === '-') return true;
+  const asNumber = Number(trimmed);
+  return !isNaN(asNumber) && asNumber === 0;
+};
 
 interface StatCardProps {
   title: string;
@@ -53,7 +63,9 @@ export const StatCard: React.FC<StatCardProps> = ({
       </div>
 
       <div className="my-1.5">
-        <div className="text-lg sm:text-xl font-bold font-mono tracking-tight">{value}</div>
+        <div className="text-lg sm:text-xl font-bold font-mono tracking-tight">
+          {isEmptyValue(value) ? EMPTY_LABEL : value}
+        </div>
         {subtitle && <div className="text-[10px] opacity-75 mt-0.5">{subtitle}</div>}
       </div>
 

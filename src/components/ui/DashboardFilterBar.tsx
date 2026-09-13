@@ -21,7 +21,7 @@ export interface DashboardFilterBarProps {
   activeCount?: number;
   onReset?: () => void;
   resetLabel?: string;
-  /** إظهار زر مسح الفلاتر دائماً حتى لو مفيش فلاتر نشطة */
+  /** إظهار زر مسح الفلاتر دائماً حتى لو لا يوجد فلاتر نشطة */
   alwaysShowReset?: boolean;
   /** عدد النتائج بعد التصفية + وصفها */
   resultCount?: number;

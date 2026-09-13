@@ -1,5 +1,15 @@
 import React from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
+import { EMPTY_LABEL } from '../../utils/formatters';
+
+const isEmptyValue = (val: string | number | undefined | null): boolean => {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'number') return val === 0;
+  const trimmed = String(val).trim();
+  if (!trimmed || trimmed === '0' || trimmed === EMPTY_LABEL || trimmed === '—' || trimmed === '-') return true;
+  const asNumber = Number(trimmed);
+  return !isNaN(asNumber) && asNumber === 0;
+};
 
 interface AttaStatCardProps {
   title: string;
@@ -70,7 +80,7 @@ export const AttaStatCard: React.FC<AttaStatCardProps> = ({
         {/* Right Side: Value & Title */}
         <div className="text-right min-w-0">
           <span className="text-2xl sm:text-3xl font-bold font-mono text-gray-900 tracking-tight block truncate">
-            {value}
+            {isEmptyValue(value) ? EMPTY_LABEL : value}
           </span>
           <span className="text-xs font-bold text-gray-500 mt-1 block font-arabic-heading truncate">
             {title}

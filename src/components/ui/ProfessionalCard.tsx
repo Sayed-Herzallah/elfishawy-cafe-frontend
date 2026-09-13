@@ -62,12 +62,12 @@ const statusStyles: Record<CardStatus, { bg: string; text: string; border: strin
   draft: { bg: 'bg-gray-50', text: 'text-gray-800', border: 'border-gray-200', icon: <FileText className="w-3.5 h-3.5" /> },
 };
 
-/** تسميات الحالة بالعربي — بدل عرض القيم الإنجليزية الخام (completed/pending...) */
+// أسماء الحالات بالعربي — بدل "Completed / Pending" الإنجليزية غير الاحترافية
 const statusLabels: Record<CardStatus, string> = {
   pending: 'قيد التحضير',
   completed: 'مكتمل',
   cancelled: 'ملغي',
-  processing: 'جاري المعالجة',
+  processing: 'قيد المعالجة',
   low: 'منخفض',
   out: 'نافد',
   available: 'متوفر',
@@ -172,7 +172,7 @@ const handleClick = (e: React.MouseEvent) => {
             </div>
             <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}>
               {statusStyle.icon}
-              <span className="ml-1">{statusLabels[status] || status}</span>
+              <span className="ml-1">{status}</span>
             </span>
           </div>
         </div>
@@ -214,7 +214,7 @@ const handleClick = (e: React.MouseEvent) => {
               className={`inline-flex items-center gap-1 shrink-0 font-bold rounded-full border px-2 py-0.5 text-[10px] ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
             >
               {statusStyle.icon}
-              <span>{statusLabels[status] || status}</span>
+              <span className="capitalize">{status}</span>
             </span>
           </div>
 
@@ -265,116 +265,88 @@ const handleClick = (e: React.MouseEvent) => {
           {children && <div className="mt-2.5">{children}</div>}
         </div>
       ) : (
-        <div className="p-5 print:p-0">
-          {/* Header Row */}
-          <div className="flex items-start justify-between gap-2 mb-4">
+        <div className="p-4 print:p-0">
+          {/* الصف الأول: أيقونة + عنوان + شارة الحالة بالعربي */}
+          <div className="flex items-center justify-between gap-2.5">
             <div className="flex items-center gap-2.5 flex-1 min-w-0">
               <div
-                className={`flex items-center justify-center shrink-0 w-11 h-11 rounded-xl ${variantColor.bg} ${variantColor.text}`}
+                className={`flex items-center justify-center shrink-0 w-10 h-10 rounded-xl ${variantColor.bg} ${variantColor.text}`}
               >
                 {variantIcon}
               </div>
               <div className="min-w-0">
-                <h3 className="font-bold text-gray-900 truncate text-base">{title}</h3>
+                <h3 className="font-bold text-gray-900 truncate text-sm">{title}</h3>
                 {subtitle && (
-                  <p className="text-gray-500 truncate mt-0.5 text-xs">{subtitle}</p>
+                  <p className="text-gray-500 truncate mt-0.5 text-[10px]">{subtitle}</p>
                 )}
               </div>
             </div>
 
-            <div className="flex items-center gap-2 shrink-0">
-              {/* Status Badge */}
-              <span
-                className={`inline-flex items-center gap-1 font-bold rounded-full border px-2.5 py-1 text-xs ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
-              >
-                {statusStyle.icon}
-                <span className="ml-1">{statusLabels[status] || status}</span>
-              </span>
-            </div>
+            <span
+              className={`inline-flex items-center gap-1 font-bold rounded-full border px-2.5 py-1 text-[11px] whitespace-nowrap ${statusStyle.bg} ${statusStyle.text} ${statusStyle.border}`}
+            >
+              {statusStyle.icon}
+              <span>{statusLabels[status] || status}</span>
+            </span>
           </div>
 
-          {/* Amounts */}
-          {amounts && (
-            <div className="flex items-center gap-3 flex-wrap mb-4">
-              {amounts.primary && (
-                <div className="flex items-center gap-1.5">
-                  <DollarSign className="w-4 h-4 text-emerald-600" />
-                  <span className="text-lg font-bold font-mono text-emerald-700">{formatCurrency(amounts.primary)}</span>
-                  {amounts.secondary && (
-                    <span className="text-[10px] text-gray-500 font-mono">({formatCurrency(amounts.secondary)})</span>
-                  )}
-                </div>
+          {/* الصف الثاني: المبلغ + شرائح البيانات المدمجة (بدل الصناديق السمينة) */}
+          {(amounts?.primary || metadata.length > 0 || tags.length > 0 || dates.created || dates.due || assignee) && (
+            <div className="flex flex-wrap items-center gap-1.5 mt-3">
+              {amounts?.primary && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold font-mono text-sm whitespace-nowrap">
+                  <DollarSign className="w-3.5 h-3.5" />
+                  {formatCurrency(amounts.primary, amounts.currency || 'جنيها')}
+                </span>
               )}
-            </div>
-          )}
+              {amounts?.secondary && (
+                <span className="text-[10px] text-gray-500 font-mono">
+                  ({formatCurrency(amounts.secondary, amounts.currency || 'جنيها')})
+                </span>
+              )}
 
-          {/* Metadata Grid */}
-          {(metadata.length > 0 || dates.created || dates.due || assignee) && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4 text-right">
-              {metadata.map((meta, idx) => (
-                <div key={idx} className="p-3 bg-[#faf8f5] rounded-xl border border-gray-100">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 mb-1">
-                    {meta.icon}
-                    {meta.label}
-                  </div>
-                  <span className={`font-mono text-sm ${meta.color || 'text-gray-900'}`}>{meta.value}</span>
-                </div>
+          {metadata.map((meta, idx) => (
+                <span
+                  key={idx}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#faf8f5] border border-gray-100 text-[10px] font-bold text-gray-500 max-w-full"
+                >
+                  {meta.icon}
+                  <span>{meta.label}:</span>
+                  <span className={`font-mono truncate max-w-[130px] ${meta.color || 'text-gray-900'}`}>{meta.value}</span>
+                </span>
               ))}
               {dates.created && (
-                <div className="p-3 bg-[#faf8f5] rounded-xl border border-gray-100">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 mb-1">
-                    <Calendar className="w-3.5 h-3.5" />
-                    تاريخ الإنشاء
-                  </div>
-                  <span className="font-mono text-sm text-gray-900">{formatDate(dates.created)}</span>
-                </div>
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#faf8f5] border border-gray-100 text-[10px] font-bold text-gray-500">
+                  <Calendar className="w-3 h-3" />
+                  {formatDate(dates.created)}
+                </span>
               )}
               {dates.due && (
-                <div className="p-3 bg-[#faf8f5] rounded-xl border border-gray-100">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 mb-1">
-                    <Calendar className="w-3.5 h-3.5" />
-                    تاريخ الاستحقاق
-                  </div>
-                  <span className="font-mono text-sm text-gray-900">{formatDate(dates.due)}</span>
-                </div>
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#faf8f5] border border-gray-100 text-[10px] font-bold text-gray-500">
+                  <Calendar className="w-3 h-3" />
+                  {formatDate(dates.due)}
+                </span>
               )}
-              {assignee && (
-                <div className="p-3 bg-[#faf8f5] rounded-xl border border-gray-100">
-                  <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-500 mb-1">
-                    <User className="w-3.5 h-3.5" />
-                    المسؤول
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-[#2e5b9f]/10 flex items-center justify-center text-[#2e5b9f] font-bold text-sm">
-                      {assignee.avatar || assignee.name.charAt(0)}
-                    </div>
-                    <div>
-                      <span className="font-bold text-sm text-gray-900 block">{assignee.name}</span>
-                      {assignee.role && <span className="text-[10px] text-gray-500">{assignee.role}</span>}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Tags */}
-          {tags.length > 0 && (
-            <div className="mb-4 flex flex-wrap gap-1.5">
               {tags.map((tag, idx) => (
-                <span key={idx} className="inline-flex items-center px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-bold">
+                <span key={idx} className="inline-flex items-center px-2 py-1 rounded-full bg-blue-50 border border-blue-100 text-[10px] font-bold text-[#2e5b9f]">
                   {tag}
                 </span>
               ))}
+              {assignee && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-[#faf8f5] border border-gray-100 text-[10px] font-bold text-gray-500">
+                  <User className="w-3 h-3" />
+                  {assignee.avatar || assignee.name}
+                </span>
+              )}
             </div>
           )}
 
           {/* Custom Children */}
-          {children && <div className="mb-4">{children}</div>}
+          {children && <div className="mt-2.5 pb-2.5">{children}</div>}
 
           {/* Footer with Quick Actions */}
-          <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-2">
-            <div className="flex flex-wrap items-center gap-1 shrink-0">
+          {actions.length > 0 && (
+            <div className="pt-2.5 border-t border-gray-100 flex flex-wrap items-center justify-end gap-1.5">
               {actions.map((action, idx) => (
                 <button
                   key={idx}
@@ -391,7 +363,7 @@ const handleClick = (e: React.MouseEvent) => {
                 </button>
               ))}
             </div>
-          </div>
+          )}
         </div>
       )}
     </article>

@@ -3,19 +3,41 @@
  * Enforces English digits (1234567890) inside Arabic layouts.
  */
 
+/** القيمة البديلة عند غياب البيانات — بدل "0" أو "—" */
+export const EMPTY_LABEL = 'لا يوجد';
+
 /**
  * Formats a numeric price into a localized string with English numbers and the currency.
- * Example: 35500 -> "35,500 "
+ * Example: 35500 -> "35,500 جنيها"
+ * قيمة غير موجودة (null/undefined/NaN) → "لا يوجد" بدل "0 جنيها".
  */
 export const formatPrice = (price: number | undefined | null): string => {
   if (price === undefined || price === null || isNaN(Number(price))) {
-    return '0 جنيها';
+    return EMPTY_LABEL;
   }
   const formatted = Number(price).toLocaleString('en-US', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   });
   return `${formatted} جنيها`;
+};
+
+/**
+ * Format الأرقام في كروت الملخصات:
+ * - القيمة صفر أو غير موجودة → "لا يوجد" (بدل "0" أو "—")
+ * - وإلا → الرقم بالفواصل مع وحدة اختيارية
+ * Example: (0, 'طلب') -> "لا يوجد" | (12, 'طلب') -> "12 طلب"
+ */
+export const formatStat = (value: number | undefined | null, unit = ''): string => {
+  const n = Number(value);
+  if (value === null || value === undefined || isNaN(n) || n <= 0) {
+    return EMPTY_LABEL;
+  }
+  const text = n.toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  });
+  return unit ? `${text} ${unit}` : text;
 };
 
 /**

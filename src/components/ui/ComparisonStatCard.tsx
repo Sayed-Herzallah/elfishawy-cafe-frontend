@@ -1,6 +1,7 @@
 import React from 'react';
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react';
 import { ComparisonResult } from '../../hooks/useStatisticsComparison';
+import { EMPTY_LABEL } from '../../utils/formatters';
 
 interface ComparisonStatCardProps {
   title: string;
@@ -17,6 +18,16 @@ interface ComparisonStatCardProps {
 const safeNum = (val: number | undefined | null): number => {
   const n = Number(val);
   return isNaN(n) ? 0 : n;
+};
+
+const isEmptyValue = (val: string | number | undefined | null): boolean => {
+  if (val === undefined || val === null || val === '') return true;
+  if (typeof val === 'number') return val === 0;
+  // نص عددي أو نص عادي: صفر/شرطة/كلمة لا يوجد تعتبر فارغة
+  const trimmed = String(val).trim();
+  if (!trimmed || trimmed === '0' || trimmed === EMPTY_LABEL || trimmed === '—' || trimmed === '-') return true;
+  const asNumber = Number(trimmed);
+  return !isNaN(asNumber) && asNumber === 0;
 };
 
 const colorMap = {
@@ -118,7 +129,7 @@ export const ComparisonStatCard: React.FC<ComparisonStatCardProps> = ({
         {/* Right Side: Value & Title */}
         <div className="text-right min-w-0 flex-1">
           <span className="text-2xl sm:text-3xl font-bold font-mono text-gray-900 tracking-tight block break-words leading-tight">
-            {value}
+            {isEmptyValue(value) ? EMPTY_LABEL : value}
           </span>
           <span className="text-xs font-bold text-gray-500 mt-1 block font-arabic-heading truncate">
             {title}
@@ -132,9 +143,13 @@ export const ComparisonStatCard: React.FC<ComparisonStatCardProps> = ({
         {comparison && (
           <span className="text-gray-500 font-medium truncate flex items-center gap-1">
             {comparison.previousPeriodLabel}:{' '}
-            <span className="font-mono font-bold text-gray-700">
-              {safeNum(comparison.previous).toLocaleString('en-US')}
-            </span>
+            {isEmptyValue(comparison.previous) ? (
+              <span className="font-mono font-bold text-gray-400">{EMPTY_LABEL}</span>
+            ) : (
+              <span className="font-mono font-bold text-gray-700">
+                {safeNum(comparison.previous).toLocaleString('en-US')}
+              </span>
+            )}
           </span>
         )}
 

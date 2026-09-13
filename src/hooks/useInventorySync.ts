@@ -99,17 +99,24 @@ export const useInventorySync = (pollInterval = 30000) => {
 export const useProductAvailability = () => {
   const { items } = useInventorySync(30000);
   
-  const getAvailableQuantity = useCallback((productId: string, recipeIngredients: Array<{ inventoryItem: string; consumeQty: number }>) => {
+  const getAvailableQuantity = useCallback((productId: string, recipeIngredients: Array<{ inventoryItem: string; consumeQty: number; isPrimary?: boolean }>) => {
     if (!recipeIngredients || recipeIngredients.length === 0) return 0;
+    
+    // الخامات الأساسية فقط هي التي تحدد عدد الأكواب المتاحة
+    // الخامات المساعدة (مثل السكر واللبن) تُخصم عند البيع ولا تقيّد رصيد الأكواب
+    const primaryIngredients = recipeIngredients.filter((ing) => ing.isPrimary !== false);
+    const targetIngredients = primaryIngredients.length > 0 ? primaryIngredients : recipeIngredients;
     
     let minAvailable = Infinity;
     
-    for (const ingredient of recipeIngredients) {
+    for (const ingredient of targetIngredients) {
       const inventoryItem = items.find(i => i._id === ingredient.inventoryItem);
       if (!inventoryItem || inventoryItem.quantity <= 0) {
         return 0;
       }
-      const available = Math.floor(inventoryItem.quantity / ingredient.consumeQty);
+      const consumeQty = Number(ingredient.consumeQty);
+      if (consumeQty <= 0) continue;
+      const available = Math.floor(inventoryItem.quantity / consumeQty);
       minAvailable = Math.min(minAvailable, available);
     }
     

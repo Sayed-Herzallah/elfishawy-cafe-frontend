@@ -10,8 +10,9 @@ import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
 import { ExportModal } from '../../components/ui/ExportModal';
 import { DateRangeFilter, toLocalDateString } from '../../components/ui/DateRangeFilter';
 import { DashboardFilterBar } from '../../components/ui/DashboardFilterBar';
+import { StatCard } from '../../components/ui/StatCard';
 import { exportElementToPdf } from '../../utils/pdfExport';
-import { formatPrice, formatNumber, formatDate, formatTime } from '../../utils/formatters';
+import { formatPrice, formatNumber, formatDate, formatTime, formatStat } from '../../utils/formatters';
 import { ensurePurchaseRestockAndSync } from '../../utils/stockSync';
 import { playSuccessSound } from '../../utils/soundFeedback';
 import {
@@ -54,7 +55,7 @@ export const CashierExpensesPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   // 🔎 نوع البحث — نفس فكرة سجل فواتير اليوم في الكاشير
   const [searchMode, setSearchMode] = useState<SearchMode>('all');
-  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month' | 'year'>('all');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -317,6 +318,8 @@ export const CashierExpensesPage: React.FC = () => {
         } else if (dateFilter === 'month') {
           matchesDate =
             expDate.getMonth() === now.getMonth() && expDate.getFullYear() === now.getFullYear();
+        } else if (dateFilter === 'year') {
+          matchesDate = expDate.getFullYear() === now.getFullYear();
         }
       }
 
@@ -423,45 +426,49 @@ export const CashierExpensesPage: React.FC = () => {
         </button>
       </div>
 
-      {/* KPI Cards — على النتائج المفلترة */}
+      {/* KPI Cards + Table — للتصدير PDF */}
       <div ref={contentRef} className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-2xl border border-gray-200/80 p-4 shadow-2xs flex items-center justify-between">
-          <div>
-            <span className="text-xs text-gray-500 font-bold block">إجمالي المشتريات (المفلترة)</span>
-            <span className="text-2xl font-bold text-[#2e5b9f] font-mono mt-1 block">
-              {formatPrice(totalFilteredAmount)}
-            </span>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#2e5b9f] flex items-center justify-center font-bold shadow-2xs">
-            <ShoppingBag className="w-5 h-5" />
-          </div>
+      {/* KPI Cards — على النتائج المفلترة */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="bg-white rounded-xl border border-gray-100 p-3.5 shadow-xs">
+              <div className="flex items-center justify-between mb-2">
+                <div className="h-3 w-20 bg-gray-200 rounded animate-pulse" />
+                <div className="w-5 h-5 bg-gray-200 rounded animate-pulse" />
+              </div>
+              <div className="h-6 w-24 bg-gray-200 rounded animate-pulse" />
+            </div>
+          ))}
         </div>
-
-        <div className="bg-white rounded-2xl border border-gray-200/80 p-4 shadow-2xs flex items-center justify-between">
-          <div>
-            <span className="text-xs text-gray-500 font-bold block">عدد فواتير الشراء</span>
-            <span className="text-2xl font-bold text-gray-900 font-mono mt-1 block">
-              {formatNumber(filteredExpenses.length)} فواتير
-            </span>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold shadow-2xs">
-            <FileSpreadsheet className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-gray-200/80 p-4 shadow-2xs flex items-center justify-between">
-          <div>
-            <span className="text-xs text-gray-500 font-bold block">إجمالي الكميات الموردة</span>
-            <span className="text-2xl font-bold text-emerald-600 font-mono mt-1 block">
-              + {formatNumber(totalFilteredQty)} وحدة
-            </span>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold shadow-2xs">
-            <Boxes className="w-5 h-5" />
-          </div>
-        </div>
+      ) : (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          title="إجمالي المشتريات"
+          value={formatStat(totalFilteredAmount, 'جنيها')}
+          icon={<ShoppingBag className="w-5 h-5 text-[#2e5b9f]" />}
+          variant="blue"
+        />
+        <StatCard
+          title="عدد فواتير الشراء"
+          value={formatStat(filteredExpenses.length, 'فاتورة')}
+          icon={<FileSpreadsheet className="w-5 h-5 text-emerald-600" />}
+          variant="neutral"
+        />
+        <StatCard
+          title="إجمالي الكميات الموردة"
+          value={formatStat(totalFilteredQty, 'وحدة')}
+          icon={<Boxes className="w-5 h-5 text-amber-600" />}
+          variant="neutral"
+        />
+        <StatCard
+          title="متوسط قيمة الفاتورة"
+          value={formatStat(filteredExpenses.length > 0 ? Math.round(totalFilteredAmount / filteredExpenses.length) : 0, 'جنيها')}
+          icon={<CheckCircle2 className="w-5 h-5 text-emerald-600" />}
+          variant="neutral"
+        />
       </div>
+      )}
 
       {/* Expenses Table Container */}
       <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-5 space-y-4">
@@ -482,6 +489,7 @@ export const CashierExpensesPage: React.FC = () => {
             { id: 'today', label: 'اليوم' },
             { id: 'week', label: 'آخر ٧ أيام' },
             { id: 'month', label: 'هذا الشهر' },
+            { id: 'year', label: 'هذه السنة' },
           ]}
           activePeriod={hasCustomRange ? '' : dateFilter}
           onPeriodChange={(id) => {

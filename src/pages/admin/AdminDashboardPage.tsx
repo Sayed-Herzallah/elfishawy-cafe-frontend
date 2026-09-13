@@ -696,6 +696,16 @@ export const AdminDashboardPage: React.FC = () => {
             >
               الشهر
             </button>
+            <button
+              onClick={() => setTimeRange('year')}
+              className={`py-1.5 px-3 rounded-xl font-bold transition cursor-pointer ${
+                timeRange === 'year'
+                  ? 'bg-[#2e5b9f] text-white shadow-2xs'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              السنة
+            </button>
           </div>
 
           {/* Export Button (Opens PDF/CSV selector) */}

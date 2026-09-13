@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
-import { formatPrice, formatNumber } from '../../utils/formatters';
+import { formatPrice, formatNumber, EMPTY_LABEL } from '../../utils/formatters';
 import { TrendingUp, Calendar, Sparkles } from 'lucide-react';
+
+const isEmptyValue = (val: number | undefined | null): boolean => {
+  if (val === undefined || val === null) return true;
+  const n = Number(val);
+  return isNaN(n) || n === 0;
+};
 
 export interface ChartDataPoint {
   label: string;
@@ -222,7 +228,7 @@ export const AttaGlowingChart: React.FC<AttaGlowingChartProps> = ({
             <span className="text-sm text-gray-500 font-bold">المبيعات</span>
           </div>
           <span className="text-2xl font-bold text-blue-600 font-mono block">
-            {formatPrice(totalSales)}
+            {isEmptyValue(totalSales) ? EMPTY_LABEL : formatPrice(totalSales)}
           </span>
         </div>
 
@@ -256,7 +262,7 @@ export const AttaGlowingChart: React.FC<AttaGlowingChartProps> = ({
             <span className="text-sm text-gray-500 font-bold">المصروفات</span>
           </div>
           <span className="text-2xl font-bold text-rose-500 font-mono block">
-            {formatPrice(totalExpenses)}
+            {isEmptyValue(totalExpenses) ? EMPTY_LABEL : formatPrice(totalExpenses)}
           </span>
         </div>
 
@@ -275,7 +281,7 @@ export const AttaGlowingChart: React.FC<AttaGlowingChartProps> = ({
             <span className="text-sm text-gray-500 font-bold">{netProfit < 0 ? 'صافي الخسارة' : 'صافي الأرباح'}</span>
           </div>
           <span className={`text-2xl font-bold font-mono block ${netProfit < 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-            {formatPrice(netProfit)}
+            {isEmptyValue(netProfit) ? EMPTY_LABEL : formatPrice(netProfit)}
           </span>
         </div>
       </div>

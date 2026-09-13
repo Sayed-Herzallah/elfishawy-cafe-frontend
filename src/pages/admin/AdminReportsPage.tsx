@@ -133,7 +133,7 @@ export const AdminReportsPage: React.FC = () => {
   // ✅ المقارنات مبنية على النطاق المحدد فعلاً:
   // لو فيه تاريخ محدد (اختصار أو مخصص) → مقارنة بنافذة بنفس الطول قبله مباشرة
   // عشان كروت المؤشرات تطابق الفترة المفلترة بالظبط (كان ده سبب إن الفلترة "مش شغالة").
-  // ولو مفيش تاريخ محدد → مقارنات الشهر الحالي كافتراضي.
+  // ولو لا يوجد تاريخ محدد → مقارنات الشهر الحالي كافتراضي.
   const hasExplicitRange = Boolean(dateRange.from && dateRange.to);
 
   // ✅ تطبيع حدود النطاق: البداية أول اليوم والنهاية آخر اليوم — عشان اختيار يوم من التقويم
@@ -184,7 +184,7 @@ export const AdminReportsPage: React.FC = () => {
     };
   };
 
-  // Comparison hooks — تحويل النطاق المختار إلى فترة قابلة للمقارنة (احتياطي لما مفيش تاريخ محدد)
+  // Comparison hooks — تحويل النطاق المختار إلى فترة قابلة للمقارنة (احتياطي لما لا يوجد تاريخ محدد)
   const comparisonTimeRange: TimeRange = 'month';
 
   const presetSalesComparison = useSalesComparison(comparisonTimeRange, orders);

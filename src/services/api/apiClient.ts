@@ -87,9 +87,7 @@ export class ApiClient {
         if (refreshed) {
           headers['authorization'] = ApiClient.getAccessToken() || '';
           const retryRes = await fetch(url, { ...options, headers });
-          const retryData = await retryRes.json();
-          if (!retryRes.ok) throw retryData;
-          return retryData;
+          return ApiClient.parseResponse(retryRes);
         } else {
           ApiClient.clearTokens();
           ApiClient.notifyUnauthorized();
@@ -97,15 +95,68 @@ export class ApiClient {
         }
       }
 
-      const data = await response.json();
-      if (!response.ok) {
-        throw data;
-      }
-      return data;
+      return ApiClient.parseResponse(response);
     } catch (networkError: any) {
       console.error('API Request Error:', networkError);
       throw networkError;
     }
+  }
+
+  /**
+   * قراءة استجابة الخادم بأمان:
+   * - لو رجّع JSON عادي → نستخدمه زي ما هو
+   * - لو رجّع نص/HTML (مثل "Request Entity Too Large" من Vercel أو صفحة خطأ)
+   *   → نرمي رسالة عربية واضحة بدل خطأ "Unexpected token" المحيّر
+   */
+  private static async parseResponse(response: Response): Promise<any> {
+    const raw = await response.text();
+    let data: any = null;
+    if (raw && raw.trim()) {
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        data = null; // استجابة مش JSON (خطأ نصي من البروكسي أو الخادم)
+      }
+    }
+
+    if (response.ok) {
+      return data ?? { success: true, data: null };
+    }
+
+    // الاستجابة JSON فيها رسالة واضحة بالفعل → نرميها كما هي
+    if (
+      data &&
+      (typeof data.message === 'string' ||
+        typeof data.error === 'string' ||
+        typeof data.detail === 'string')
+    ) {
+      throw data;
+    }
+
+    // وإلا: رسالة ودّية حسب كود الحالة (خصوصاً 413 = الصورة كبيرة)
+    const statusMessages: Record<number, string> = {
+      400: 'طلب غير صالح — تأكد من البيانات المدخلة',
+      401: 'انتهت الجلسة — سجّل الدخول من جديد',
+      403: 'لا تملك صلاحية تنفيذ هذا الإجراء',
+      404: 'العنصر المطلوب غير موجود',
+      409: 'تعارض في البيانات (قد يكون العنصر موجوداً مسبقاً)',
+      413: 'حجم الصورة أو الطلب كبير جداً على الخادم — استخدم صورة أصغر أو اضغطها وحاول تاني',
+      415: 'نوع الملف غير مدعوم — استخدم صورة JPG أو PNG',
+      422: 'البيانات المدخلة غير مكتملة أو غير صحيحة',
+      429: 'أرسلت طلبات كتير في وقت قصير — حاول بعد قليل',
+      500: 'خطأ في الخادم — حاول مرة تانية بعد قليل',
+      502: 'الخادم غير متاح حالياً — حاول مرة تانية',
+      503: 'الخدمة مشغولة حالياً — حاول مرة تانية',
+      504: 'الخادم استغرق وقتاً أطول من المتوقع — حاول مرة تانية',
+    };
+
+    throw {
+      success: false,
+      status: response.status,
+      message:
+        statusMessages[response.status] ||
+        `الخادم رجّع استجابة غير متوقعة (${response.status}) — حاول مرة تانية`,
+    };
   }
 
   /** إشعار انتهاء الجلسة: مرة واحدة كحد أقصى كل 30 ثانية بدل ما يتكرر مع كل طلب polling */

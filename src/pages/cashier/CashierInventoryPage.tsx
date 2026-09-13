@@ -12,9 +12,10 @@ import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { Badge } from '../../components/ui/Badge';
 import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
+import { StatCard } from '../../components/ui/StatCard';
 import { useInventorySync } from '../../hooks/useInventorySync';
 import { isStockLow, isStockOut } from '../../utils/stockStatus';
-import { formatPrice, formatNumber, formatDate } from '../../utils/formatters';
+import { formatPrice, formatNumber, formatDate, formatStat } from '../../utils/formatters';
 import {
   Plus,
   ArrowDownToLine,
@@ -310,70 +311,55 @@ export const CashierInventoryPage: React.FC = () => {
       </div>
 
       {/* Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-        <div
-          onClick={() => setFilterMode('all')}
-          className={`bg-white rounded-2xl border p-4 transition cursor-pointer shadow-2xs ${
-            filterMode === 'all'
-              ? 'border-[#2e5b9f] ring-1 ring-[#2e5b9f]/20'
-              : 'border-gray-200/80 hover:border-gray-300'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <Plus className="w-4 h-4 text-gray-500" />
-            <span className="text-xs text-gray-500 font-bold">إجمالي الخامات</span>
-          </div>
-          <span className="text-xl font-bold text-gray-900 font-mono mt-1 block">
-            {formatNumber(items.length)} صنف
-          </span>
-          <span className="text-[11px] text-emerald-700 mt-0.5 block">
-            {formatNumber(healthyCount)} صنف بحالة ممتازة
-          </span>
-          <span className="text-[11px] text-[#2e5b9f] font-mono mt-0.5 block">
-            💰 القيمة التقديرية: {formatPrice(inventoryValue)}
-          </span>
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <div key={i} className="bg-white rounded-xl border border-gray-100 p-3.5 shadow-xs">
+              <div className="flex items-center justify-between mb-2">
+                <div className="h-3 w-20 bg-gray-200 rounded animate-pulse" />
+                <div className="w-5 h-5 bg-gray-200 rounded animate-pulse" />
+              </div>
+              <div className="h-6 w-24 bg-gray-200 rounded animate-pulse" />
+            </div>
+          ))}
         </div>
-
-        <div
-          onClick={() => setFilterMode('low')}
-          className={`rounded-2xl border p-4 transition cursor-pointer shadow-2xs ${
-            filterMode === 'low'
-              ? 'bg-amber-50 border-amber-400 ring-1 ring-amber-400/20'
-              : 'bg-white border-gray-200/80 hover:bg-amber-50/40'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <AlertTriangle className="w-4 h-4 text-amber-600" />
-            <span className="text-xs text-amber-900 font-bold">مخزون منخفض</span>
-          </div>
-          <span className="text-xl font-bold text-amber-900 font-mono mt-1 block">
-            {formatNumber(lowStockCount)} خامات
-          </span>
-          <span className="text-[11px] text-amber-800 mt-0.5 block">
-            يحتاج إلى تسجيل شراء
-          </span>
+      ) : (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div onClick={() => setFilterMode('all')} className="cursor-pointer">
+          <StatCard
+            title="إجمالي الأصناف"
+            value={formatStat(items.length, 'صنف')}
+            subtitle={`${formatStat(healthyCount, 'صنف')} بحالة ممتازة`}
+            icon={<Plus className="w-5 h-5 text-gray-500" />}
+            variant="neutral"
+          />
         </div>
-
-        <div
-          onClick={() => setFilterMode('out')}
-          className={`rounded-2xl border p-4 transition cursor-pointer shadow-2xs ${
-            filterMode === 'out'
-              ? 'bg-rose-50 border-rose-400 ring-1 ring-rose-400/20'
-              : 'bg-white border-gray-200/80 hover:bg-rose-50/40'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <AlertTriangle className="w-4 h-4 text-rose-600" />
-            <span className="text-xs text-rose-900 font-bold">خامات نافدة</span>
-          </div>
-          <span className="text-xl font-bold text-rose-900 font-mono mt-1 block">
-            {formatNumber(outOfStockCount)} خامات
-          </span>
-          <span className="text-[11px] text-rose-800 mt-0.5 block">
-            يتطلب شراء فوري
-          </span>
+        <div onClick={() => setFilterMode('low')} className="cursor-pointer">
+          <StatCard
+            title="مخزون منخفض"
+            value={formatStat(lowStockCount, 'صنف')}
+            subtitle="أقل من حد الأمان"
+            icon={<AlertTriangle className="w-5 h-5 text-amber-600" />}
+            variant="neutral"
+          />
         </div>
+        <div onClick={() => setFilterMode('out')} className="cursor-pointer">
+          <StatCard
+            title="نفد من المخزون"
+            value={formatStat(outOfStockCount, 'صنف')}
+            subtitle="يحتاج لتوريد عاجل"
+            icon={<AlertTriangle className="w-5 h-5 text-rose-600" />}
+            variant="pink"
+          />
+        </div>
+        <StatCard
+          title="قيمة المخزون"
+          value={formatStat(inventoryValue, 'جنيها')}
+          icon={<CheckCircle2 className="w-5 h-5 text-[#2e5b9f]" />}
+          variant="blue"
+        />
       </div>
+      )}
 
       {/* Stock Table */}
       <div className="bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-5 space-y-3.5">

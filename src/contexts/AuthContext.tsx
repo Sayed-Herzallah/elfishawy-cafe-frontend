@@ -39,13 +39,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     try {
-      // محدودية زمنية 5 ثوانٍ — لو الإنترنت مقطوع يفشل بسرعة وما يعلّقش الشاشة
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('timeout')), 5000)
-      );
-      const res = await Promise.race([userService.getMe(), timeoutPromise]);
-      if ((res as any).success && (res as any).data) {
-        setUser((res as any).data);
+      const res = await userService.getMe();
+      if (res.success && res.data) {
+        setUser(res.data);
       }
     } catch {
       ApiClient.clearTokens();

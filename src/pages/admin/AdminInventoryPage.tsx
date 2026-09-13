@@ -6,7 +6,7 @@ import { isStockLow, isStockOut } from '../../utils/stockStatus';
 import { InventoryItem, Expense } from '../../types';
 import { useNotification } from '../../contexts/NotificationContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { formatPrice, formatNumber, formatDate, formatDateTime } from '../../utils/formatters';
+import { formatPrice, formatNumber, formatDate, formatDateTime, formatStat } from '../../utils/formatters';
 import { mergeRestockHistory, addRestockJournalEntry, purchaseSummary } from '../../utils/restockJournal';
 import { playSuccessSound } from '../../utils/soundFeedback';
 
@@ -447,14 +447,14 @@ export const AdminInventoryPage: React.FC = () => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="إجمالي الأصناف المعروضة"
-          value={`${formatNumber(filteredItems.length)} صنف`}
+          value={formatStat(filteredItems.length, 'صنف')}
           percentage={availablePct}
           icon={<Boxes className="w-5 h-5 text-gray-500" />}
           variant="neutral"
         />
         <StatCard
           title="مخزون منخفض"
-          value={`${formatNumber(shownLowCount)} صنف`}
+          value={formatStat(shownLowCount, 'صنف')}
           subtitle="أقل من حد الأمان"
           percentage={lowPct}
           isPositive={false}
@@ -463,7 +463,7 @@ export const AdminInventoryPage: React.FC = () => {
         />
         <StatCard
           title="نفد من المخزون"
-          value={`${formatNumber(shownOutCount)} صنف`}
+          value={formatStat(shownOutCount, 'صنف')}
           subtitle="يحتاج لتوريد عاجل"
           percentage={outPct}
           isPositive={false}
@@ -472,7 +472,7 @@ export const AdminInventoryPage: React.FC = () => {
         />
         <StatCard
           title="قيمة المخزون المعروض"
-          value={formatPrice(shownValue)}
+          value={formatStat(shownValue, 'جنيها')}
           icon={<CheckCircle2 className="w-5 h-5 text-[#2e5b9f]" />}
           variant="blue"
         />
@@ -570,89 +570,95 @@ export const AdminInventoryPage: React.FC = () => {
 return (
                      <div
                        key={item._id}
-                       className="bg-white border border-gray-200/70 rounded-2xl p-4 space-y-3 text-right shadow-2xs hover:shadow-sm hover:border-[#2e5b9f]/30 transition"
+                       className={`group bg-white border border-gray-200/80 rounded-2xl p-4 shadow-xs hover:shadow-md transition-all duration-150 cursor-pointer text-right ${
+                         isOut ? 'border-r-4 border-r-rose-400' : isLow ? 'border-r-4 border-r-amber-400' : 'border-r-4 border-r-emerald-400'
+                       }`}
                        onClick={() => setViewingItem(item)}
                      >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className={`w-9 h-9 shrink-0 rounded-xl flex items-center justify-center border ${isOut ? 'bg-rose-50 text-rose-600 border-rose-200/60' : isLow ? 'bg-amber-50 text-amber-600 border-amber-200/60' : 'bg-[#2e5b9f]/10 text-[#2e5b9f] border-[#2e5b9f]/15'}`}>
-                            <Boxes className="w-4 h-4" />
-                          </div>
-                          <div className="min-w-0">
-                            <span className="font-bold text-gray-900 text-sm block truncate">{item.name}</span>
-                            {item.lastRestocked && (
-                              <span className="text-[10px] text-gray-400 font-mono mt-0.5 block truncate">
-                                آخر توريد: {formatDate(item.lastRestocked)}
-                                {restockerName ? ` • ${restockerName}` : ''}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <Badge
-                          variant={isOut ? 'out' : isLow ? 'low' : 'available'}
-                          size="sm"
-                        >
-                          {isOut ? 'نافد' : isLow ? 'منخفض' : 'مستقر'}
-                        </Badge>
-                      </div>
+                       <div className="flex items-center justify-between gap-2.5">
+                         <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                           <div
+                             className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
+                               isOut ? 'bg-rose-50 border-rose-200 text-rose-600' : isLow ? 'bg-amber-50 border-amber-200 text-amber-600' : 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                             }`}
+                           >
+                             <Boxes className="w-5 h-5" />
+                           </div>
+                           <div className="min-w-0">
+                             <h4 className="font-bold text-gray-900 text-sm truncate">{item.name}</h4>
+                             {item.lastRestocked && (
+                               <p className="text-[10px] text-gray-400 font-mono truncate">
+                                 آخر تحديث: {formatDate(item.lastRestocked)}{restockerName ? ` • ${restockerName}` : ''}
+                               </p>
+                             )}
+                           </div>
+                         </div>
+                         <Badge
+                           variant={isOut ? 'out' : isLow ? 'low' : 'available'}
+                           size="sm"
+                         >
+                           {isOut ? 'نافد' : isLow ? 'منخفض' : 'مستقر'}
+                         </Badge>
+                       </div>
 
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="bg-[#faf8f5] rounded-xl px-2.5 py-2 text-center">
-                          <span className="text-[9px] font-bold text-gray-400 block mb-0.5">الكمية الحالية</span>
-                          <span className="font-black text-gray-900 font-mono text-xs">
-                            {formatNumber(item.quantity)} {item.unit}
+                      <div className="grid grid-cols-2 gap-2.5 pt-2.5 border-t border-gray-100">
+                        <div className="p-2.5 bg-white rounded-xl border border-gray-100">
+                          <span className="text-[10px] text-gray-400 block mb-0.5">الكمية الحالية</span>
+                          <span className="font-bold text-gray-900 font-mono text-sm">
+                            {formatStat(item.quantity, item.unit)}
                           </span>
                         </div>
-                        <div className="bg-[#faf8f5] rounded-xl px-2.5 py-2 text-center">
-                          <span className="text-[9px] font-bold text-gray-400 block mb-0.5">حد الأمان</span>
-                          <span className="font-black text-gray-700 font-mono text-xs">
+                        <div className="p-2.5 bg-white rounded-xl border border-gray-100">
+                          <span className="text-[10px] text-gray-400 block mb-0.5">حد الأمان</span>
+                          <span className="font-bold text-gray-700 font-mono text-sm">
                             {formatNumber(item.minLimit)} {item.unit}
                           </span>
                         </div>
+                        <div className="col-span-2 p-2.5 bg-[#2e5b9f]/5 rounded-xl border border-[#2e5b9f]/15">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[10px] text-gray-500 font-bold">التكلفة الإجمالية المستثمرة</span>
+                            <span className={`font-bold font-mono text-sm ${costInfo.total > 0 ? 'text-[#2e5b9f]' : 'text-gray-300'}`}>
+                              {costInfo.total > 0 ? formatPrice(costInfo.total) : '—'}
+                            </span>
+                          </div>
+                          {costInfo.hasPurchases && (
+                            <span className="text-[10px] text-gray-400 font-sans block mt-1">
+                              {formatNumber(costInfo.count)} فاتورة شراء • {formatNumber(costInfo.qty)} {item.unit}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="flex items-center justify-between bg-[#2e5b9f]/5 border border-[#2e5b9f]/15 rounded-xl px-3 py-2 gap-2">
-                        <span className="text-[10px] font-bold text-[#2e5b9f]">التكلفة الإجمالية المستثمرة</span>
-                        <span className={`font-black font-mono text-sm ${costInfo.total > 0 ? 'text-[#2e5b9f]' : 'text-gray-300'}`}>
-                          {costInfo.total > 0 ? formatPrice(costInfo.total) : '—'}
-                        </span>
-                      </div>
-                      {costInfo.hasPurchases && (
-                        <p className="text-[9px] text-gray-400 text-left -mt-1.5 font-medium">
-                          محسوبة من {formatNumber(costInfo.count)} فاتورة شراء • {formatNumber(costInfo.qty)} {item.unit}
-                        </p>
-                      )}
-
-                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100/50">
-<button
-                           onClick={(e) => {
-                             e.stopPropagation();
-                             setViewingItem(item);
-                           }}
-                           className="inline-flex items-center gap-1 py-1 px-2.5 rounded-lg bg-gray-50 text-gray-600 hover:bg-gray-100 font-bold transition text-[11px]"
-                           title="عرض التفاصيل"
-                         >
+                      <div className="flex items-center justify-end gap-1.5 pt-2.5 border-t border-gray-100/60">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setViewingItem(item);
+                          }}
+                          className="inline-flex items-center gap-1 py-1.5 px-2.5 rounded-lg bg-[#2e5b9f]/5 text-[#2e5b9f] hover:bg-[#2e5b9f]/10 font-bold transition text-[11px]"
+                          title="عرض التفاصيل"
+                        >
                           <Eye className="w-3.5 h-3.5" />
                           <span>تفاصيل</span>
                         </button>
-<button
-                           onClick={(e) => {
-                             e.stopPropagation();
-                              setEditingItem(item);
-                              setEditFormData({
-                                name: item.name,
-                                quantity: String(item.quantity),
-                                unit: item.unit,
-                                minLimit: String(item.minLimit),
-                                totalCost: item.costPrice ? String(Number((item.costPrice * item.quantity).toFixed(2))) : '',
-                              });
-                             setEditFormErrors({});
-                             setIsEditFormSubmitted(false);
-                             setIsEditModalOpen(true);
-                           }}
-                           className="inline-flex items-center gap-1 py-1 px-2.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold transition text-[11px]"
-                           title="تعديل الصنف"
-                         >
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingItem(item);
+                            setEditFormData({
+                              name: item.name,
+                              quantity: String(item.quantity),
+                              unit: item.unit,
+                              minLimit: String(item.minLimit),
+                              totalCost: item.costPrice ? String(Number((item.costPrice * item.quantity).toFixed(2))) : '',
+                            });
+                            setEditFormErrors({});
+                            setIsEditFormSubmitted(false);
+                            setIsEditModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 py-1.5 px-2.5 rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold transition text-[11px]"
+                          title="تعديل الصنف"
+                        >
                           <Edit2 className="w-3.5 h-3.5" />
                           <span>تعديل</span>
                         </button>
@@ -665,14 +671,16 @@ return (
                             setRestockErrors({});
                             setIsRestockModalOpen(true);
                           }}
-                          className="inline-flex items-center gap-1 py-1 px-2.5 rounded-lg bg-blue-50 text-[#2e5b9f] hover:bg-blue-100 font-bold transition text-[11px]"
+                          className="inline-flex items-center gap-1 py-1.5 px-2.5 rounded-lg bg-[#2e5b9f] text-white hover:bg-[#244b85] font-bold transition text-[11px]"
+                          title="توريد الكمية"
                         >
                           <ArrowDownToLine className="w-3.5 h-3.5" />
                           <span>توريد</span>
                         </button>
+                        <span className="w-px h-4 bg-gray-200 shrink-0" />
                         <button
                           onClick={(e) => { e.stopPropagation(); handleDeleteItem(item._id, item.name); }}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition"
+                          className="p-2 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
                           title="حذف الصنف"
                         >
                           <Trash2 className="w-3.5 h-3.5" />

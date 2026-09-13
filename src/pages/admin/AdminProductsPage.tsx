@@ -6,6 +6,7 @@ import { useNotification } from '../../contexts/NotificationContext';
 import { formatPrice, formatNumber } from '../../utils/formatters';
 import { productStockState } from '../../utils/stockStatus';
 import { normalizeRecipeConsumeQty, toBaseQty, repairConsumeQty } from '../../utils/recipeUnits';
+import { compressImage } from '../../utils/imageCompression';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -56,7 +57,7 @@ export const AdminProductsPage: React.FC = () => {
 
   // Category Modal
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [categoryForm, setCategoryForm] = useState({ name: '' });
+  const [categoryForm, setCategoryForm] = useState({ name: '', description: '' });
   const [categoryErrors, setCategoryErrors] = useState<{ name?: string }>({});
   const [isAddingCategory, setIsAddingCategory] = useState(false);
   const [isCategoryFormSubmitted, setIsCategoryFormSubmitted] = useState(false);
@@ -66,12 +67,13 @@ export const AdminProductsPage: React.FC = () => {
 
   const [formData, setFormData] = useState({
     name: '',
+    description: '',
     price: '',
     category: '',
     stockQuantity: '',
     imageFile: null as File | null,
   });
-  const [formErrors, setFormErrors] = useState<{ name?: string; price?: string; category?: string; stockQuantity?: string; imageFile?: string }>({});
+  const [formErrors, setFormErrors] = useState<{ name?: string; description?: string; price?: string; category?: string; stockQuantity?: string; imageFile?: string }>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isFormSubmitted, setIsFormSubmitted] = useState(false);
 
@@ -146,6 +148,8 @@ export const AdminProductsPage: React.FC = () => {
   }[]): number | null => {
     if (!rows || rows.length === 0) return null;
 
+    // ✅ الحساب يعتمد على الخامات الأساسية فقط (اللي الأدمن حددها بـ "أساسية").
+    // الخامات الثانوية (سكر/لبن/شوكولاتة...) تُخصم عند البيع ولا تقيّد رصيد الأكواب.
     const primaryRows = rows.filter((r) => r.isPrimary);
     const targetRows = primaryRows.length > 0 ? primaryRows : rows;
 
@@ -198,7 +202,6 @@ export const AdminProductsPage: React.FC = () => {
           ...r,
           inventoryItem: value,
           consumeUnit: defaultUnit,
-          isPrimary: !isSugar,
         };
       }
       return { ...r, [field]: value };
@@ -224,7 +227,9 @@ export const AdminProductsPage: React.FC = () => {
         inventoryItem: selectedItem?._id || '',
         consumeQty: '',
         consumeUnit: defaultUnit,
-        isPrimary: !isSugar,
+        // ✅ أول خامة في الوصفة = أساسية تلقائياً، وأي خامة بتتضاف بعدها = ثانوية.
+        // الأدمن يقدر يبدّلها من زرار "أساسية/ثانوية" في الصف.
+        isPrimary: recipeRows.length === 0,
       },
     ];
     setRecipeRows(newRows);
@@ -279,6 +284,7 @@ export const AdminProductsPage: React.FC = () => {
     setComputedAvailable(null);
     setFormData({
       name: '',
+      description: '',
       price: '',
       category: categories[0]?._id || '',
       stockQuantity: '',
@@ -297,6 +303,7 @@ export const AdminProductsPage: React.FC = () => {
     const catId = typeof prod.category === 'string' ? prod.category : prod.category._id;
     setFormData({
       name: prod.name,
+      description: prod.description || '',
       price: String(prod.price),
       category: catId,
       stockQuantity: String(prod.stockQuantity),
@@ -312,7 +319,7 @@ export const AdminProductsPage: React.FC = () => {
         });
         // Populate recipe rows from backend
         if (res.data.ingredientDetails && res.data.ingredientDetails.length > 0) {
-          const rows = res.data.ingredientDetails.map((ing: any) => {
+          const rows = res.data.ingredientDetails.map((ing: any, idx: number) => {
             const consumeUnit = ing.inputUnit || 'GRAM';
             const inv =
               typeof ing.inventoryItem === 'object' && ing.inventoryItem
@@ -323,9 +330,11 @@ export const AdminProductsPage: React.FC = () => {
               inv ? Number(inv.quantity) : undefined,
               inv?.unit
             );
-            const invName = inv?.name || '';
-            const isSugar = /سكر|sugar/i.test(invName);
-            const isPrimary = ing.isPrimary !== undefined ? Boolean(ing.isPrimary) : !isSugar;
+            // ✅ الوصفات القديمة من غير علامة أساسي/ثانوي:
+            // أول خامة = أساسية (هي اللي بتحدد الأكواب) والباقي = ثانوية.
+            // الأدمن يقدر يغيّر ده من زرار "أساسية/ثانوية" في كل صف.
+            const isPrimary =
+              ing.isPrimary !== undefined ? Boolean(ing.isPrimary) : idx === 0;
             return {
               inventoryItem: typeof ing.inventoryItem === 'string' ? ing.inventoryItem : ing.inventoryItem._id,
               consumeQty: String(qty),
@@ -365,7 +374,7 @@ export const AdminProductsPage: React.FC = () => {
   const handleCreateCategory = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsCategoryFormSubmitted(true);
-    const errors: { name?: string } = {};
+    const errors: { name?: string; description?: string } = {};
 
     if (!categoryForm.name.trim()) {
       errors.name = 'اسم التصنيف مطلوب';
@@ -383,12 +392,14 @@ export const AdminProductsPage: React.FC = () => {
       setIsAddingCategory(true);
       const res = await categoryService.createCategory({
         name: categoryForm.name.trim(),
+        // 📝 الوصف لم يعد حقل إدخال — نرسل اسم التصنيف كوصف افتراضي
+        description: categoryForm.description.trim() || categoryForm.name.trim(),
       });
 
       if (res.success) {
         showToast(`تم إنشاء التصنيف "${categoryForm.name.trim()}" بنجاح`);
         setIsCategoryModalOpen(false);
-        setCategoryForm({ name: '' });
+        setCategoryForm({ name: '', description: '' });
         loadData();
       }
     } catch (err) {
@@ -415,7 +426,7 @@ export const AdminProductsPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsFormSubmitted(true);
-    const errors: { name?: string; price?: string; category?: string; stockQuantity?: string; imageFile?: string } = {};
+    const errors: { name?: string; description?: string; price?: string; category?: string; stockQuantity?: string; imageFile?: string } = {};
 
     if (!formData.name.trim()) {
       errors.name = 'اسم المنتج مطلوب';
@@ -458,6 +469,8 @@ export const AdminProductsPage: React.FC = () => {
       setIsSubmitting(true);
       const data = new FormData();
       data.append('name', formData.name.trim());
+      // 📝 الوصف لم يعد حقل إدخال — نرسل اسم المنتج كوصف افتراضي حتى لا يرفضه الـ Backend
+      data.append('description', formData.description.trim() || formData.name.trim());
       data.append('price', formData.price);
       data.append('category', formData.category);
       const finalStockQty = recipeRows.length > 0 
@@ -466,7 +479,9 @@ export const AdminProductsPage: React.FC = () => {
         
       data.append('stockQuantity', finalStockQty);
       if (formData.imageFile) {
-        data.append('image', formData.imageFile);
+        // 📸 ضغط الصورة تلقائياً قبل الرفع — يمنع خطأ "الصورة كبيرة" (413) من الخادم
+        const compressed = await compressImage(formData.imageFile, { maxSize: 1000, quality: 0.8 });
+        data.append('image', compressed);
       }
 
       let savedProductId = editingProduct ? editingProduct._id : '';
@@ -578,7 +593,8 @@ export const AdminProductsPage: React.FC = () => {
     const matchesCat = activeCategory === 'all' || catId === activeCategory;
     const matchesSearch =
       searchQuery.trim() === '' ||
-      p.name.toLowerCase().includes(searchQuery.toLowerCase());
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.description || '').toLowerCase().includes(searchQuery.toLowerCase());
 
     let matchesStock = true;
     if (stockFilter === 'in') matchesStock = productStockState(p) === 'available';
@@ -629,7 +645,7 @@ export const AdminProductsPage: React.FC = () => {
           <Button
             onClick={() => {
               setCategoryErrors({});
-              setCategoryForm({ name: '' });
+              setCategoryForm({ name: '', description: '' });
               setIsCategoryModalOpen(true);
             }}
             variant="outline"
@@ -644,7 +660,7 @@ export const AdminProductsPage: React.FC = () => {
       <DashboardFilterBar
         searchValue={searchQuery}
         onSearchChange={setSearchQuery}
-        searchPlaceholder="ابحث باسم المنتج — مثال: كابتشينو، كرواسون"
+        searchPlaceholder="ابحث باسم المنتج أو الوصف — مثال: كابتشينو، كرواسون"
         groupLabel="الحالة:"
         periods={[
           { id: 'all', label: `الكل (${formatNumber(products.length)})` },
@@ -778,6 +794,12 @@ export const AdminProductsPage: React.FC = () => {
                         )}
                       </div>
                     </div>
+
+                    {prod.description && (
+                      <p className="text-[11px] text-gray-400 line-clamp-2">
+                        {prod.description}
+                      </p>
+                    )}
 
                     <div className="flex items-center justify-between pt-2.5 border-t border-gray-100 text-xs">
                       <div>
@@ -966,29 +988,18 @@ export const AdminProductsPage: React.FC = () => {
               />
               <div className="flex-1">
                 <h3 className="text-lg font-bold text-gray-900">{viewingProduct.name}</h3>
+                <p className="text-xs text-gray-500 mt-1">{viewingProduct.description || '—'}</p>
               </div>
             </div>
 
-            {/* الأكواب المتاحة — تظهر فوراً من الرصيد المحفوظ، وتتحدث تلقائياً لما حساب الوصفة يرجع من السيرفر */}
+            {/* الأكواب المتاحة — بارز في الأعلى */}
             <div className="p-4 bg-gradient-to-l from-[#eef3fc] to-[#f5f8ff] rounded-2xl border border-[#c5d5f0] flex items-center justify-between">
               <div>
                 <span className="text-[11px] text-[#2e5b9f] font-bold block mb-0.5">الأكواب المتاحة (من المكونات الأساسية)</span>
-                {(() => {
-                  const cupsNow = recipeData?.availableProductQty ?? viewingProduct.stockQuantity;
-                  if (Number(cupsNow) > 0) {
-                    return (
-                      <>
-                        <span className="text-3xl font-bold font-mono text-[#2e5b9f]">
-                          {formatNumber(cupsNow)}
-                        </span>
-                        <span className="text-sm text-[#2e5b9f] mr-1">كوب</span>
-                      </>
-                    );
-                  }
-                  return (
-                    <span className="text-xl font-bold text-gray-500">لا توجد أكواب</span>
-                  );
-                })()}
+                <span className="text-3xl font-bold font-mono text-[#2e5b9f]">
+                  {recipeData ? formatNumber(recipeData.availableProductQty) : '…'}
+                </span>
+                <span className="text-sm text-[#2e5b9f] mr-1">كوب</span>
               </div>
               <div className="text-right">
                 <Badge
@@ -1364,10 +1375,26 @@ export const AdminProductsPage: React.FC = () => {
 
                   {/* Row Bottom Info */}
                   <div className="px-3 pb-2.5 pt-1.5 border-t border-gray-100 bg-gray-50/50 flex flex-wrap items-center justify-between gap-1 text-[11px]">
-                    {row.isPrimary ? (
-                      <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleRecipeRowChange(idx, 'isPrimary', !row.isPrimary)}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-bold border transition cursor-pointer ${
+                        row.isPrimary
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                          : 'bg-gray-100 border-gray-300 text-gray-600 hover:bg-gray-200'
+                      }`}
+                      title="اضغط للتبديل بين أساسية وثانوية — الأساسية هي اللي بتحدد عدد الأكواب"
+                    >
+                      {row.isPrimary ? (
                         <CheckCircle2 className="w-3.5 h-3.5" />
-                        تحدد رصيد المنتج: {(() => {
+                      ) : (
+                        <Info className="w-3.5 h-3.5" />
+                      )}
+                      {row.isPrimary ? 'أساسية (تحدد الأكواب)' : 'ثانوية (لا تحدد الأكواب)'}
+                    </button>
+                    {row.isPrimary ? (
+                      <span className="text-emerald-700 font-semibold">
+                        {(() => {
                           if (!selectedInv || !Number(row.consumeQty)) return 'أدخل كمية الاستهلاك';
                           const invBase = getQtyInBase(selectedInv.quantity, selectedInv.unit);
                           const repaired = repairConsumeQty(Number(row.consumeQty), row.consumeUnit || 'GRAM', selectedInv.quantity, selectedInv.unit, 1);
@@ -1376,22 +1403,8 @@ export const AdminProductsPage: React.FC = () => {
                         })()}
                       </span>
                     ) : (
-                      <span className="text-purple-700 font-medium flex items-center gap-1 flex-wrap">
-                        <Info className="w-3.5 h-3.5 shrink-0" />
-                        {(() => {
-                          if (!selectedInv || !Number(row.consumeQty)) {
-                            return 'خامة مساعدة (مثل السكر) — تُخصم من المخزن مع كل طلب، وأدخل كمية الاستهلاك لمعرفة العدد الجاهز للبيع قبل العجز';
-                          }
-                          const invBase = getQtyInBase(selectedInv.quantity, selectedInv.unit);
-                          const repaired = repairConsumeQty(Number(row.consumeQty), row.consumeUnit || 'GRAM', selectedInv.quantity, selectedInv.unit, 1);
-                          const consumeBase = getQtyInBase(repaired.qty, repaired.unit);
-                          if (consumeBase <= 0) return 'خامة مساعدة (مثل السكر) — أدخل كمية استهلاك صحيحة';
-                          const cups = Math.floor(invBase / consumeBase);
-                          if (cups <= 0) {
-                            return `نافذة الآن — رصيد ${selectedInv.name} (${formatNumber(selectedInv.quantity)} ${selectedInv.unit}) لا يكفي كوب واحد`;
-                          }
-                          return `جاهزة للبيع: ${formatNumber(cups)} كوب (عجز ${selectedInv.name} بعد ${formatNumber(cups)} كوب)`;
-                        })()}
+                      <span className="text-purple-700 font-medium">
+                        تُخصم من المخزن مع كل طلب ولا تقيّد رصيد الأكواب
                       </span>
                     )}
                   </div>
@@ -1419,6 +1432,7 @@ export const AdminProductsPage: React.FC = () => {
             )}
           </div>
 
+          {/* صورة المنتج — الوصف والمكونات لم يعودا حقول إدخال (يُرسل اسم المنتج كوصف تلقائياً) */}
           <div>
             <label className={`block text-xs font-semibold mb-1.5 ${formErrors.imageFile && isFormSubmitted ? 'text-rose-600 font-bold' : 'text-gray-700'}`}>
               صورة المنتج (JPG / PNG) *
