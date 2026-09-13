@@ -563,8 +563,8 @@ export const AdminInventoryPage: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* Mobile & Tablet Card Layout (< md) */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden">
+              {/* كروت المخزون في كل المقاسات — لا جدول عريض ولا تمرير أفقي. */}
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {filteredItems.map((item) => {
                   const isLow = isStockLow(item.quantity, item.minLimit);
                   const isOut = isStockOut(item.quantity);
@@ -574,7 +574,7 @@ export const AdminInventoryPage: React.FC = () => {
 return (
                      <div
                        key={item._id}
-                       className={`group bg-white border border-gray-200/80 rounded-2xl p-4 shadow-xs hover:shadow-md transition-all duration-150 cursor-pointer text-right ${
+                       className={`group relative overflow-hidden bg-white border border-gray-200/80 rounded-2xl p-4 shadow-[0_2px_10px_rgba(15,23,42,0.04)] hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.09)] transition-all duration-200 cursor-pointer text-right ${
                          isOut ? 'border-r-4 border-r-rose-400' : isLow ? 'border-r-4 border-r-amber-400' : 'border-r-4 border-r-emerald-400'
                        }`}
                        onClick={() => setViewingItem(item)}
@@ -605,14 +605,14 @@ return (
                          </Badge>
                        </div>
 
-                      <div className="grid grid-cols-2 gap-2.5 pt-2.5 border-t border-gray-100">
-                        <div className="p-2.5 bg-white rounded-xl border border-gray-100">
+                      <div className="grid grid-cols-2 gap-2.5 pt-3 border-t border-dashed border-gray-200">
+                        <div className="p-2.5 bg-slate-50/80 rounded-xl border border-slate-100">
                           <span className="text-[10px] text-gray-400 block mb-0.5">الكمية الحالية</span>
                           <span className="font-bold text-gray-900 font-mono text-sm">
                             {formatStat(item.quantity, item.unit)}
                           </span>
                         </div>
-                        <div className="p-2.5 bg-white rounded-xl border border-gray-100">
+                        <div className="p-2.5 bg-slate-50/80 rounded-xl border border-slate-100">
                           <span className="text-[10px] text-gray-400 block mb-0.5">حد الأمان</span>
                           <span className="font-bold text-gray-700 font-mono text-sm">
                             {formatNumber(item.minLimit)} {item.unit}
@@ -633,7 +633,7 @@ return (
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-end gap-1.5 pt-2.5 border-t border-gray-100/60">
+                      <div className="flex items-center justify-end gap-1.5 pt-2.5 border-t border-dashed border-gray-200/80">
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -695,8 +695,8 @@ return (
                 })}
               </div>
 
-              {/* Desktop Table Layout (>= md) */}
-              <div className="hidden md:block overflow-x-auto -mx-6 px-6 pb-2">
+              {/* محفوظ كمرجع داخلي فقط؛ الكروت أعلاه هي العرض الفعلي. */}
+              <div className="hidden">
                 <table className="w-full text-right border-collapse text-xs min-w-[760px]">
                   <thead>
                     <tr className="border-b border-gray-100 text-gray-400 font-semibold">

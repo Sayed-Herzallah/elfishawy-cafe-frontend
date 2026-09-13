@@ -145,9 +145,9 @@ const handleClick = (e: React.MouseEvent) => {
   };
 
   const cardBaseClasses = `
-    bg-white border rounded-2xl shadow-xs hover:shadow-md transition-all duration-200 cursor-pointer
-    ${variantColor.border} border-l-4
-    ${isSelected ? 'ring-2 ring-[#2e5b9f]/20 bg-[#faf8f5]' : ''}
+    relative overflow-hidden bg-white border rounded-2xl shadow-[0_2px_10px_rgba(15,23,42,0.04)] hover:shadow-[0_14px_30px_rgba(15,23,42,0.10)] hover:-translate-y-0.5 transition-all duration-200 cursor-pointer
+    ${variantColor.border} border-r-4
+    ${isSelected ? 'ring-2 ring-[#2e5b9f]/25 bg-[#faf8f5] shadow-[0_12px_28px_rgba(46,91,159,0.12)]' : ''}
     ${onClick ? 'group' : ''}
     ${className}
   `;
@@ -185,7 +185,7 @@ const handleClick = (e: React.MouseEvent) => {
           {/* الصف الأول: أيقونة + عنوان مقابل المبلغ + الحالة */}
           <div className="flex items-center gap-2.5">
             <div
-              className={`flex items-center justify-center shrink-0 w-9 h-9 rounded-lg ${variantColor.bg} ${variantColor.text}`}
+              className={`flex items-center justify-center shrink-0 w-9 h-9 rounded-xl ring-1 ring-inset ring-black/[0.04] ${variantColor.bg} ${variantColor.text}`}
             >
               {React.cloneElement(variantIcon as React.ReactElement<{ className?: string }>, { className: 'w-4 h-4' })}
             </div>
@@ -199,7 +199,7 @@ const handleClick = (e: React.MouseEvent) => {
 
             {amounts?.primary && (
               <div className="text-left shrink-0">
-                <span className="block font-bold font-mono text-emerald-700 text-sm leading-tight whitespace-nowrap">
+                <span className="block font-extrabold font-mono text-emerald-700 text-sm leading-tight whitespace-nowrap">
                   {formatCurrency(amounts.primary)}
                 </span>
                 {amounts.secondary && (
@@ -220,7 +220,7 @@ const handleClick = (e: React.MouseEvent) => {
 
           {/* الصف الثاني: شرائح البيانات مقابل أزرار الإجراءات */}
           {(metadata.length > 0 || tags.length > 0 || actions.length > 0) && (
-            <div className="flex items-center justify-between gap-2 mt-2.5 pt-2.5 border-t border-gray-100/80">
+            <div className="flex items-center justify-between gap-2 mt-2.5 pt-2.5 border-t border-dashed border-gray-200/80">
               <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                 {metadata.map((meta, idx) => (
                   <span
@@ -270,7 +270,7 @@ const handleClick = (e: React.MouseEvent) => {
           <div className="flex items-center justify-between gap-2.5">
             <div className="flex items-center gap-2.5 flex-1 min-w-0">
               <div
-                className={`flex items-center justify-center shrink-0 w-10 h-10 rounded-xl ${variantColor.bg} ${variantColor.text}`}
+                className={`flex items-center justify-center shrink-0 w-10 h-10 rounded-xl ring-1 ring-inset ring-black/[0.04] ${variantColor.bg} ${variantColor.text}`}
               >
                 {variantIcon}
               </div>
@@ -346,7 +346,7 @@ const handleClick = (e: React.MouseEvent) => {
 
           {/* Footer with Quick Actions */}
           {actions.length > 0 && (
-            <div className="pt-2.5 border-t border-gray-100 flex flex-wrap items-center justify-end gap-1.5">
+            <div className="pt-2.5 border-t border-dashed border-gray-200 flex flex-wrap items-center justify-end gap-1.5">
               {actions.map((action, idx) => (
                 <button
                   key={idx}

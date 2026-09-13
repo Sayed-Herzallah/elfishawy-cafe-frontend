@@ -33,9 +33,46 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     });
   }, []);
 
-  // Map common English/backend error messages to Arabic
+  // رسائل الـ backend قد تختلف بين API وأخرى؛ لا نعرض أي نص تقني/إنجليزي للمستخدم.
   const translateError = (rawMsg: string): string => {
-    return rawMsg;
+    const message = String(rawMsg || '').trim();
+    if (!message) return 'تعذّر تنفيذ العملية، حاول مرة أخرى';
+
+    // الرسائل العربية الواضحة القادمة من الخادم صالحة للعرض كما هي.
+    if (/[\u0600-\u06FF]/.test(message)) return message;
+
+    const normalized = message.toLowerCase();
+    const matches = (terms: string[]) => terms.some((term) => normalized.includes(term));
+
+    if (matches(['failed to fetch', 'networkerror', 'network request failed', 'load failed', 'econnrefused'])) {
+      return 'تعذّر الاتصال بالخادم. تأكد من الإنترنت ثم حاول مرة أخرى';
+    }
+    if (matches(['unauthorized', 'invalid token', 'token expired', 'jwt expired', 'authentication'])) {
+      return 'انتهت صلاحية الجلسة. سجّل الدخول من جديد';
+    }
+    if (matches(['forbidden', 'permission denied', 'access denied'])) {
+      return 'لا تملك صلاحية تنفيذ هذا الإجراء';
+    }
+    if (matches(['not found', 'does not exist', 'no such'])) {
+      return 'العنصر المطلوب غير موجود أو تم حذفه';
+    }
+    if (matches(['already exists', 'duplicate key', 'duplicate', 'unique constraint'])) {
+      return 'هذه البيانات مسجلة بالفعل. راجع المدخلات وحاول مرة أخرى';
+    }
+    if (matches(['validation', 'required', 'invalid', 'cast to objectid', 'malformed'])) {
+      return 'البيانات المدخلة غير مكتملة أو غير صحيحة';
+    }
+    if (matches(['too large', 'payload', 'file size', 'entity too large'])) {
+      return 'حجم الملف أو الطلب أكبر من المسموح. استخدم ملفًا أصغر ثم حاول مرة أخرى';
+    }
+    if (matches(['timeout', 'timed out', 'gateway'])) {
+      return 'الخادم استغرق وقتًا أطول من المتوقع. حاول مرة أخرى';
+    }
+    if (matches(['internal server', 'server error', 'database', 'mongo', 'sql'])) {
+      return 'حدث خطأ في الخادم. حاول مرة أخرى بعد قليل';
+    }
+
+    return 'تعذّر تنفيذ العملية. حاول مرة أخرى، وإذا تكررت المشكلة تواصل مع المسؤول';
   };
 
   const showError = useCallback((error: any) => {

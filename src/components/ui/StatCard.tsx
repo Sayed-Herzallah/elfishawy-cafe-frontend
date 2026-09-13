@@ -70,7 +70,7 @@ export const StatCard: React.FC<StatCardProps> = ({
           {isLoading ? (
             <span className="inline-block h-5 w-20 rounded bg-gray-300/70 animate-pulse align-middle" />
           ) : (
-            isEmptyValue(value) ? EMPTY_LABEL : value
+            isEmptyValue(value) ? 0 : value
           )}
         </div>
         {isLoading ? (

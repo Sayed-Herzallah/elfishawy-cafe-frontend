@@ -358,8 +358,8 @@ export const AdminSalesPage: React.FC = () => {
           </div>
         ) : (
           <>
-          {/* جدول سريع على سطح المكتب — نفس أسلوب جدول المخزون */}
-          <div className="hidden md:block overflow-x-auto -mx-6 px-6 pb-3 border-b border-gray-100">
+          {/* الكروت هي واجهة السجل في كل المقاسات؛ الجدول مخفي لمنع الـ horizontal scroll. */}
+          <div className="hidden">
             <table className="w-full text-right border-collapse text-xs min-w-[880px]">
               <thead>
                 <tr className="border-b border-gray-100 text-gray-400 font-semibold">
@@ -457,7 +457,7 @@ export const AdminSalesPage: React.FC = () => {
             </table>
           </div>
 
-          <div className="space-y-3 md:hidden">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {paginatedOrders.map((order) => {
               const statusStyle = 
                 order.status === 'completed' ? 'completed' :

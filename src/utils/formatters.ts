@@ -24,14 +24,14 @@ export const formatPrice = (price: number | undefined | null): string => {
 
 /**
  * Format الأرقام في كروت الملخصات:
- * - القيمة صفر أو غير موجودة → "لا يوجد" (بدل "0" أو "—")
- * - وإلا → الرقم بالفواصل مع وحدة اختيارية
- * Example: (0, 'طلب') -> "لا يوجد" | (12, 'طلب') -> "12 طلب"
+ * - الصفر أو القيمة غير المتاحة → 0 مع الوحدة؛ بطاقة الإحصاء لا يجب أن تعرض
+ *   "لا يوجد" أثناء التحديث أو عند عدم وجود عمليات بعد.
+ * - وإلا → الرقم بالفواصل مع وحدة اختيارية.
  */
 export const formatStat = (value: number | undefined | null, unit = ''): string => {
   const n = Number(value);
   if (value === null || value === undefined || isNaN(n) || n <= 0) {
-    return EMPTY_LABEL;
+    return unit ? `0 ${unit}` : '0';
   }
   const text = n.toLocaleString('en-US', {
     minimumFractionDigits: 0,

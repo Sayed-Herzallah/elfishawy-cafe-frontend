@@ -571,7 +571,7 @@ export const CashierExpensesPage: React.FC = () => {
                   ? Number(exp.amount) / Number(exp.inventoryQuantityAdded)
                   : 0;
                 return (
-                <div key={exp._id} className="p-4 bg-[#faf8f5]/60 rounded-2xl border border-gray-100 shadow-3xs text-right space-y-3">
+                <div key={exp._id} className="group relative overflow-hidden p-4 bg-white rounded-2xl border border-rose-100/80 border-r-4 border-r-rose-400 shadow-[0_2px_10px_rgba(15,23,42,0.04)] hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.09)] transition-all duration-200 text-right space-y-3">
                   <div className="flex justify-between items-start gap-2">
                     <div className="min-w-0">
                       <span className="font-bold text-gray-900 text-xs block truncate">
@@ -607,12 +607,12 @@ export const CashierExpensesPage: React.FC = () => {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100 text-[11px] text-gray-500">
-                    <div>
+                  <div className="grid grid-cols-2 gap-2 pt-3 border-t border-dashed border-gray-200 text-[11px] text-gray-500">
+                    <div className="rounded-xl bg-rose-50/60 border border-rose-100/70 p-2">
                       <span className="block text-[10px] text-gray-400">المبلغ</span>
                       <span className="font-bold font-mono text-[#2e5b9f] text-xs">{formatPrice(exp.amount)}</span>
                     </div>
-                    <div>
+                    <div className="rounded-xl bg-slate-50 border border-slate-100 p-2">
                       <span className="block text-[10px] text-gray-400">الكمية الموردة</span>
                       <span className="font-mono text-xs text-gray-800">
                         {exp.inventoryQuantityAdded
@@ -620,13 +620,13 @@ export const CashierExpensesPage: React.FC = () => {
                           : '—'}
                       </span>
                     </div>
-                    <div>
+                    <div className="rounded-xl bg-slate-50 border border-slate-100 p-2">
                       <span className="block text-[10px] text-gray-400">سعر الوحدة</span>
                       <span className="font-mono text-xs text-gray-800">
                         {unitPrice > 0 ? formatPrice(unitPrice) : '—'}
                       </span>
                     </div>
-                    <div>
+                    <div className="rounded-xl bg-slate-50 border border-slate-100 p-2">
                       <span className="block text-[10px] text-gray-400">التاريخ</span>
                       <span className="font-mono text-gray-700">
                         {formatDate(exp.date)} • {formatTime(eCreatedAt(exp))}
