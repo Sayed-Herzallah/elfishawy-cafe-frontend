@@ -535,8 +535,8 @@ export const CashierPOSPage: React.FC = () => {
 
       {/* Main 2-Column POS Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
-        {/* Left Side: Cart Panel (5 cols) */}
-        <div className="lg:col-span-5 bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-5 flex flex-col justify-between order-2 lg:order-1 sticky top-16">
+        {/* Left Side: Cart Panel (4 cols) */}
+        <div className="lg:col-span-4 bg-white rounded-2xl border border-gray-200/80 shadow-2xs p-4 sm:p-5 flex flex-col justify-between order-2 lg:order-1 sticky top-16">
           <div>
             {/* Header — العنوان على اليمين وعداد الأصناف على اليسار */}
             <div className="flex items-center justify-between pb-3.5 border-b border-gray-100 mb-3.5">
@@ -544,7 +544,7 @@ export const CashierPOSPage: React.FC = () => {
                 <Receipt className="w-5 h-5 text-[#2e5b9f]" />
                 <span>الطلب الحالي (السلة)</span>
               </h2>
-              <span className="inline-flex items-baseline gap-1.5 bg-blue-50 text-[#2e5b9f] px-4 py-1.5 rounded-xl font-bold border border-blue-100">
+              <span className="inline-flex items-baseline gap-1.5 bg-blue-50 text-[#2e5b9f] px-3.5 py-1.5 rounded-xl font-bold border border-blue-100">
                 <span className="text-2xl font-bold font-mono leading-none">
                   {formatNumber(totalItemsCount)}
                 </span>
@@ -566,15 +566,16 @@ export const CashierPOSPage: React.FC = () => {
                     key={item.product._id}
                     className="p-3.5 rounded-2xl bg-white border border-gray-200 shadow-2xs hover:border-gray-300 transition select-none"
                   >
-                    {/* الصف الأول: اسم المنتج يمين — زر الإزالة يسار */}
+                    {/* الصف الأول: اسم المنتج يمين — زر الإزالة يسار باللون الأحمر */}
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-bold text-gray-900 truncate">
                         {item.product.name}
                       </span>
                       <button
                         onClick={() => handleRemoveFromCart(item.product._id)}
-                        className="text-gray-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition cursor-pointer shrink-0"
-                        title="إزالة من الطلب"
+                        className="text-rose-600 hover:text-white bg-rose-50 hover:bg-rose-600 border border-rose-200 hover:border-rose-600 p-1.5 rounded-lg transition-colors cursor-pointer shrink-0 shadow-2xs"
+                        title="حذف من السلة"
+                        aria-label="حذف من السلة"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -713,8 +714,8 @@ export const CashierPOSPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Side: Products Grid & Search (7 cols) */}
-        <div className="lg:col-span-7 space-y-3.5 order-1 lg:order-2">
+        {/* Right Side: Products Grid & Search (8 cols - wider & more spacious) */}
+        <div className="lg:col-span-8 space-y-3.5 order-1 lg:order-2">
           {/* Search and Category Filter Bar */}
           <div className="bg-white rounded-2xl border border-gray-200/80 p-3.5 shadow-2xs space-y-3">
             {/* Search Input */}
@@ -827,7 +828,7 @@ export const CashierPOSPage: React.FC = () => {
               <p className="text-xs text-gray-500 mt-2">جرّب كتابة اسم آخر أو اختر تصنيفاً مختلفاً من الأعلى</p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 xl:grid-cols-4 gap-3.5">
               {filteredProducts.map((product) => {
                 const productState = productStockState(product);
                 const isOutOfStock = productState === 'out';
@@ -856,7 +857,7 @@ export const CashierPOSPage: React.FC = () => {
                     )}
 
                     {/* Image */}
-                    <div className="w-full h-32 overflow-hidden bg-gray-100 relative">
+                    <div className="w-full h-36 sm:h-40 overflow-hidden bg-gray-100 relative">
                       {/* زرار العين 👁️ لمعرفة تفاصيل المخزون والخامات النافذة بدقة */}
                       <span
                         onClick={(e) => {

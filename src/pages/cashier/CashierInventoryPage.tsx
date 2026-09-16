@@ -25,11 +25,15 @@ import {
   ShoppingBag,
   CheckCircle2,
   Bell,
+  LayoutGrid,
+  ListFilter,
+  Boxes,
 } from 'lucide-react';
 
 export const CashierInventoryPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterMode, setFilterMode] = useState<'all' | 'low' | 'out'>('all');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   // Modals
@@ -375,37 +379,65 @@ export const CashierInventoryPage: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setFilterMode('all')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                filterMode === 'all'
-                  ? 'bg-[#2e5b9f] text-white shadow-2xs'
-                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-              }`}
-            >
-              الكل ({items.length})
-            </button>
-            <button
-              onClick={() => setFilterMode('low')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                filterMode === 'low'
-                  ? 'bg-amber-600 text-white shadow-2xs'
-                  : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
-              }`}
-            >
-              المنخفض ({lowStockCount})
-            </button>
-            <button
-              onClick={() => setFilterMode('out')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
-                filterMode === 'out'
-                  ? 'bg-rose-600 text-white shadow-2xs'
-                  : 'bg-rose-50 text-rose-800 hover:bg-rose-100'
-              }`}
-            >
-              النافد ({outOfStockCount})
-            </button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setFilterMode('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  filterMode === 'all'
+                    ? 'bg-[#2e5b9f] text-white shadow-2xs'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                الكل ({items.length})
+              </button>
+              <button
+                onClick={() => setFilterMode('low')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  filterMode === 'low'
+                    ? 'bg-amber-600 text-white shadow-2xs'
+                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                }`}
+              >
+                المنخفض ({lowStockCount})
+              </button>
+              <button
+                onClick={() => setFilterMode('out')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                  filterMode === 'out'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'bg-rose-50 text-rose-800 hover:bg-rose-100'
+                }`}
+              >
+                النافد ({outOfStockCount})
+              </button>
+            </div>
+
+            {/* View Mode Toggle (Cards vs Table) */}
+            <div className="hidden sm:flex items-center gap-1 bg-gray-100 p-1 rounded-xl border border-gray-200/80">
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={`p-1.5 rounded-lg transition cursor-pointer ${
+                  viewMode === 'cards' ? 'bg-[#2e5b9f] text-white shadow-2xs' : 'text-gray-500 hover:text-gray-900'
+                }`}
+                title="عرض الكروت"
+                aria-label="عرض الكروت"
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`p-1.5 rounded-lg transition cursor-pointer ${
+                  viewMode === 'table' ? 'bg-[#2e5b9f] text-white shadow-2xs' : 'text-gray-500 hover:text-gray-900'
+                }`}
+                title="عرض الجدول"
+                aria-label="عرض الجدول"
+              >
+                <ListFilter className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
 
@@ -438,9 +470,91 @@ export const CashierInventoryPage: React.FC = () => {
               </>
             )}
           </div>
+        ) : viewMode === 'cards' ? (
+          /* Cards View — احترافي، مناسب لكل المقاسات وينهي مشكلة السكرول العرضي */
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {filteredItems.map((item) => {
+              const isOut = isStockOut(item.quantity);
+              const isLow = isStockLow(item.quantity, item.minLimit);
+              const costInfo = costSummaryFor(item);
+              const supplier = lastSupplierByItem.get(item._id);
+
+              return (
+                <div
+                  key={item._id}
+                  className={`group relative overflow-hidden bg-white border border-gray-200/80 rounded-2xl p-4 shadow-[0_2px_10px_rgba(15,23,42,0.04)] hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.09)] transition-all duration-200 text-right ${
+                    isOut ? 'border-r-4 border-r-rose-400' : isLow ? 'border-r-4 border-r-amber-400' : 'border-r-4 border-r-emerald-400'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                      <div
+                        className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
+                          isOut ? 'bg-rose-50 border-rose-200 text-rose-600' : isLow ? 'bg-amber-50 border-amber-200 text-amber-600' : 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                        }`}
+                      >
+                        <Boxes className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <h4 className="font-bold text-gray-900 text-sm truncate">{item.name}</h4>
+                        <p className="text-[10px] text-gray-400 font-mono truncate mt-0.5">
+                          {item.lastRestocked ? `آخر توريد: ${formatDate(item.lastRestocked)}` : 'لم يتم التوريد بعد'}
+                          {supplier ? ` • مورد: ${supplier}` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={isOut ? 'out' : isLow ? 'low' : 'available'}
+                      size="sm"
+                    >
+                      {isOut ? 'نافد' : isLow ? 'منخفض' : 'متوفر'}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2.5 pt-3 mt-3 border-t border-dashed border-gray-200">
+                    <div className="p-2.5 bg-slate-50/80 rounded-xl border border-slate-100">
+                      <span className="text-[10px] text-gray-400 block mb-0.5">الرصيد المتاح</span>
+                      <span className={`font-bold font-mono text-sm ${isOut ? 'text-rose-600' : isLow ? 'text-amber-800' : 'text-gray-900'}`}>
+                        {formatStat(item.quantity, item.unit)}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-slate-50/80 rounded-xl border border-slate-100">
+                      <span className="text-[10px] text-gray-400 block mb-0.5">حد الأمان</span>
+                      <span className="font-bold text-gray-700 font-mono text-sm">
+                        {formatNumber(item.minLimit)} {item.unit}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-[#2e5b9f]/5 rounded-xl border border-[#2e5b9f]/15">
+                      <span className="text-[10px] text-gray-500 font-bold block mb-0.5">متوسط سعر الوحدة</span>
+                      <span className="font-bold font-mono text-xs text-[#2e5b9f]">
+                        {costInfo.unit > 0 ? `${formatPrice(costInfo.unit)} / ${item.unit}` : '—'}
+                      </span>
+                    </div>
+                    <div className="p-2.5 bg-[#2e5b9f]/5 rounded-xl border border-[#2e5b9f]/15">
+                      <span className="text-[10px] text-gray-500 font-bold block mb-0.5">التكلفة الإجمالية</span>
+                      <span className="font-bold font-mono text-xs text-[#2e5b9f]">
+                        {costInfo.total > 0 ? formatPrice(costInfo.total) : '—'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="pt-3 mt-3 border-t border-dashed border-gray-200 flex items-center justify-end">
+                    <button
+                      onClick={() => handleOpenPurchaseModal(item)}
+                      className="w-full inline-flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-blue-50 hover:bg-[#2e5b9f] text-[#2e5b9f] hover:text-white text-xs font-bold transition-all shadow-2xs cursor-pointer border border-blue-200/80"
+                    >
+                      <ShoppingBag className="w-4 h-4" />
+                      <span>تسجيل شراء وتوريد</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
+          /* Table View for wider desktops if preferred */
           <div className="overflow-x-auto">
-            <table className="w-full text-right border-collapse text-xs min-w-[860px]">
+            <table className="w-full text-right border-collapse text-xs min-w-[760px]">
               <thead>
                 <tr className="border-b border-gray-100 text-gray-400 font-semibold">
                   <th className="pb-3 px-3">اسم المادة الخام</th>

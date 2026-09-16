@@ -21,11 +21,12 @@ import {
   FileSpreadsheet,
   SearchX,
   CheckCircle2,
-  Receipt,
   Boxes,
   Download,
   User,
   Hash,
+  LayoutGrid,
+  ListFilter,
 } from 'lucide-react';
 
 /** استخراج اسم المورد من وصف الفاتورة المخزّن بصيغة [مورد: ...] */
@@ -56,6 +57,7 @@ export const CashierExpensesPage: React.FC = () => {
   // 🔎 نوع البحث — نفس فكرة سجل فواتير اليوم في الكاشير
   const [searchMode, setSearchMode] = useState<SearchMode>('all');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month' | 'year'>('all');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -539,6 +541,32 @@ export const CashierExpensesPage: React.FC = () => {
             className="w-full sm:w-[270px]"
           />
 
+          {/* View Mode Toggle (Cards vs Table) */}
+          <div className="hidden sm:flex items-center gap-1 bg-gray-100 p-1 rounded-xl border border-gray-200/80">
+            <button
+              type="button"
+              onClick={() => setViewMode('cards')}
+              className={`p-1.5 rounded-lg transition cursor-pointer ${
+                viewMode === 'cards' ? 'bg-[#2e5b9f] text-white shadow-2xs' : 'text-gray-500 hover:text-gray-900'
+              }`}
+              title="عرض الكروت"
+              aria-label="عرض الكروت"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('table')}
+              className={`p-1.5 rounded-lg transition cursor-pointer ${
+                viewMode === 'table' ? 'bg-[#2e5b9f] text-white shadow-2xs' : 'text-gray-500 hover:text-gray-900'
+              }`}
+              title="عرض الجدول"
+              aria-label="عرض الجدول"
+            >
+              <ListFilter className="w-4 h-4" />
+            </button>
+          </div>
+
           {/* 📤 تصدير PDF / CSV */}
           <button
             onClick={() => setIsExportModalOpen(true)}
@@ -560,17 +588,16 @@ export const CashierExpensesPage: React.FC = () => {
           <p className="text-gray-600 font-bold text-sm">لا توجد فواتير مشتريات مطابقة</p>
           <p className="text-xs text-gray-500 mt-2">جرّب تغيير كلمة البحث أو امسح الفلاتر لعرض كل الفواتير.</p>
           </div>
-        ) : (
-          <>
-            {/* Mobile View: Cards — تفاصيل كاملة: بيان، مورد، فاتورة، صنف، سعر وحدة */}
-            <div className="space-y-3 md:hidden">
-              {filteredExpenses.map((exp) => {
-                const supplier = parseSupplier(exp.description);
-                const invoice = parseInvoice(exp.description);
-                const unitPrice = exp.inventoryQuantityAdded
-                  ? Number(exp.amount) / Number(exp.inventoryQuantityAdded)
-                  : 0;
-                return (
+        ) : viewMode === 'cards' ? (
+          /* Cards View — احترافي، مناسب لكل المقاسات وينهي مشكلة السكرول العرضي تماماً */
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+            {filteredExpenses.map((exp) => {
+              const supplier = parseSupplier(exp.description);
+              const invoice = parseInvoice(exp.description);
+              const unitPrice = exp.inventoryQuantityAdded
+                ? Number(exp.amount) / Number(exp.inventoryQuantityAdded)
+                : 0;
+              return (
                 <div key={exp._id} className="group relative overflow-hidden p-4 bg-white rounded-2xl border border-rose-100/80 border-r-4 border-r-rose-400 shadow-[0_2px_10px_rgba(15,23,42,0.04)] hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.09)] transition-all duration-200 text-right space-y-3">
                   <div className="flex justify-between items-start gap-2">
                     <div className="min-w-0">
@@ -634,13 +661,13 @@ export const CashierExpensesPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
-                );
-              })}
-            </div>
-
-            {/* Desktop View: Table — أعمدة غنية: بيان، صنف، فئة، سعر وحدة، كمية، مورد، فاتورة، بواسطة */}
-            <div className="hidden md:block overflow-x-auto">
-              <table className="w-full text-right border-collapse text-xs">
+              );
+            })}
+          </div>
+        ) : (
+          /* Desktop View: Table — أعمدة غنية: بيان، صنف، فئة، سعر وحدة، كمية، مورد، فاتورة، بواسطة */
+          <div className="overflow-x-auto">
+            <table className="w-full text-right border-collapse text-xs min-w-[760px]">
                 <thead>
                   <tr className="border-b border-gray-100 text-gray-400 font-semibold">
                     <th className="pb-3 px-3">البيان والصنف</th>
@@ -745,7 +772,6 @@ export const CashierExpensesPage: React.FC = () => {
                 </tbody>
               </table>
             </div>
-          </>
         )}
       </div>
       </div>{/* نهاية محتوى تصدير الـ PDF */}
