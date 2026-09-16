@@ -1,10 +1,29 @@
 // desktop/main/frontendUpdater.js
 import fs from 'fs';
 import path from 'path';
+import https from 'https';
 import { app } from 'electron';
 
 const TRUSTED_ORIGIN = 'https://fishawy.vercel.app';
 const MANIFEST_URL = `${TRUSTED_ORIGIN}/frontend-version.json`;
+
+function fetchBuffer(url) {
+  return new Promise((resolve, reject) => {
+    const req = https.get(url, { headers: { 'Cache-Control': 'no-cache', 'User-Agent': 'ElFishawyDesktop' } }, (res) => {
+      if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
+        return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+      }
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+    });
+    req.on('error', reject);
+    req.setTimeout(12000, () => {
+      req.destroy();
+      reject(new Error(`Timeout downloading ${url}`));
+    });
+  });
+}
 
 class FrontendUpdater {
   constructor() {
@@ -95,24 +114,15 @@ class FrontendUpdater {
 
     try {
       console.log('[FrontendUpdater] Checking remote manifest at:', MANIFEST_URL);
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
-
-      const res = await fetch(MANIFEST_URL, {
-        headers: { 'Cache-Control': 'no-cache' },
-        signal: controller.signal,
-      }).catch((e) => {
+      let remoteManifest = null;
+      try {
+        const manifestBuf = await fetchBuffer(MANIFEST_URL);
+        remoteManifest = JSON.parse(manifestBuf.toString('utf8'));
+      } catch (e) {
         console.log('[FrontendUpdater] Remote manifest fetch skipped/offline:', e.message);
-        return null;
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!res || !res.ok) {
         return { hasUpdate: false, reason: 'offline_or_not_found' };
       }
 
-      const remoteManifest = await res.json();
       if (!remoteManifest || !remoteManifest.version || !remoteManifest.files) {
         return { hasUpdate: false, reason: 'invalid_manifest' };
       }
@@ -193,12 +203,7 @@ class FrontendUpdater {
         }
 
         const fileUrl = `${TRUSTED_ORIGIN}/${normalized.replace(/\\/g, '/')}`;
-        const fileRes = await fetch(fileUrl);
-        if (!fileRes.ok) {
-          throw new Error(`Failed to download asset: ${fileUrl} (status: ${fileRes.status})`);
-        }
-
-        const buffer = Buffer.from(await fileRes.arrayBuffer());
+        const buffer = await fetchBuffer(fileUrl);
         fs.writeFileSync(targetFilePath, buffer);
       }
 
