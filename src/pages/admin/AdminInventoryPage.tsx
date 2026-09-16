@@ -38,6 +38,8 @@ import {
   MoreVertical,
   TrendingUp,
   TrendingDown,
+  LayoutGrid,
+  ListFilter,
 } from 'lucide-react';
 
 export const AdminInventoryPage: React.FC = () => {
@@ -50,6 +52,7 @@ export const AdminInventoryPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterMode, setFilterMode] = useState<'all' | 'low' | 'out'>('all');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
@@ -526,9 +529,36 @@ export const AdminInventoryPage: React.FC = () => {
         {/* Main Content: Inventory Table (8 cols) - Right side visually */}
         <div className="lg:col-span-8 lg:order-1 bg-white rounded-2xl border border-gray-200/80 p-6 shadow-2xs">
           <div className="flex items-center justify-between pb-4 mb-4 border-b border-gray-100">
-            <span className="text-xs text-gray-400 font-mono">
-              {filteredItems.length} صنف معروض
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-400 font-mono">
+                {filteredItems.length} صنف معروض
+              </span>
+              {/* View Mode Toggle: كروت / جدول */}
+              <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl border border-gray-200/80">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('cards')}
+                  className={`p-1.5 rounded-lg transition cursor-pointer ${
+                    viewMode === 'cards' ? 'bg-[#2e5b9f] text-white shadow-2xs' : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                  title="عرض الكروت الاحترافية"
+                  aria-label="عرض الكروت"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('table')}
+                  className={`p-1.5 rounded-lg transition cursor-pointer ${
+                    viewMode === 'table' ? 'bg-[#2e5b9f] text-white shadow-2xs' : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                  title="عرض الجدول المدمج"
+                  aria-label="عرض الجدول"
+                >
+                  <ListFilter className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
             <h3 className="font-bold text-base text-gray-900">الأصناف الحالية</h3>
           </div>
 
@@ -563,15 +593,16 @@ export const AdminInventoryPage: React.FC = () => {
             </div>
           ) : (
             <>
-              {/* كروت المخزون في كل المقاسات — لا جدول عريض ولا تمرير أفقي. */}
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {filteredItems.map((item) => {
-                  const isLow = isStockLow(item.quantity, item.minLimit);
-                  const isOut = isStockOut(item.quantity);
-                  const restockerName = resolveRestockerName(item) || null;
-                  const costInfo = costSummaryFor(item);
+              {/* عرض الكروت أو الجدول بناءً على viewMode المختار */}
+              {viewMode === 'cards' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredItems.map((item) => {
+                    const isLow = isStockLow(item.quantity, item.minLimit);
+                    const isOut = isStockOut(item.quantity);
+                    const restockerName = resolveRestockerName(item) || null;
+                    const costInfo = costSummaryFor(item);
 
-return (
+                    return (
                      <div
                        key={item._id}
                        className={`group relative overflow-hidden bg-white border border-gray-200/80 rounded-2xl p-4 shadow-[0_2px_10px_rgba(15,23,42,0.04)] hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(15,23,42,0.09)] transition-all duration-200 cursor-pointer text-right ${
@@ -694,10 +725,9 @@ return (
                   );
                 })}
               </div>
-
-              {/* محفوظ كمرجع داخلي فقط؛ الكروت أعلاه هي العرض الفعلي. */}
-              <div className="hidden">
-                <table className="w-full text-right border-collapse text-xs min-w-[760px]">
+            ) : (
+                <div className="overflow-x-auto -mx-6 px-6 pb-2">
+                  <table className="w-full text-right border-collapse text-xs min-w-[700px]">
                   <thead>
                     <tr className="border-b border-gray-100 text-gray-400 font-semibold">
                       <th className="pb-3 px-3">اسم المادة / الصنف</th>
@@ -817,8 +847,9 @@ return (
                   </tbody>
                 </table>
               </div>
-            </>
-          )}
+            )}
+          </>
+        )}
         </div>
 
         {/* Sidebar: Stock Movements Log (4 cols) - Left side visually */}

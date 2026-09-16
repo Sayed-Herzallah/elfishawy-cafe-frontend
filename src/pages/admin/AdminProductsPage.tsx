@@ -32,6 +32,8 @@ import {
   Info,
   CheckCircle2,
   AlertTriangle,
+  LayoutGrid,
+  ListFilter,
 } from 'lucide-react';
 
 /** تحويل الكمية لأصغر وحدة أساس (GRAM / ML / PIECE) لحساب دقيق */
@@ -43,6 +45,7 @@ export const AdminProductsPage: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [stockFilter, setStockFilter] = useState<'all' | 'in' | 'low' | 'out'>('all');
+  const [viewMode, setViewMode] = useState<'cards' | 'table'>('table');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
   const [recipeDepletedMap, setRecipeDepletedMap] = useState<Record<string, string[]>>({});
@@ -743,6 +746,36 @@ export const AdminProductsPage: React.FC = () => {
       {/* Products Table */}
       <div className="bg-white rounded-2xl border border-gray-200/80 p-6 shadow-2xs">
         <div className="flex items-center justify-between pb-4 mb-4 border-b border-gray-100">
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-gray-400 font-mono">
+              {filteredProducts.length} منتج معروض
+            </span>
+            {/* View Mode Toggle: كروت / جدول */}
+            <div className="hidden sm:flex items-center gap-1 bg-gray-100 p-1 rounded-xl border border-gray-200/80">
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`p-1.5 rounded-lg transition cursor-pointer ${
+                  viewMode === 'table' ? 'bg-[#2e5b9f] text-white shadow-2xs' : 'text-gray-500 hover:text-gray-900'
+                }`}
+                title="عرض الجدول"
+                aria-label="عرض الجدول"
+              >
+                <ListFilter className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={`p-1.5 rounded-lg transition cursor-pointer ${
+                  viewMode === 'cards' ? 'bg-[#2e5b9f] text-white shadow-2xs' : 'text-gray-500 hover:text-gray-900'
+                }`}
+                title="عرض الكروت"
+                aria-label="عرض الكروت"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
           <h3 className="font-bold text-base text-gray-900">قائمة المنتجات</h3>
         </div>
 
@@ -758,8 +791,8 @@ export const AdminProductsPage: React.FC = () => {
           </div>
         ) : (
           <>
-            {/* Mobile & Tablet Card Layout (< md) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden">
+            {/* Cards Layout (Mobile always, Desktop when viewMode === 'cards') */}
+            <div className={viewMode === 'cards' ? 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4' : 'grid grid-cols-1 sm:grid-cols-2 gap-4 md:hidden'}>
               {filteredProducts.map((prod) => {
                 const catName =
                   typeof prod.category === 'object' ? prod.category.name : 'عام';
@@ -862,7 +895,7 @@ export const AdminProductsPage: React.FC = () => {
             </div>
 
             {/* Desktop Table Layout (>= md) */}
-            <div className="hidden md:block overflow-x-auto -mx-6 px-6 pb-2">
+            <div className={viewMode === 'table' ? 'hidden md:block overflow-x-auto -mx-6 px-6 pb-2' : 'hidden'}>
               <table className="w-full text-right border-collapse text-xs min-w-[650px]">
                 <thead>
                   <tr className="border-b border-gray-100 text-gray-400 font-semibold">
