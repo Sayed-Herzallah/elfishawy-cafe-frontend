@@ -591,15 +591,22 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             </div>
           </div>
 
-          {/* بيانات المعاينة: لا تدخل في HTML/CSS الخاصين بطباعة iframe. */}
+          {/* ملخص الفاتورة المعروض في المعاينة */}
           <div className="pt-2">
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-lg border border-gray-300 bg-gray-50 px-2 py-2 text-xs font-bold text-gray-700" dir="rtl">
-              <div className="flex justify-between gap-2"><span>إجمالي القطع:</span><span className="font-mono text-gray-900">{formatNumber(totalItemsCount)}</span></div>
-              <div className="flex justify-between gap-2"><span>تاريخ الفاتورة:</span><span className="font-mono text-gray-900">{formatDate(order.createdAt)}</span></div>
-              <div className="flex justify-between gap-2"><span>وقت الفاتورة:</span><span className="font-mono text-gray-900">{formatTime(order.createdAt)}</span></div>
-              <div className="col-span-2 flex justify-between gap-2 border-t border-gray-200 pt-1.5"><span>اسم الكافيه:</span><span className="text-gray-900">كافيه الفيشاوي</span></div>
+            <div className="space-y-2 rounded-xl border border-gray-200 bg-[#f8fafc] p-3 text-xs font-bold text-gray-700" dir="rtl">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">إجمالي القطع:</span>
+                <span className="font-mono text-sm text-[#2e5b9f] font-extrabold">{formatNumber(totalItemsCount)} قطعة</span>
+              </div>
+              <div className="flex items-center justify-between border-t border-gray-200/60 pt-1.5">
+                <span className="text-gray-500">تاريخ الفاتورة:</span>
+                <span className="font-mono text-gray-900">{formatDate(order.createdAt)}</span>
+              </div>
+              <div className="flex items-center justify-between border-t border-gray-200/60 pt-1.5">
+                <span className="text-gray-500">وقت الفاتورة:</span>
+                <span className="font-mono text-gray-900">{formatTime(order.createdAt)}</span>
+              </div>
             </div>
-
           </div>
         </div>
 
