@@ -2,20 +2,50 @@
 import fs from 'fs';
 import path from 'path';
 import initSqlJs from 'sql.js';
+import { getOrCreateMasterKey, encryptBuffer, decryptBuffer } from './security.js';
 
 let dbInstance = null;
 let dbFilePath = null;
+let masterKey = null;
+let userDataDir = null;
 
 export async function initDatabase(userDataPath) {
   if (dbInstance) return dbInstance;
 
+  userDataDir = userDataPath;
   dbFilePath = path.join(userDataPath, 'elfishawy_offline.sqlite');
-  const SQL = await initSqlJs();
+  masterKey = getOrCreateMasterKey(userDataPath);
 
+  const SQL = await initSqlJs();
   let fileBuffer = null;
+
   if (fs.existsSync(dbFilePath)) {
     try {
-      fileBuffer = fs.readFileSync(dbFilePath);
+      const rawDiskBuffer = fs.readFileSync(dbFilePath);
+
+      // Check if file is legacy Plaintext SQLite (starts with "SQLite format 3")
+      const isPlaintext = rawDiskBuffer.length >= 16 &&
+        rawDiskBuffer.subarray(0, 16).toString('utf8').startsWith('SQLite format 3');
+
+      if (isPlaintext) {
+        console.log('[DB Security] Legacy plaintext SQLite detected. Creating migration backup...');
+        const backupMigrationPath = path.join(userDataPath, `elfishawy_offline_migration_${Date.now()}.sqlite.bak`);
+        try {
+          fs.copyFileSync(dbFilePath, backupMigrationPath);
+        } catch (bErr) {
+          console.warn('[DB Security] Migration backup warning:', bErr.message);
+        }
+        fileBuffer = rawDiskBuffer;
+      } else {
+        // File is encrypted: decrypt with AES-256-GCM
+        try {
+          fileBuffer = decryptBuffer(rawDiskBuffer, masterKey);
+          console.log('[DB Security] Encrypted SQLite decrypted successfully in RAM.');
+        } catch (decErr) {
+          console.error('[DB Security] Decryption failed! Attempting recovery from latest valid backup:', decErr.message);
+          fileBuffer = attemptBackupRecovery(userDataPath, masterKey);
+        }
+      }
     } catch (e) {
       console.error('Failed to read existing SQLite file:', e);
     }
@@ -23,23 +53,68 @@ export async function initDatabase(userDataPath) {
 
   dbInstance = fileBuffer ? new SQL.Database(fileBuffer) : new SQL.Database();
 
-  // Run schema migrations
+  // Run schema migrations (includes sequence & hash chaining columns for sync_queue)
   runMigrations(dbInstance);
+
+  // Immediately persist encrypted to disk
   saveDatabase();
 
-  console.log('✅ SQLite initialized successfully at:', dbFilePath);
+  console.log('✅ SQLite initialized and encrypted securely at:', dbFilePath);
   return dbInstance;
 }
 
+/**
+ * Persists in-memory SQLite database to disk with AES-256-GCM encryption & atomic write.
+ */
 export function saveDatabase() {
-  if (!dbInstance || !dbFilePath) return;
+  if (!dbInstance || !dbFilePath || !masterKey) return;
   try {
-    const data = dbInstance.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(dbFilePath, buffer);
+    const rawData = dbInstance.export();
+    const plainBuffer = Buffer.from(rawData);
+
+    // Encrypt SQLite in-memory bytes with hardware-protected master key
+    const encryptedBuffer = encryptBuffer(plainBuffer, masterKey);
+
+    // Atomic write: write to temp file then rename
+    const tmpFilePath = `${dbFilePath}.tmp`;
+    fs.writeFileSync(tmpFilePath, encryptedBuffer);
+    fs.renameSync(tmpFilePath, dbFilePath);
+
+    // Maintain rolling encrypted backup
+    createRollingBackup(encryptedBuffer);
   } catch (err) {
-    console.error('Failed to persist SQLite database to disk:', err);
+    console.error('[DB Security] Failed to persist encrypted SQLite database to disk:', err);
   }
+}
+
+function createRollingBackup(encryptedBuffer) {
+  try {
+    if (!userDataDir) return;
+    const backupDir = path.join(userDataDir, 'backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    const backupFile = path.join(backupDir, 'elfishawy_offline.backup.enc');
+    fs.writeFileSync(backupFile, encryptedBuffer);
+  } catch (err) {
+    // Non-blocking background backup
+  }
+}
+
+function attemptBackupRecovery(userDataPath, key) {
+  try {
+    const backupFile = path.join(userDataPath, 'backups', 'elfishawy_offline.backup.enc');
+    if (fs.existsSync(backupFile)) {
+      const encBackup = fs.readFileSync(backupFile);
+      const recoveredBuffer = decryptBuffer(encBackup, key);
+      console.log('[DB Security] Recovered database successfully from encrypted backup.');
+      return recoveredBuffer;
+    }
+  } catch (recErr) {
+    console.error('[DB Security] Backup recovery failed:', recErr.message);
+  }
+  return null;
 }
 
 function runMigrations(db) {
@@ -53,6 +128,9 @@ function runMigrations(db) {
       status TEXT DEFAULT 'PENDING',
       attempts INTEGER DEFAULT 0,
       last_error TEXT,
+      sequence_id INTEGER,
+      prev_hash TEXT,
+      op_hash TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       synced_at TEXT
     );
@@ -138,19 +216,14 @@ function runMigrations(db) {
     );
   `);
 
-  // Safe ALTER TABLE for existing databases
-  try {
-    db.run(`ALTER TABLE local_users ADD COLUMN session_token TEXT;`);
-  } catch {}
-  try {
-    db.run(`ALTER TABLE inventory ADD COLUMN last_restock_total_cost REAL DEFAULT 0;`);
-  } catch {}
-  try {
-    db.run(`ALTER TABLE inventory ADD COLUMN last_restocked TEXT;`);
-  } catch {}
-  try {
-    db.run(`ALTER TABLE inventory ADD COLUMN last_restocked_by TEXT;`);
-  } catch {}
+  // Safe ALTER TABLE migrations for existing databases
+  try { db.run(`ALTER TABLE local_users ADD COLUMN session_token TEXT;`); } catch {}
+  try { db.run(`ALTER TABLE inventory ADD COLUMN last_restock_total_cost REAL DEFAULT 0;`); } catch {}
+  try { db.run(`ALTER TABLE inventory ADD COLUMN last_restocked TEXT;`); } catch {}
+  try { db.run(`ALTER TABLE inventory ADD COLUMN last_restocked_by TEXT;`); } catch {}
+  try { db.run(`ALTER TABLE sync_queue ADD COLUMN sequence_id INTEGER;`); } catch {}
+  try { db.run(`ALTER TABLE sync_queue ADD COLUMN prev_hash TEXT;`); } catch {}
+  try { db.run(`ALTER TABLE sync_queue ADD COLUMN op_hash TEXT;`); } catch {}
 }
 
 export function getDb() {
@@ -158,4 +231,8 @@ export function getDb() {
     throw new Error('Database not initialized. Call initDatabase first.');
   }
   return dbInstance;
+}
+
+export function getMasterKey() {
+  return masterKey;
 }

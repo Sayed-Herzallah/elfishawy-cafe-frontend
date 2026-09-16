@@ -141,7 +141,7 @@ export const CashierLayout: React.FC = () => {
         {/* Brand Title */}
         <div className="flex items-center gap-2.5 shrink-0">
           <span className="font-bold text-base md:text-lg font-arabic-heading text-gray-900 tracking-tight whitespace-nowrap">
-            مقهى الفيشاوي (إصدار OTA 1.1.0 ⚡)
+            مقهى الفيشاوي
           </span>
           <div className="w-8 h-8 rounded-xl bg-[#2e5b9f] text-white flex items-center justify-center font-bold text-sm shadow-2xs">
             ☕

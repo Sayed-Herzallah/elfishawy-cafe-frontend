@@ -17,7 +17,9 @@ async function createWindow() {
   const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
 
   // 1. Create and show Splash Window first
+  const iconPath = path.join(__dirname, '../icon.ico');
   splashWindow = new BrowserWindow({
+    icon: iconPath,
     width: 480,
     height: 400,
     transparent: false,
@@ -34,6 +36,7 @@ async function createWindow() {
 
   // 2. Prepare Main Window (hidden initially)
   mainWindow = new BrowserWindow({
+    icon: iconPath,
     width: 1366,
     height: 800,
     minWidth: 1024,

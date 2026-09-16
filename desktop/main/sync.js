@@ -1,5 +1,6 @@
 // desktop/main/sync.js
-import { getDb, saveDatabase } from './db.js';
+import { getDb, saveDatabase, getMasterKey } from './db.js';
+import { decryptSensitiveString, computeOpHash } from './security.js';
 
 let isSyncing = false;
 let syncIntervalTimer = null;
@@ -17,7 +18,9 @@ export function getAuthToken() {
     const db = getDb();
     const res = db.exec(`SELECT session_token FROM local_users WHERE session_token IS NOT NULL AND session_token != '' ORDER BY cached_at DESC LIMIT 1`);
     if (res.length && res[0].values.length) {
-      authToken = res[0].values[0][0];
+      const stored = res[0].values[0][0];
+      // Decrypt token if it was encrypted via safeStorage
+      authToken = decryptSensitiveString(stored);
       return authToken;
     }
   } catch {}
@@ -31,7 +34,7 @@ export async function processSyncQueue(mainWindow) {
   try {
     const db = getDb();
     const res = db.exec(`
-      SELECT id, client_op_id, entity_type, action, payload, attempts
+      SELECT id, client_op_id, entity_type, action, payload, attempts, sequence_id, prev_hash, op_hash
       FROM sync_queue
       WHERE status IN ('PENDING', 'FAILED')
       ORDER BY id ASC
@@ -47,13 +50,51 @@ export async function processSyncQueue(mainWindow) {
     let syncedCount = 0;
 
     for (const row of rows) {
-      const [id, clientOpId, entityType, action, payloadStr, attempts] = row;
+      const [id, clientOpId, entityType, action, payloadStr, attempts, sequenceId, prevHash, opHash] = row;
       let payload;
       try {
         payload = JSON.parse(payloadStr);
       } catch (err) {
         db.run(`UPDATE sync_queue SET status = 'FAILED', last_error = 'Invalid JSON payload' WHERE id = ?`, [id]);
         continue;
+      }
+
+      // Cryptographic Tamper Detection Check
+      const masterKey = getMasterKey();
+      if (masterKey && opHash) {
+        const expectedHash = computeOpHash(masterKey, {
+          sequenceId: Number(sequenceId) || 0,
+          clientOpId,
+          entityType,
+          action,
+          payload: payloadStr,
+          prevHash: prevHash || 'ROOT_GENESIS',
+        });
+
+        if (expectedHash !== opHash) {
+          console.error(`[Security Alert] Tamper detected on queue item #${id} (${clientOpId})! Hash mismatch.`);
+          db.run(`UPDATE sync_queue SET status = 'BLOCKED_TAMPERED', last_error = 'Security Alert: Operation integrity hash mismatch' WHERE id = ?`, [id]);
+          continue;
+        }
+
+        // Verify chain link with the preceding row in the database
+        const prevRowRes = db.exec(`SELECT op_hash, sequence_id FROM sync_queue WHERE id < ? ORDER BY id DESC LIMIT 1`, [id]);
+        if (prevRowRes.length && prevRowRes[0].values.length) {
+          const [actualPrevHash, actualPrevSeq] = prevRowRes[0].values[0];
+          const expectedPrevSeq = (Number(sequenceId) || 0) - 1;
+
+          if (actualPrevHash && prevHash && actualPrevHash !== prevHash) {
+            console.error(`[Security Alert] Chain break detected on queue item #${id}! Preceding hash mismatch (possible deletion).`);
+            db.run(`UPDATE sync_queue SET status = 'BLOCKED_TAMPERED', last_error = 'Security Alert: Preceding chain hash mismatch (deleted item detected)' WHERE id = ?`, [id]);
+            continue;
+          }
+
+          if (actualPrevSeq !== undefined && Number(sequenceId) > 1 && actualPrevSeq !== expectedPrevSeq) {
+            console.error(`[Security Alert] Sequence gap detected! Expected #${expectedPrevSeq}, got #${actualPrevSeq}.`);
+            db.run(`UPDATE sync_queue SET status = 'BLOCKED_TAMPERED', last_error = 'Security Alert: Sequence gap detected (missing item)' WHERE id = ?`, [id]);
+            continue;
+          }
+        }
       }
 
       try {

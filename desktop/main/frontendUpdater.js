@@ -194,6 +194,19 @@ class FrontendUpdater {
         throw new Error('Downloaded bundle is missing valid index.html');
       }
 
+      // 3.1 Normalize absolute paths in index.html to relative paths so Electron file:// protocol can resolve them
+      try {
+        let indexContent = fs.readFileSync(stagedIndex, 'utf8');
+        indexContent = indexContent
+          .replace(/(src|href)=["']\/assets\//g, '$1="./assets/')
+          .replace(/(src|href)=["']\/favicon\./g, '$1="./favicon.')
+          .replace(/(src|href)=["']\/manifest\.json["']/g, '$1="./manifest.json"');
+        fs.writeFileSync(stagedIndex, indexContent, 'utf8');
+        console.log('[FrontendUpdater] Normalized index.html asset paths to relative paths.');
+      } catch (err) {
+        console.warn('[FrontendUpdater] Could not normalize index.html paths:', err);
+      }
+
       // 4. Move staging to permanent version directory
       if (fs.existsSync(versionDir)) {
         fs.rmSync(versionDir, { recursive: true, force: true });

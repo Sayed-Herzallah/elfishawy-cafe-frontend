@@ -1,8 +1,9 @@
 // desktop/main/ipc.js
 import { ipcMain } from 'electron';
-import { getDb, saveDatabase } from './db.js';
+import { getDb, saveDatabase, getMasterKey } from './db.js';
 import { processSyncQueue, configureSync } from './sync.js';
 import { frontendUpdater } from './frontendUpdater.js';
+import { encryptSensitiveString, decryptSensitiveString, computeOpHash } from './security.js';
 import crypto from 'crypto';
 
 // Conversion system mirroring backend utils/recipe/unitConverter.js
@@ -35,6 +36,29 @@ const consumptionPerUnit = (inputQuantity, inputUnit, outputQuantity) => {
   const baseInputQty = convertToBase(inputQuantity, inputUnit);
   return baseInputQty / (outputQuantity || 1);
 };
+
+function enqueueSecureOperation(db, { clientOpId, entityType, action, payload, createdAt }) {
+  const masterKey = getMasterKey();
+  const lastRes = db.exec(`SELECT sequence_id, op_hash FROM sync_queue ORDER BY id DESC LIMIT 1`);
+  let nextSeq = 1;
+  let prevHash = 'ROOT_GENESIS';
+
+  if (lastRes.length && lastRes[0].values.length) {
+    const lastRow = lastRes[0].values[0];
+    nextSeq = (Number(lastRow[0]) || 0) + 1;
+    prevHash = String(lastRow[1] || 'ROOT_GENESIS');
+  }
+
+  const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  const opHash = masterKey
+    ? computeOpHash(masterKey, { sequenceId: nextSeq, clientOpId, entityType, action, payload: payloadStr, prevHash })
+    : '';
+
+  db.run(`
+    INSERT INTO sync_queue (client_op_id, entity_type, action, payload, status, sequence_id, prev_hash, op_hash, created_at)
+    VALUES (?, ?, ?, ?, 'PENDING', ?, ?, ?, ?)
+  `, [clientOpId, entityType, action, payloadStr, nextSeq, prevHash, opHash, createdAt]);
+}
 
 export function setupIpcHandlers(mainWindow) {
   // Check connectivity
@@ -174,11 +198,14 @@ export function setupIpcHandlers(mainWindow) {
         }
       }
 
-      // Add to sync queue
-      db.run(`
-        INSERT INTO sync_queue (client_op_id, entity_type, action, payload, status, created_at)
-        VALUES (?, 'order', 'CREATE', ?, 'PENDING', ?)
-      `, [clientOrderId, JSON.stringify(orderData), now]);
+      // Add to sync queue with cryptographic hash-chaining
+      enqueueSecureOperation(db, {
+        clientOpId: clientOrderId,
+        entityType: 'order',
+        action: 'CREATE',
+        payload: orderData,
+        createdAt: now,
+      });
 
       saveDatabase();
 
@@ -270,11 +297,14 @@ export function setupIpcHandlers(mainWindow) {
         `, [qtyNum, unitCost, unitCost, totalCost, now, now, expenseData.inventoryItemLinked]);
       }
 
-      // Add to sync queue
-      db.run(`
-        INSERT INTO sync_queue (client_op_id, entity_type, action, payload, status, created_at)
-        VALUES (?, 'expense', 'CREATE', ?, 'PENDING', ?)
-      `, [clientExpenseId, JSON.stringify(expenseData), now]);
+      // Add to sync queue with cryptographic hash-chaining
+      enqueueSecureOperation(db, {
+        clientOpId: clientExpenseId,
+        entityType: 'expense',
+        action: 'CREATE',
+        payload: expenseData,
+        createdAt: now,
+      });
 
       saveDatabase();
 
@@ -341,11 +371,14 @@ export function setupIpcHandlers(mainWindow) {
         WHERE _id = ?
       `, [qtyNum, costPrice, costPrice, totalCost, now, now, restockData.id]);
 
-      // Add to sync queue
-      db.run(`
-        INSERT INTO sync_queue (client_op_id, entity_type, action, payload, status, created_at)
-        VALUES (?, 'inventory_restock', 'UPDATE', ?, 'PENDING', ?)
-      `, [clientOpId, JSON.stringify(restockData), now]);
+      // Add to sync queue with cryptographic hash-chaining
+      enqueueSecureOperation(db, {
+        clientOpId,
+        entityType: 'inventory_restock',
+        action: 'UPDATE',
+        payload: restockData,
+        createdAt: now,
+      });
 
       saveDatabase();
 
@@ -453,10 +486,11 @@ export function setupIpcHandlers(mainWindow) {
       if (!user || !user.email) return { success: false };
       const db = getDb();
       const hash = password ? crypto.createHash('sha256').update(password).digest('hex') : '';
+      const secureToken = token ? encryptSensitiveString(token) : '';
       db.run(`
         INSERT OR REPLACE INTO local_users (_id, user_name, email, role_type, password_hash, session_token, cached_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-      `, [user._id, user.userName, user.email.toLowerCase(), user.roleType, hash, token || '', new Date().toISOString()]);
+      `, [user._id, user.userName, user.email.toLowerCase(), user.roleType, hash, secureToken, new Date().toISOString()]);
       saveDatabase();
       if (token) configureSync({ token });
       return { success: true };
@@ -482,8 +516,9 @@ export function setupIpcHandlers(mainWindow) {
         return { success: false, message: 'User not cached locally' };
       }
 
-      const [id, userName, userEmail, roleType, storedHash, sessionToken] = res[0].values[0];
+      const [id, userName, userEmail, roleType, storedHash, rawSessionToken] = res[0].values[0];
       if (storedHash && storedHash === inputHash) {
+        const sessionToken = decryptSensitiveString(rawSessionToken);
         if (sessionToken) configureSync({ token: sessionToken });
         return {
           success: true,
