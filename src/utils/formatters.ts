@@ -99,3 +99,19 @@ export const formatDateTime = (dateInput: string | Date | undefined | null): str
   if (!dateInput) return '';
   return `${formatDate(dateInput)} • ${formatTime(dateInput)}`;
 };
+
+/**
+ * Checks if a given date string/Date corresponds to today in local client time.
+ */
+export const isToday = (dateInput: string | Date | undefined | null): boolean => {
+  if (!dateInput) return false;
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return false;
+  const now = new Date();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
+};
+

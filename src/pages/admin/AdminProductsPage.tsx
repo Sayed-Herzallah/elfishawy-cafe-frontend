@@ -94,21 +94,38 @@ export const AdminProductsPage: React.FC = () => {
   const loadData = async () => {
     try {
       setIsLoading(true);
-      const [prodRes, catRes, invRes, recRes] = await Promise.all([
-        productService.listProducts(),
-        categoryService.listCategories(),
-        inventoryService.listInventory(),
-        recipeService.listRecipes().catch(() => null),
+
+      const prodPromise = productService.listProducts().then((res) => {
+        if (res.success && res.data) setProducts(res.data);
+        return res;
+      }).catch((err) => { showError(err); return null; });
+
+      const catPromise = categoryService.listCategories().then((res) => {
+        if (res.success && res.data) setCategories(res.data);
+        return res;
+      }).catch(() => null);
+
+      const invPromise = inventoryService.listInventory().then((res) => {
+        if (res.success && res.data) setInventoryItems(res.data);
+        return res;
+      }).catch(() => null);
+
+      const recPromise = recipeService.listRecipes().catch(() => null);
+
+      // Release main table loading as soon as products arrive
+      prodPromise.finally(() => setIsLoading(false));
+
+      const [prodRes, catRes, invRes, recRes] = await Promise.allSettled([
+        prodPromise,
+        catPromise,
+        invPromise,
+        recPromise,
       ]);
 
-      if (prodRes.success && prodRes.data) setProducts(prodRes.data);
-      if (catRes.success && catRes.data) setCategories(catRes.data);
-      if (invRes.success && invRes.data) setInventoryItems(invRes.data);
-
-      if (recRes && recRes.success && recRes.data) {
+      if (recRes.status === 'fulfilled' && recRes.value?.success && Array.isArray(recRes.value.data)) {
         const secMap: Record<string, string[]> = {};
         const priMap: Record<string, string[]> = {};
-        recRes.data.forEach((r: any) => {
+        recRes.value.data.forEach((r: any) => {
           const pId = typeof r.product === 'string' ? r.product : r.product?._id;
           if (!pId || !r.ingredients) return;
           const depletedSec: string[] = [];

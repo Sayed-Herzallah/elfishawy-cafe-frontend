@@ -10,7 +10,7 @@ import { ReceiptModal } from '../components/ui/ReceiptModal';
 import { Modal } from '../components/ui/Modal';
 import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { formatPrice, formatNumber, formatTime, EMPTY_LABEL } from '../utils/formatters';
+import { formatPrice, formatNumber, formatTime, EMPTY_LABEL, isToday } from '../utils/formatters';
 import { toBase } from '../utils/stockSync';
 import { productStockState } from '../utils/stockStatus';
 import { playAlertSound } from '../utils/soundFeedback';
@@ -89,10 +89,10 @@ export const CashierPOSPage: React.FC = () => {
       })
     );
   const applyOrders = (data: Order[]) => {
-    // Only allow Completed orders to be visible to the cashier POS view
-    const completedOrders = data.filter((o: Order) => o.status === 'completed');
-    setAllOrders(completedOrders);
-    setRecentOrders(completedOrders.slice(0, 4));
+    // Only allow Completed orders from TODAY to be visible in the cashier POS view
+    const todayCompletedOrders = data.filter((o: Order) => o.status === 'completed' && isToday(o.createdAt));
+    setAllOrders(todayCompletedOrders);
+    setRecentOrders(todayCompletedOrders.slice(0, 4));
   };
 
   // 🔔 تنبيه صوتي ومرئي لحظة نفاد أو انخفاض مخزون أي منتج —

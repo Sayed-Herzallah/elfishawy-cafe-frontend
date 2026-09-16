@@ -77,39 +77,69 @@ export const AdminDashboardPage: React.FC = () => {
   const fetchData = async (silent = false) => {
     try {
       if (!silent) setIsLoading(true);
-      const [statsRes, chartsRes, ordersRes, invRes, expRes, prodRes] = await Promise.all([
-        analyticsService.getStats(),
-        analyticsService.getCharts(),
-        orderService.getOrders(),
-        inventoryService.listInventory(),
-        expenseService.listExpenses(),
-        productService.listProducts().catch(() => null),
+
+      const statsPromise = analyticsService.getStats().then((res) => {
+        if (res.success && res.data) setStats(res.data);
+        return res;
+      }).catch((e) => { console.warn('Stats load error:', e); return null; });
+
+      const chartsPromise = analyticsService.getCharts().then((res) => {
+        if (res.success && res.data) setCharts(res.data);
+        return res;
+      }).catch((e) => { console.warn('Charts load error:', e); return null; });
+
+      const ordersPromise = orderService.getOrders().then((res) => {
+        if (res.success && res.data) {
+          setAllOrders(res.data);
+          setRecentOrders(res.data.slice(0, 6));
+        }
+        return res;
+      }).catch((e) => { console.warn('Orders load error:', e); return null; });
+
+      const invPromise = inventoryService.listInventory().then((res) => {
+        if (res.success && res.data) {
+          setAllInventory(res.data);
+          setLowStockItems(res.data.filter((i) => isStockLow(i.quantity, i.minLimit) || isStockOut(i.quantity)));
+        }
+        return res;
+      }).catch((e) => { console.warn('Inventory load error:', e); return null; });
+
+      const expPromise = expenseService.listExpenses().then((res) => {
+        if (res.success && res.data) setExpenses(res.data);
+        return res;
+      }).catch((e) => { console.warn('Expenses load error:', e); return null; });
+
+      const prodPromise = productService.listProducts().then((res) => {
+        if (res.success && res.data) setAllProducts(res.data);
+        return res;
+      }).catch((e) => { console.warn('Products load error:', e); return null; });
+
+      // Faster UI reveal: as soon as primary essentials resolve or settle, release loading indicator
+      Promise.race([
+        Promise.allSettled([statsPromise, invPromise, prodPromise]),
+        new Promise((resolve) => setTimeout(resolve, 1500))
+      ]).finally(() => {
+        if (!silent) setIsLoading(false);
+      });
+
+      const [statsRes, chartsRes, ordersRes, invRes, expRes, prodRes] = await Promise.allSettled([
+        statsPromise,
+        chartsPromise,
+        ordersPromise,
+        invPromise,
+        expPromise,
+        prodPromise,
       ]);
 
-      if (statsRes.success && statsRes.data) setStats(statsRes.data);
-      if (chartsRes.success && chartsRes.data) setCharts(chartsRes.data);
-      if (ordersRes.success && ordersRes.data) {
-        setAllOrders(ordersRes.data);
-        setRecentOrders(ordersRes.data.slice(0, 6));
-      }
-      if (invRes.success && invRes.data) {
-        // ✅ القائمة الكاملة لحساب قيمة المخزون + اشتقاق النواقص منها (منخفض + نافذ)
-        setAllInventory(invRes.data);
-        setLowStockItems(invRes.data.filter((i) => isStockLow(i.quantity, i.minLimit) || isStockOut(i.quantity)));
-      }
-      if (expRes.success && expRes.data) setExpenses(expRes.data);
-      if (prodRes?.success && prodRes.data) setAllProducts(prodRes.data);
-
-      // ✅ حفظ الداتا الناجحة فقط في كاش الجلسة — الحقول اللي فشلت بتفضل بقيمها القديمة الصالحة
-      // (ممنوع نكتب null على الكاش عشان الـ Refresh الجاي ميتوهمش إن عنده داتا وهو فاضي → "لا يوجد" لفترة طويلة)
+      // Update session cache with all resolved results
       const prevCache = readSessionCache<any>(DASH_CACHE_KEY) || {};
       const nextCache: Record<string, any> = { ...prevCache, savedAt: Date.now() };
-      if (statsRes.success && statsRes.data) nextCache.stats = statsRes.data;
-      if (chartsRes.success && chartsRes.data) nextCache.charts = chartsRes.data;
-      if (ordersRes.success && ordersRes.data) nextCache.orders = ordersRes.data;
-      if (invRes.success && invRes.data) nextCache.inventory = invRes.data;
-      if (expRes.success && expRes.data) nextCache.expenses = expRes.data;
-      if (prodRes?.success && prodRes.data) nextCache.products = prodRes.data;
+      if (statsRes.status === 'fulfilled' && statsRes.value?.success && statsRes.value?.data) nextCache.stats = statsRes.value.data;
+      if (chartsRes.status === 'fulfilled' && chartsRes.value?.success && chartsRes.value?.data) nextCache.charts = chartsRes.value.data;
+      if (ordersRes.status === 'fulfilled' && ordersRes.value?.success && ordersRes.value?.data) nextCache.orders = ordersRes.value.data;
+      if (invRes.status === 'fulfilled' && invRes.value?.success && invRes.value?.data) nextCache.inventory = invRes.value.data;
+      if (expRes.status === 'fulfilled' && expRes.value?.success && expRes.value?.data) nextCache.expenses = expRes.value.data;
+      if (prodRes.status === 'fulfilled' && prodRes.value?.success && prodRes.value?.data) nextCache.products = prodRes.value.data;
       writeSessionCache(DASH_CACHE_KEY, nextCache);
     } catch (err) {
       console.error('Failed to load dashboard metrics', err);

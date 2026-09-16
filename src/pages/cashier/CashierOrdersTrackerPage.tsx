@@ -8,7 +8,7 @@ import { ReceiptModal } from '../../components/ui/ReceiptModal';
 import { ExportModal } from '../../components/ui/ExportModal';
 import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
 import { exportElementToPdf } from '../../utils/pdfExport';
-import { formatPrice, formatNumber, formatTime, formatDate, formatDateTime } from '../../utils/formatters';
+import { formatPrice, formatNumber, formatTime, formatDate, formatDateTime, isToday } from '../../utils/formatters';
 import {
   Clock,
   Printer,
@@ -50,8 +50,10 @@ export const CashierOrdersTrackerPage: React.FC = () => {
       setIsLoading(true);
       const res = await orderService.getOrders();
       if (res.success && res.data) {
+        // Filter strictly to today's orders
+        const todayOrders = res.data.filter((o) => isToday(o.createdAt));
         // Sort newest on top
-        const sorted = [...res.data].sort(
+        const sorted = [...todayOrders].sort(
           (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
         );
         setOrders(sorted);
