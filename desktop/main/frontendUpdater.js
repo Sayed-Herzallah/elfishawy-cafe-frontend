@@ -118,9 +118,15 @@ class FrontendUpdater {
       }
 
       const currentMeta = this.getLocalMeta();
-      console.log(`[FrontendUpdater] Local: ${currentMeta.version} | Remote: ${remoteManifest.version}`);
+      console.log(`[FrontendUpdater] Local: ${currentMeta.version} (${currentMeta.buildDate}) | Remote: ${remoteManifest.version} (${remoteManifest.buildDate})`);
 
-      if (this.compareVersions(currentMeta.version, remoteManifest.version) <= 0) {
+      const versionDiff = this.compareVersions(currentMeta.version, remoteManifest.version);
+      const isNewerBuild = remoteManifest.buildDate && currentMeta.buildDate && remoteManifest.buildDate > currentMeta.buildDate;
+      const isDifferentBuild = remoteManifest.buildDate && currentMeta.buildDate && remoteManifest.buildDate !== currentMeta.buildDate;
+
+      const hasNewUpdate = versionDiff > 0 || isNewerBuild || isDifferentBuild;
+
+      if (!hasNewUpdate) {
         console.log('[FrontendUpdater] Local frontend is up to date.');
         return { hasUpdate: false, currentVersion: currentMeta.version };
       }
@@ -141,8 +147,16 @@ class FrontendUpdater {
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('frontend:update-ready', {
             version: remoteManifest.version,
-            message: 'تم تحميل تحديث جديد للواجهة بنجاح، سيتم تفعيله عند إعادة التشغيل.',
+            message: 'تم تحميل أحدث نسخة من المنصة بنجاح، جاري تفعيلها فوراً...',
           });
+          // Live Reload to immediately reflect the new frontend!
+          setTimeout(() => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              const newIndex = this.getFrontendIndexPath();
+              console.log('[FrontendUpdater] Live-reloading main window with:', newIndex);
+              mainWindow.loadFile(newIndex);
+            }
+          }, 1500);
         }
         return { hasUpdate: true, version: remoteManifest.version, ready: true };
       } else {

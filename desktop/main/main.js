@@ -71,13 +71,19 @@ async function createWindow() {
         mainWindow.show();
         mainWindow.focus();
 
-        // Background Check for newer frontend version (Non-blocking)
+        // Background Check for newer frontend version (Initial + Periodic every 60s)
         if (!isDev) {
-          setTimeout(() => {
-            frontendUpdater.checkForUpdates(mainWindow).catch((err) => {
-              console.log('[FrontendUpdater] Background check finished:', err?.message || err);
-            });
-          }, 3000);
+          const runUpdateCheck = () => {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              frontendUpdater.checkForUpdates(mainWindow).catch((err) => {
+                console.log('[FrontendUpdater] Periodic check finished:', err?.message || err);
+              });
+            }
+          };
+          // Run initial check after 3 seconds
+          setTimeout(runUpdateCheck, 3000);
+          // Run continuous background checks every 60 seconds
+          setInterval(runUpdateCheck, 60 * 1000);
         }
       }
     }, 700);
