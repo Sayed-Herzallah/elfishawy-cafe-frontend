@@ -14,25 +14,34 @@ let mainWindow = null;
 let splashWindow = null;
 
 async function createWindow() {
-  const isDev = !app.isPackaged && process.env.NODE_ENV !== 'production';
+  // ✅ isDev detection موثوق:
+  // - ELECTRON_DEV=true يُمرَّر من script "desktop:dev" بشكل صريح
+  // - أو إذا التطبيق غير مثبت (unpackaged) وليس في production mode
+  const isDev = process.env.ELECTRON_DEV === 'true' ||
+    (!app.isPackaged && process.env.NODE_ENV !== 'production');
+  
+  const DEV_URL = process.env.VITE_DEV_URL || 'http://localhost:3000';
 
-  // 1. Create and show Splash Window first
   const iconPath = path.join(__dirname, '../icon.ico');
-  splashWindow = new BrowserWindow({
-    icon: iconPath,
-    width: 480,
-    height: 400,
-    transparent: false,
-    frame: false,
-    alwaysOnTop: true,
-    center: true,
-    resizable: false,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-  splashWindow.loadFile(path.join(__dirname, '../splash.html'));
+
+  // في dev mode: نتخطى Splash Screen ونفتح النافذة مباشرة
+  if (!isDev) {
+    splashWindow = new BrowserWindow({
+      icon: iconPath,
+      width: 480,
+      height: 400,
+      transparent: false,
+      frame: false,
+      alwaysOnTop: true,
+      center: true,
+      resizable: false,
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    splashWindow.loadFile(path.join(__dirname, '../splash.html'));
+  }
 
   // 2. Prepare Main Window (hidden initially)
   mainWindow = new BrowserWindow({
@@ -49,7 +58,7 @@ async function createWindow() {
       nodeIntegration: false,
       sandbox: false,
     },
-    autoHideMenuBar: true,
+    autoHideMenuBar: !isDev, // في dev: اظهر menu bar للـ DevTools shortcuts
   });
 
   // Initialize SQLite in userData path
@@ -71,7 +80,12 @@ async function createWindow() {
         mainWindow.show();
         mainWindow.focus();
 
-        // Background Check for newer frontend version (Initial + Periodic every 60s)
+        // ✅ في dev mode: افتح DevTools تلقائياً لسهولة التطوير
+        if (isDev) {
+          mainWindow.webContents.openDevTools({ mode: 'detach' });
+        }
+
+        // Background Check for newer frontend version (Initial + Periodic every 30s)
         if (!isDev) {
           const runUpdateCheck = () => {
             if (mainWindow && !mainWindow.isDestroyed()) {
@@ -80,18 +94,48 @@ async function createWindow() {
               });
             }
           };
-          // Run initial check after 3 seconds
-          setTimeout(runUpdateCheck, 3000);
-          // Run continuous background checks every 60 seconds
-          setInterval(runUpdateCheck, 60 * 1000);
+          // Run initial check after 2 seconds
+          setTimeout(runUpdateCheck, 2000);
+          // Run continuous background checks every 30 seconds
+          setInterval(runUpdateCheck, 30 * 1000);
+
+          // فحص فوري بمجرد عودة الاتصال بالإنترنت
+          let lastOnlineState = false;
+          setInterval(async () => {
+            try {
+              const res = await fetch('https://elfishawy-cafe-server.vercel.app/', {
+                method: 'GET',
+                signal: AbortSignal.timeout(3000),
+              }).catch(() => null);
+              const isNowOnline = Boolean(res && res.ok);
+              if (isNowOnline && !lastOnlineState) {
+                console.log('[Network] Internet returned! Triggering instant frontend update check...');
+                runUpdateCheck();
+              }
+              lastOnlineState = isNowOnline;
+            } catch {
+              lastOnlineState = false;
+            }
+          }, 10 * 1000);
         }
       }
     }, 700);
   });
 
-  // Load app: use latest verified local frontend or fallback to bundled in EXE
+  // ✅ Load app:
+  // Dev mode   → Vite Dev Server (HMR مفعّل، أي تعديل في src/ يظهر فوراً)
+  // Production → أحدث bundle محمّل من Vercel أو bundled في الـ EXE
   if (isDev) {
-    mainWindow.loadURL('http://localhost:3000');
+    console.log(`[Dev] Loading from Vite Dev Server: ${DEV_URL}`);
+    mainWindow.loadURL(DEV_URL).catch((err) => {
+      console.error(`[Dev] ❌ Failed to connect to Vite server at ${DEV_URL}`);
+      console.error('[Dev] 💡 تأكد أن Vite Dev Server شغّال: npm run dev');
+      console.error('[Dev] 💡 أو استخدم: npm run desktop:dev لتشغيل كليهما معاً');
+      // في حال فشل الـ dev server، استخدم آخر bundle محلي كـ fallback
+      const fallbackPath = frontendUpdater.getFrontendIndexPath();
+      console.log(`[Dev] ⚠️ Falling back to local bundle: ${fallbackPath}`);
+      mainWindow.loadFile(fallbackPath);
+    });
   } else {
     const frontendIndexPath = frontendUpdater.getFrontendIndexPath();
     mainWindow.loadFile(frontendIndexPath);

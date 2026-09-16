@@ -30,6 +30,7 @@ class FrontendUpdater {
     this.userDataPath = app.getPath('userData');
     this.frontendBaseDir = path.join(this.userDataPath, 'app_frontend');
     this.currentLinkDir = path.join(this.frontendBaseDir, 'current');
+    this.backupDir = path.join(this.frontendBaseDir, 'backup');
     this.stagingDir = path.join(this.frontendBaseDir, 'staging');
     this.versionsDir = path.join(this.frontendBaseDir, 'versions');
     this.metaFile = path.join(this.frontendBaseDir, 'meta.json');
@@ -42,7 +43,7 @@ class FrontendUpdater {
   }
 
   ensureDirectories() {
-    [this.frontendBaseDir, this.stagingDir, this.versionsDir].forEach((dir) => {
+    [this.frontendBaseDir, this.stagingDir, this.versionsDir, this.backupDir].forEach((dir) => {
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
@@ -75,6 +76,7 @@ class FrontendUpdater {
    * 2. Fallback to bundled frontend shipped inside EXE dist/index.html
    */
   getFrontendIndexPath() {
+    // 1. أولوية 1: النسخة الحالية النشطة
     const customIndex = path.join(this.currentLinkDir, 'index.html');
     if (fs.existsSync(customIndex)) {
       try {
@@ -88,7 +90,21 @@ class FrontendUpdater {
       }
     }
 
-    // Fallback: bundled inside installer
+    // 2. أولوية 2: نسخة الـ backup السابقة في حال حدوث أي تلف
+    const backupIndex = path.join(this.backupDir, 'index.html');
+    if (fs.existsSync(backupIndex)) {
+      try {
+        const stats = fs.statSync(backupIndex);
+        if (stats.size > 200) {
+          console.log('[FrontendUpdater] Using safe backup frontend at:', backupIndex);
+          return backupIndex;
+        }
+      } catch (err) {
+        console.warn('[FrontendUpdater] Backup frontend check failed:', err);
+      }
+    }
+
+    // 3. أولوية 3: النسخة المدمجة في الـ EXE كـ fallback نهائي
     const fallbackPath = path.join(this.bundledFrontendDir, 'index.html');
     console.log('[FrontendUpdater] Using bundled fallback frontend at:', fallbackPath);
     return fallbackPath;
@@ -232,11 +248,39 @@ class FrontendUpdater {
       }
       fs.renameSync(this.stagingDir, versionDir);
 
-      // 5. Atomic copy to current active directory
+      // 5. Safe Atomic Swap with Backup & Rollback:
+      // احفظ النسخة الحالية في backup أولاً قبل أي تعديل
       if (fs.existsSync(this.currentLinkDir)) {
-        fs.rmSync(this.currentLinkDir, { recursive: true, force: true });
+        try {
+          if (fs.existsSync(this.backupDir)) {
+            fs.rmSync(this.backupDir, { recursive: true, force: true });
+          }
+          this.copyDirRecursive(this.currentLinkDir, this.backupDir);
+        } catch (bkErr) {
+          console.warn('[FrontendUpdater] Backup warning (non-fatal):', bkErr);
+        }
       }
-      this.copyDirRecursive(versionDir, this.currentLinkDir);
+
+      // تجهيز مجلد مؤقت للتبديل السريع
+      const tempActiveDir = path.join(this.frontendBaseDir, 'temp_current');
+      if (fs.existsSync(tempActiveDir)) {
+        fs.rmSync(tempActiveDir, { recursive: true, force: true });
+      }
+      this.copyDirRecursive(versionDir, tempActiveDir);
+
+      // تبديل آمن: استبدال current بـ tempActive
+      try {
+        if (fs.existsSync(this.currentLinkDir)) {
+          fs.rmSync(this.currentLinkDir, { recursive: true, force: true });
+        }
+        fs.renameSync(tempActiveDir, this.currentLinkDir);
+      } catch (swapErr) {
+        console.error('[FrontendUpdater] Swap failed, rolling back to backup:', swapErr);
+        if (fs.existsSync(this.backupDir)) {
+          this.copyDirRecursive(this.backupDir, this.currentLinkDir);
+        }
+        throw swapErr;
+      }
 
       // 6. Record metadata
       this.saveLocalMeta({
@@ -249,7 +293,7 @@ class FrontendUpdater {
     } catch (err) {
       console.error('[FrontendUpdater] Atomic update failed, keeping current frontend intact:', err);
       if (fs.existsSync(this.stagingDir)) {
-        fs.rmSync(this.stagingDir, { recursive: true, force: true });
+        try { fs.rmSync(this.stagingDir, { recursive: true, force: true }); } catch {}
       }
       return false;
     }
