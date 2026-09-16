@@ -1186,6 +1186,15 @@ export const AdminProductsPage: React.FC = () => {
             isSubmitted={isFormSubmitted}
           />
 
+          <Input
+            label="وصف المنتج"
+            placeholder="مثال: قهوة غنية بالنكهة مع الحليب المبخر..."
+            value={formData.description}
+            onChange={(e) => {
+              setFormData({ ...formData, description: e.target.value });
+            }}
+          />
+
           <div className="grid grid-cols-2 gap-3">
             <Input
               label="السعر (جنيها) *"

@@ -89,10 +89,10 @@ export const CashierPOSPage: React.FC = () => {
       })
     );
   const applyOrders = (data: Order[]) => {
-    // Only allow Completed orders from TODAY to be visible in the cashier POS view
-    const todayCompletedOrders = data.filter((o: Order) => o.status === 'completed' && isToday(o.createdAt));
-    setAllOrders(todayCompletedOrders);
-    setRecentOrders(todayCompletedOrders.slice(0, 4));
+    // Show today's orders (both completed and pending) so Cashier and Admin counts match perfectly
+    const todayOrders = data.filter((o: Order) => isToday(o.createdAt) && o.status !== 'cancelled');
+    setAllOrders(todayOrders);
+    setRecentOrders(todayOrders.slice(0, 4));
   };
 
   // 🔔 تنبيه صوتي ومرئي لحظة نفاد أو انخفاض مخزون أي منتج —
@@ -1078,6 +1078,15 @@ export const CashierPOSPage: React.FC = () => {
                         <span className="text-[11px] text-[#2e5b9f] font-bold bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-md">
                           طاولة #{ord.tableNumber || '—'}
                         </span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                          ord.status === 'completed'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : ord.status === 'pending'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : 'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}>
+                          {ord.status === 'completed' ? 'مكتمل' : ord.status === 'pending' ? 'قيد التحضير' : 'ملغي'}
+                        </span>
                       </div>
 
                       {/* Drink items preview */}
@@ -1152,19 +1161,19 @@ export const CashierPOSPage: React.FC = () => {
             </div>
 
             {/* الأكواب المتاحة — بارز في الأعلى */}
-            <div className="p-5 bg-gradient-to-l from-[#eef3fc] to-[#f5f8ff] rounded-2xl border border-[#c5d5f0] flex items-center justify-between">
+            <div className="p-4 sm:p-5 bg-gradient-to-l from-[#eef3fc] to-[#f5f8ff] rounded-2xl border border-[#c5d5f0] flex items-center justify-between gap-4">
               <div>
-                <span className="text-sm text-[#2e5b9f] font-bold block mb-1">الأكواب المتاحة للبيع (من الخامات الأساسية)</span>
+                <span className="text-xs sm:text-sm text-[#2e5b9f] font-bold block mb-1">الأكواب المتاحة للبيع (من الخامات الأساسية)</span>
                 <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-extrabold font-mono text-[#2e5b9f]">
+                  <span className="text-3xl sm:text-4xl font-extrabold font-mono text-[#2e5b9f]">
                     {recipeData ? formatNumber(recipeData.availableProductQty) : formatNumber(viewingProduct.stockQuantity)}
                   </span>
-                  <span className="text-base font-bold text-[#2e5b9f]">كوب</span>
+                  <span className="text-sm sm:text-base font-bold text-[#2e5b9f]">كوب</span>
                 </div>
               </div>
-              <div className="text-right">
-                <span className={`px-3 py-1.5 rounded-full text-sm font-bold ${
-                  viewingProduct.inStock ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+              <div className="shrink-0">
+                <span className={`inline-flex items-center justify-center px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold shadow-2xs whitespace-nowrap ${
+                  viewingProduct.inStock ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-rose-100 text-rose-800 border border-rose-200'
                 }`}>
                   {viewingProduct.inStock ? 'متوفر للبيع' : 'نافذ من المخزن'}
                 </span>

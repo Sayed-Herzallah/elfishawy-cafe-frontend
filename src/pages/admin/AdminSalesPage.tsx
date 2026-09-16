@@ -466,16 +466,20 @@ export const AdminSalesPage: React.FC = () => {
               const safeItems = Array.isArray(order.items) ? order.items : [];
               const shortageItems = getOrderShortageItems(order);
               const hasShortage = shortageItems.length > 0;
+              const productDescById = new Map<string, string>(products.map((p) => [p._id, p.description || '']));
               const itemsPreview = safeItems.slice(0, 3).map((item, idx) => {
-                const pName =
-                  item && typeof item.product === 'object' && (item.product as any)?.name
-                    ? (item.product as any).name
-                    : typeof item?.product === 'string'
-                    ? 'صنف'
-                    : 'مشروب';
+                const pObj = item && typeof item.product === 'object' ? item.product : null;
+                const pId = pObj ? (pObj as any)._id : String(item?.product || '');
+                const pName = pObj && (pObj as any)?.name ? (pObj as any).name : 'مشروب';
+                const pDesc = (pObj && (pObj as any)?.description) || productDescById.get(pId);
                 return (
-                  <span key={idx} className="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded text-[10px] font-medium">
-                    {pName} ×{formatNumber(item.quantity)}
+                  <span key={idx} className="bg-gray-100 text-gray-700 px-2 py-1 rounded-lg text-[11px] font-medium flex flex-col items-start gap-0.5">
+                    <span className="font-bold text-gray-900">{pName} <strong className="text-[#2e5b9f] font-mono">×{formatNumber(item.quantity)}</strong></span>
+                    {pDesc && (
+                      <span className="text-[10px] text-gray-500 truncate max-w-[140px] block leading-tight">
+                        {pDesc}
+                      </span>
+                    )}
                   </span>
                 );
               });
