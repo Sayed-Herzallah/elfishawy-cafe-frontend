@@ -32,20 +32,38 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const loadCurrentUser = useCallback(async () => {
     const token = ApiClient.getAccessToken();
+    const savedUserJson = localStorage.getItem('ef_active_user');
+    let cachedUser: User | null = null;
+    if (savedUserJson) {
+      try { cachedUser = JSON.parse(savedUserJson); } catch {}
+    }
+
     if (!token) {
       setUser(null);
       setIsLoading(false);
       return;
     }
 
+    // If we have a cached user, show it immediately so user never gets logged out on network drops
+    if (cachedUser) {
+      setUser(cachedUser);
+    }
+
     try {
       const res = await userService.getMe();
       if (res.success && res.data) {
         setUser(res.data);
+        localStorage.setItem('ef_active_user', JSON.stringify(res.data));
       }
-    } catch {
-      ApiClient.clearTokens();
-      setUser(null);
+    } catch (err: any) {
+      // Only clear tokens if the server explicitly returned 401 Unauthorized
+      if (err?.status === 401 || err?.message === 'Unauthorized') {
+        ApiClient.clearTokens();
+        setUser(null);
+      } else if (!cachedUser) {
+        // Network error and no cached user: keep token, do not log out
+        setIsLoading(false);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -69,6 +87,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, [loadCurrentUser, showToast]);
 
   const login = async (email: string, password: string): Promise<User | null> => {
+    // First try normal online login against the server
     try {
       setIsLoading(true);
       const res = await authService.login(email, password);
@@ -78,24 +97,52 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (res.data) {
           loggedInUser = res.data;
           setUser(res.data);
+          localStorage.setItem('ef_active_user', JSON.stringify(res.data));
         } else {
-          // ✅ الـ Backend أعاد التوكنز فقط — نجلب بيانات المستخدم ونرجّعها
-          // (كانت العيب هنا: كنا بنجلب البيانات لكن بنرجع null فيظهر خطأ الدخول رغم نجاحه)
           try {
             const me = await userService.getMe();
             if (me.success && me.data) {
               loggedInUser = me.data;
               setUser(me.data);
+              localStorage.setItem('ef_active_user', JSON.stringify(me.data));
             }
           } catch {
-            // تجاهل — loadCurrentUser في الـ effect سيتكفل بالمزامنة
+            // ignore
           }
         }
+
+        // Cache credentials and session token locally for offline sync (Desktop only)
+        if (loggedInUser && typeof window !== 'undefined' && window.electronAPI?.cacheUserCredentials) {
+          window.electronAPI.cacheUserCredentials(loggedInUser, password, res.tokens.accessToken).catch(() => {});
+          if (window.electronAPI?.setAuthToken) {
+            window.electronAPI.setAuthToken(res.tokens.accessToken).catch(() => {});
+          }
+        }
+
         showToast('تم تسجيل الدخول بنجاح');
         return loggedInUser;
       }
       return null;
     } catch (err: any) {
+      // If server unreachable and in Electron mode, fall back to offline credentials
+      const isNetworkError =
+        !navigator.onLine ||
+        err?.message?.includes('Network') ||
+        err?.message?.includes('Failed to fetch') ||
+        err?.code === 'ECONNREFUSED';
+
+      if (isNetworkError && typeof window !== 'undefined' && window.electronAPI?.verifyOfflineLogin) {
+        const offlineRes = await window.electronAPI.verifyOfflineLogin(email, password);
+        if (offlineRes?.success && offlineRes?.user) {
+          setUser(offlineRes.user);
+          showToast('تم تسجيل الدخول بنجاح (وضع غير متصل)');
+          return offlineRes.user;
+        } else {
+          showToast('لا يمكن تسجيل الدخول بدون إنترنت في أول مرة', 'error');
+          return null;
+        }
+      }
+
       showError(err);
       return null;
     } finally {

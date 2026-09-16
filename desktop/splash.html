@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8"/>
+<title>كافيه الفيشاوي</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0f172a; display:flex; align-items:center; justify-content:center; height:100vh; font-family:Cairo,Segoe UI,system-ui,sans-serif; overflow:hidden; user-select:none; }
+.splash { display:flex; flex-direction:column; align-items:center; gap:24px; animation:fadeIn .6s ease-out; }
+@keyframes fadeIn { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
+.logo { width:120px; height:120px; background:radial-gradient(circle at 40% 40%,#1e3a5f,#0f172a); border-radius:50%; border:2px solid rgba(46,91,159,.5); display:flex; align-items:center; justify-content:center; box-shadow:0 0 40px rgba(46,91,159,.3); animation:pulse 2.4s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{box-shadow:0 0 40px rgba(46,91,159,.3)} 50%{box-shadow:0 0 70px rgba(46,91,159,.6)} }
+.brand h1 { font-size:26px; font-weight:800; color:#e2e8f0; text-align:center; }
+.brand p  { font-size:13px; color:#94a3b8; text-align:center; letter-spacing:1px; }
+.bar-track { width:260px; height:3px; background:rgba(46,91,159,.2); border-radius:999px; overflow:hidden; }
+.bar-fill  { height:100%; width:0%; background:linear-gradient(90deg,#2e5b9f,#4f8ef7); border-radius:999px; transition:width .5s ease; }
+.status    { font-size:13px; color:#64748b; min-height:20px; text-align:center; }
+.dots { display:flex; gap:6px; }
+.dot { width:7px; height:7px; border-radius:50%; background:#2e5b9f; opacity:.5; animation:bounce 1.2s ease-in-out infinite; }
+.dot:nth-child(2){animation-delay:.2s} .dot:nth-child(3){animation-delay:.4s}
+@keyframes bounce { 0%,80%,100%{transform:scale(1);opacity:.5} 40%{transform:scale(1.4);opacity:1} }
+</style>
+</head>
+<body>
+<div class="splash">
+  <div class="logo">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="80" height="80">
+      <defs>
+        <linearGradient id="cg" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" style="stop-color:#6F4E37"/><stop offset="50%" style="stop-color:#8B6914"/><stop offset="100%" style="stop-color:#D4A574"/></linearGradient>
+      </defs>
+      <circle cx="50" cy="50" r="48" fill="#1a1a2e"/>
+      <path d="M28 75 L28 45 Q28 38 33 38 L67 38 Q72 38 72 45 L72 75 Q72 80 67 80 L33 80 Q28 80 28 75Z" fill="url(#cg)" stroke="#4A3728" stroke-width="1.5"/>
+      <path d="M32 72 L32 48 Q32 44 36 44 L64 44 Q68 44 68 48 L68 72 Q68 75 64 75 L36 75 Q32 75 32 72Z" fill="#2C1810" opacity=".9"/>
+      <path d="M72 48 Q82 48 82 60 Q82 70 72 70" fill="none" stroke="url(#cg)" stroke-width="4" stroke-linecap="round"/>
+      <text x="50" y="62" text-anchor="middle" font-family="serif" font-size="28" font-weight="700" fill="#D4A574" opacity=".9">ف</text>
+    </svg>
+  </div>
+  <div class="brand">
+    <h1>كافيه الفيشاوي</h1>
+    <p>Elfishawy Cafe | POS &amp; Management</p>
+  </div>
+  <div class="bar-track"><div class="bar-fill" id="bf"></div></div>
+  <div class="status" id="st">جارٍ التهيئة…</div>
+  <div class="dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+</div>
+<script>
+var f=document.getElementById('bf'), s=document.getElementById('st');
+var steps=[{p:25,m:'تهيئة قاعدة البيانات…'},{p:60,m:'تحميل بيانات النظام…'},{p:85,m:'تجهيز التطبيق…'},{p:100,m:'جاهز!'}];
+var i=0;
+function run(){ if(i>=steps.length)return; var x=steps[i++]; f.style.width=x.p+'%'; s.textContent=x.m; setTimeout(run, i<steps.length?350:0); }
+setTimeout(run, 150);
+</script>
+</body>
+</html>

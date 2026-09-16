@@ -1,14 +1,43 @@
 {
-  "name": "react-example",
+  "name": "elfishawy-cafe",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.1.0",
   "type": "module",
+  "main": "desktop/main/main.js",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build",
+    "build": "vite build && node scripts/generate-frontend-manifest.js",
+    "build:electron": "cross-env ELECTRON_BUILD=true vite build && node scripts/generate-frontend-manifest.js",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "electron:start": "electron .",
+    "desktop:dev": "concurrently \"npm run dev\" \"wait-on tcp:3000 && npm run electron:start\"",
+    "dist:win": "npm run build:electron && electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.elfishawy.cafe",
+    "productName": "ElFishawy Cafe",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "artifactName": "${productName} Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "كافيه الفيشاوي",
+      "runAfterFinish": true
+    }
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -24,6 +53,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-router-dom": "^7.18.2",
+    "sql.js": "^1.14.2",
     "tailwind-merge": "^3.6.0",
     "vite": "^6.2.3"
   },
@@ -33,10 +63,15 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "autoprefixer": "^10.4.21",
+    "concurrently": "^10.0.5",
+    "cross-env": "^10.1.0",
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.2.3",
+    "wait-on": "^9.1.0"
   }
 }

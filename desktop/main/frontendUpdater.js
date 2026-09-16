@@ -1,0 +1,251 @@
+// desktop/main/frontendUpdater.js
+import fs from 'fs';
+import path from 'path';
+import { app } from 'electron';
+
+const TRUSTED_ORIGIN = 'https://fishawy.vercel.app';
+const MANIFEST_URL = `${TRUSTED_ORIGIN}/frontend-version.json`;
+
+class FrontendUpdater {
+  constructor() {
+    this.userDataPath = app.getPath('userData');
+    this.frontendBaseDir = path.join(this.userDataPath, 'app_frontend');
+    this.currentLinkDir = path.join(this.frontendBaseDir, 'current');
+    this.stagingDir = path.join(this.frontendBaseDir, 'staging');
+    this.versionsDir = path.join(this.frontendBaseDir, 'versions');
+    this.metaFile = path.join(this.frontendBaseDir, 'meta.json');
+    this.bundledFrontendDir = path.join(app.getAppPath(), 'dist');
+    this.isUpdating = false;
+    this.updateReady = false;
+    this.newVersion = null;
+
+    this.ensureDirectories();
+  }
+
+  ensureDirectories() {
+    [this.frontendBaseDir, this.stagingDir, this.versionsDir].forEach((dir) => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    });
+  }
+
+  getLocalMeta() {
+    try {
+      if (fs.existsSync(this.metaFile)) {
+        return JSON.parse(fs.readFileSync(this.metaFile, 'utf8'));
+      }
+    } catch (e) {
+      console.error('[FrontendUpdater] Error reading local meta:', e);
+    }
+    return { version: '1.0.0', activatedAt: null };
+  }
+
+  saveLocalMeta(meta) {
+    try {
+      fs.writeFileSync(this.metaFile, JSON.stringify(meta, null, 2), 'utf8');
+    } catch (e) {
+      console.error('[FrontendUpdater] Error saving local meta:', e);
+    }
+  }
+
+  /**
+   * Returns the path to the valid index.html to be loaded by Electron.
+   * Priority:
+   * 1. Latest verified & activated downloaded frontend in userData/app_frontend/current/index.html
+   * 2. Fallback to bundled frontend shipped inside EXE dist/index.html
+   */
+  getFrontendIndexPath() {
+    const customIndex = path.join(this.currentLinkDir, 'index.html');
+    if (fs.existsSync(customIndex)) {
+      try {
+        const stats = fs.statSync(customIndex);
+        if (stats.size > 200) {
+          console.log('[FrontendUpdater] Using active downloaded frontend at:', customIndex);
+          return customIndex;
+        }
+      } catch (err) {
+        console.warn('[FrontendUpdater] Verified custom frontend corrupt, falling back:', err);
+      }
+    }
+
+    // Fallback: bundled inside installer
+    const fallbackPath = path.join(this.bundledFrontendDir, 'index.html');
+    console.log('[FrontendUpdater] Using bundled fallback frontend at:', fallbackPath);
+    return fallbackPath;
+  }
+
+  compareVersions(v1, v2) {
+    const p1 = (v1 || '1.0.0').split('.').map(Number);
+    const p2 = (v2 || '1.0.0').split('.').map(Number);
+    for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
+      const num1 = p1[i] || 0;
+      const num2 = p2[i] || 0;
+      if (num2 > num1) return 1;
+      if (num2 < num1) return -1;
+    }
+    return 0;
+  }
+
+  /**
+   * Checks for remote version manifest in background.
+   */
+  async checkForUpdates(mainWindow) {
+    if (this.isUpdating) return { checking: false, message: 'Update already in progress' };
+
+    try {
+      console.log('[FrontendUpdater] Checking remote manifest at:', MANIFEST_URL);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+      const res = await fetch(MANIFEST_URL, {
+        headers: { 'Cache-Control': 'no-cache' },
+        signal: controller.signal,
+      }).catch((e) => {
+        console.log('[FrontendUpdater] Remote manifest fetch skipped/offline:', e.message);
+        return null;
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!res || !res.ok) {
+        return { hasUpdate: false, reason: 'offline_or_not_found' };
+      }
+
+      const remoteManifest = await res.json();
+      if (!remoteManifest || !remoteManifest.version || !remoteManifest.files) {
+        return { hasUpdate: false, reason: 'invalid_manifest' };
+      }
+
+      const currentMeta = this.getLocalMeta();
+      console.log(`[FrontendUpdater] Local: ${currentMeta.version} | Remote: ${remoteManifest.version}`);
+
+      if (this.compareVersions(currentMeta.version, remoteManifest.version) <= 0) {
+        console.log('[FrontendUpdater] Local frontend is up to date.');
+        return { hasUpdate: false, currentVersion: currentMeta.version };
+      }
+
+      console.log(`[FrontendUpdater] Newer frontend discovered: ${remoteManifest.version}. Starting atomic download...`);
+      this.isUpdating = true;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('frontend:update-downloading', { version: remoteManifest.version });
+      }
+
+      const success = await this.downloadAndApplyUpdate(remoteManifest);
+      this.isUpdating = false;
+
+      if (success) {
+        this.updateReady = true;
+        this.newVersion = remoteManifest.version;
+        console.log(`[FrontendUpdater] Frontend ${remoteManifest.version} safely downloaded and ready.`);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('frontend:update-ready', {
+            version: remoteManifest.version,
+            message: 'تم تحميل تحديث جديد للواجهة بنجاح، سيتم تفعيله عند إعادة التشغيل.',
+          });
+        }
+        return { hasUpdate: true, version: remoteManifest.version, ready: true };
+      } else {
+        return { hasUpdate: false, reason: 'download_validation_failed' };
+      }
+    } catch (err) {
+      this.isUpdating = false;
+      console.error('[FrontendUpdater] Check for updates error:', err);
+      return { hasUpdate: false, error: err.message };
+    }
+  }
+
+  async downloadAndApplyUpdate(manifest) {
+    const versionDir = path.join(this.versionsDir, `v_${manifest.version}`);
+
+    try {
+      // 1. Clean staging directory
+      if (fs.existsSync(this.stagingDir)) {
+        fs.rmSync(this.stagingDir, { recursive: true, force: true });
+      }
+      fs.mkdirSync(this.stagingDir, { recursive: true });
+
+      // 2. Download each asset securely with path-traversal protection
+      for (const relativePath of manifest.files) {
+        const normalized = path.normalize(relativePath).replace(/^(\.\.[\/\\])+/, '');
+        if (normalized.startsWith('..')) {
+          throw new Error(`Suspicious file path in manifest: ${relativePath}`);
+        }
+
+        const targetFilePath = path.join(this.stagingDir, normalized);
+        const targetFileDir = path.dirname(targetFilePath);
+        if (!fs.existsSync(targetFileDir)) {
+          fs.mkdirSync(targetFileDir, { recursive: true });
+        }
+
+        const fileUrl = `${TRUSTED_ORIGIN}/${normalized.replace(/\\/g, '/')}`;
+        const fileRes = await fetch(fileUrl);
+        if (!fileRes.ok) {
+          throw new Error(`Failed to download asset: ${fileUrl} (status: ${fileRes.status})`);
+        }
+
+        const buffer = Buffer.from(await fileRes.arrayBuffer());
+        fs.writeFileSync(targetFilePath, buffer);
+      }
+
+      // 3. Validate presence of essential index.html
+      const stagedIndex = path.join(this.stagingDir, 'index.html');
+      if (!fs.existsSync(stagedIndex) || fs.statSync(stagedIndex).size < 200) {
+        throw new Error('Downloaded bundle is missing valid index.html');
+      }
+
+      // 4. Move staging to permanent version directory
+      if (fs.existsSync(versionDir)) {
+        fs.rmSync(versionDir, { recursive: true, force: true });
+      }
+      fs.renameSync(this.stagingDir, versionDir);
+
+      // 5. Atomic copy to current active directory
+      if (fs.existsSync(this.currentLinkDir)) {
+        fs.rmSync(this.currentLinkDir, { recursive: true, force: true });
+      }
+      this.copyDirRecursive(versionDir, this.currentLinkDir);
+
+      // 6. Record metadata
+      this.saveLocalMeta({
+        version: manifest.version,
+        buildDate: manifest.buildDate || new Date().toISOString(),
+        activatedAt: new Date().toISOString(),
+      });
+
+      return true;
+    } catch (err) {
+      console.error('[FrontendUpdater] Atomic update failed, keeping current frontend intact:', err);
+      if (fs.existsSync(this.stagingDir)) {
+        fs.rmSync(this.stagingDir, { recursive: true, force: true });
+      }
+      return false;
+    }
+  }
+
+  copyDirRecursive(src, dest) {
+    fs.mkdirSync(dest, { recursive: true });
+    const entries = fs.readdirSync(src, { withFileTypes: true });
+    for (const entry of entries) {
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+      if (entry.isDirectory()) {
+        this.copyDirRecursive(srcPath, destPath);
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+  }
+
+  applyUpdateNow(mainWindow) {
+    if (!this.updateReady) return false;
+    const newIndexPath = this.getFrontendIndexPath();
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadFile(newIndexPath);
+      return true;
+    }
+    return false;
+  }
+}
+
+export const frontendUpdater = new FrontendUpdater();

@@ -1,9 +1,24 @@
- import { ApiClient } from './api/apiClient';
+import { ApiClient } from './api/apiClient';
 import { ApiResponse, Category, Product, Recipe } from '../types';
+import { offlineStore } from './data/offlineStore';
 
 export const categoryService = {
-  listCategories: (): Promise<ApiResponse<Category[]>> => {
-    return ApiClient.request<Category[]>('/categories', { method: 'GET' });
+  listCategories: async (): Promise<ApiResponse<Category[]>> => {
+    try {
+      const res = await ApiClient.request<Category[]>('/categories', { method: 'GET' });
+      if (res.success && Array.isArray(res.data)) {
+        offlineStore.cacheEntities('categories', res.data);
+      }
+      return res;
+    } catch (err) {
+      if (offlineStore.isDesktop()) {
+        const cached = await offlineStore.getCachedCategories();
+        if (cached && cached.length > 0) {
+          return { success: true, message: 'Loaded from local offline database', data: cached };
+        }
+      }
+      throw err;
+    }
   },
 
   createCategory: (name: string | { name: string; description?: string }, description?: string): Promise<ApiResponse<Category>> => {
@@ -27,13 +42,35 @@ export const categoryService = {
 };
 
 export const productService = {
-  listProducts: (params?: { search?: string; category?: string; inStock?: boolean }): Promise<ApiResponse<Product[]>> => {
+  listProducts: async (params?: { search?: string; category?: string; inStock?: boolean }): Promise<ApiResponse<Product[]>> => {
     const query = new URLSearchParams();
     if (params?.search) query.append('search', params.search);
     if (params?.category) query.append('category', params.category);
     if (params?.inStock !== undefined) query.append('inStock', String(params.inStock));
     const qs = query.toString();
-    return ApiClient.request<Product[]>(`/products${qs ? `?${qs}` : ''}`, { method: 'GET' });
+
+    try {
+      const res = await ApiClient.request<Product[]>(`/products${qs ? `?${qs}` : ''}`, { method: 'GET' });
+      if (res.success && Array.isArray(res.data) && !qs) {
+        offlineStore.cacheEntities('products', res.data);
+      }
+      return res;
+    } catch (err) {
+      if (offlineStore.isDesktop()) {
+        let cached = await offlineStore.getCachedProducts();
+        if (cached && cached.length > 0) {
+          if (params?.category) {
+            cached = cached.filter((p: any) => p.category === params.category);
+          }
+          if (params?.search) {
+            const q = params.search.toLowerCase();
+            cached = cached.filter((p: any) => p.name?.toLowerCase().includes(q));
+          }
+          return { success: true, message: 'Loaded from local offline database', data: cached };
+        }
+      }
+      throw err;
+    }
   },
 
   getProduct: (id: string): Promise<ApiResponse<Product>> => {
@@ -61,8 +98,22 @@ export const productService = {
 
 // المنيو العام أصبح Static من ملف src/data/menuData.ts — لا يوجد endpoint للمنيو العام
 export const recipeService = {
-  listRecipes: (): Promise<ApiResponse<Recipe[]>> => {
-    return ApiClient.request<Recipe[]>('/recipes', { method: 'GET' });
+  listRecipes: async (): Promise<ApiResponse<Recipe[]>> => {
+    try {
+      const res = await ApiClient.request<Recipe[]>('/recipes', { method: 'GET' });
+      if (res.success && Array.isArray(res.data)) {
+        offlineStore.cacheEntities('recipes', res.data);
+      }
+      return res;
+    } catch (err) {
+      if (offlineStore.isDesktop()) {
+        const cached = await offlineStore.getCachedRecipes();
+        if (cached && cached.length > 0) {
+          return { success: true, message: 'Loaded from local offline database', data: cached };
+        }
+      }
+      throw err;
+    }
   },
 
   getRecipeByProduct: (productId: string): Promise<ApiResponse<{ recipe: Recipe; availableProductQty: number; ingredientDetails?: any[]; depletedSecondary?: { name: string; unit: string; currentStock: number }[] }>> => {

@@ -1,15 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import {
   LogOut,
-
   ShoppingCart,
   Boxes,
   ReceiptText,
   Menu,
   X,
   LayoutDashboard,
+  Sparkles,
 } from 'lucide-react';
 
 export const CashierLayout: React.FC = () => {
@@ -17,6 +17,24 @@ export const CashierLayout: React.FC = () => {
   const navigate = useNavigate();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<{ version: string; message: string } | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.electronAPI?.onFrontendUpdateReady) {
+      const unsub = window.electronAPI.onFrontendUpdateReady((data) => {
+        setUpdateInfo(data);
+      });
+      return unsub;
+    }
+  }, []);
+
+  const handleApplyUpdate = async () => {
+    if (window.electronAPI?.applyFrontendUpdate) {
+      await window.electronAPI.applyFrontendUpdate();
+    } else {
+      window.location.reload();
+    }
+  };
 
   const handleConfirmedLogout = () => {
     setShowLogoutConfirm(false);
@@ -123,7 +141,7 @@ export const CashierLayout: React.FC = () => {
         {/* Brand Title */}
         <div className="flex items-center gap-2.5 shrink-0">
           <span className="font-bold text-base md:text-lg font-arabic-heading text-gray-900 tracking-tight whitespace-nowrap">
-            مقهى الفيشاوي
+            مقهى الفيشاوي (إصدار OTA 1.1.0 ⚡)
           </span>
           <div className="w-8 h-8 rounded-xl bg-[#2e5b9f] text-white flex items-center justify-center font-bold text-sm shadow-2xs">
             ☕
@@ -208,6 +226,33 @@ export const CashierLayout: React.FC = () => {
           </div>
         </div>
       </header>
+
+      {/* Optional In-App Hot-Update Banner */}
+      {updateInfo && (
+        <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white px-4 py-2 flex items-center justify-between text-xs shadow-sm">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 animate-spin text-amber-300" />
+            <span className="font-bold">
+              يوجد تحديث جديد للواجهة ({updateInfo.version})! تم تحميله تلقائياً.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleApplyUpdate}
+              className="bg-white text-emerald-800 hover:bg-emerald-50 px-3 py-1 rounded-lg font-bold transition shadow-2xs cursor-pointer text-xs"
+            >
+              تطبيق التحديث الآن ⚡
+            </button>
+            <button
+              onClick={() => setUpdateInfo(null)}
+              className="text-white/80 hover:text-white p-1 rounded transition cursor-pointer"
+              title="إغلاق"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Screen Body */}
       <main className="p-4 md:p-6 w-full min-w-0">

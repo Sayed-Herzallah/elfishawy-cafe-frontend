@@ -4,18 +4,28 @@ import path from 'path';
 import {defineConfig} from 'vite';
 
 const API_TARGET = 'https://elfishawy-cafe-server.vercel.app';
+const isElectronBuild = process.env.ELECTRON_BUILD === 'true';
 
 export default defineConfig(() => {
   return {
+    // Base path: './' for Electron (file:// protocol), '/' for web
+    base: isElectronBuild ? './' : '/',
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      outDir: 'dist',
+      // Exclude desktop folder from renderer bundle
+      rollupOptions: {
+        external: [],
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâ€”file watching is disabled to prevent flickering during agent edits.
+      // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
@@ -76,3 +86,4 @@ export default defineConfig(() => {
     },
   };
 });
+
