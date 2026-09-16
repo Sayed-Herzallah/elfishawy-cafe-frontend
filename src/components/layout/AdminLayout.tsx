@@ -13,6 +13,7 @@ import {
   Menu,
   X,
   Store,
+  RefreshCw,
 } from "lucide-react";
 
 export const AdminLayout: React.FC = () => {
@@ -21,6 +22,28 @@ export const AdminLayout: React.FC = () => {
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
+  const handleManualCheckUpdate = async () => {
+    if (isCheckingUpdate) return;
+    setIsCheckingUpdate(true);
+    try {
+      if (window.electronAPI?.checkFrontendUpdate) {
+        const res = await window.electronAPI.checkFrontendUpdate();
+        if (res && res.hasUpdate && res.ready) {
+          window.location.reload();
+        } else {
+          window.location.reload();
+        }
+      } else {
+        window.location.reload();
+      }
+    } catch {
+      window.location.reload();
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
 
   const handleConfirmedLogout = () => {
     setShowLogoutConfirm(false);
@@ -164,12 +187,18 @@ export const AdminLayout: React.FC = () => {
               {getPageTitle()}
             </span>
           </div>
-          {/* <button
-            onClick={() => navigate("/pos")}
-            className="inline-flex items-center gap-1.5 bg-[#2e5b9f] hover:bg-[#244b85] text-white py-1.5 px-3 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer shrink-0 whitespace-nowrap"
-          >
-            <span>شاشة الكاشير ←</span>
-          </button> */}
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleManualCheckUpdate}
+              disabled={isCheckingUpdate}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#2e5b9f] font-bold text-xs border border-blue-200 transition cursor-pointer whitespace-nowrap shadow-2xs"
+              title="مزامنة وتحديث فوري مع أحدث نسخة من المنصة"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUpdate ? 'animate-spin' : ''}`} />
+              <span>{isCheckingUpdate ? 'جاري المزامنة...' : 'تحديث وتزامن فوري'}</span>
+            </button>
+          </div>
         </header>
 
         <main className="flex-1 p-4 md:p-6 w-full min-w-0">

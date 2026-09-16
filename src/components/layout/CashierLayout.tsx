@@ -10,6 +10,7 @@ import {
   X,
   LayoutDashboard,
   Sparkles,
+  RefreshCw,
 } from 'lucide-react';
 
 export const CashierLayout: React.FC = () => {
@@ -18,6 +19,7 @@ export const CashierLayout: React.FC = () => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<{ version: string; message: string } | null>(null);
+  const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.electronAPI?.onFrontendUpdateReady) {
@@ -27,6 +29,28 @@ export const CashierLayout: React.FC = () => {
       return unsub;
     }
   }, []);
+
+  const handleManualCheckUpdate = async () => {
+    if (isCheckingUpdate) return;
+    setIsCheckingUpdate(true);
+    try {
+      if (window.electronAPI?.checkFrontendUpdate) {
+        const res = await window.electronAPI.checkFrontendUpdate();
+        if (res && res.hasUpdate && res.ready) {
+          window.location.reload();
+        } else {
+          // If no update or already current, reload window to ensure latest assets
+          window.location.reload();
+        }
+      } else {
+        window.location.reload();
+      }
+    } catch {
+      window.location.reload();
+    } finally {
+      setIsCheckingUpdate(false);
+    }
+  };
 
   const handleApplyUpdate = async () => {
     if (window.electronAPI?.applyFrontendUpdate) {
@@ -117,6 +141,15 @@ export const CashierLayout: React.FC = () => {
         </div>
 
         <div className="pt-3 border-t border-gray-100 space-y-2">
+          <button
+            onClick={handleManualCheckUpdate}
+            disabled={isCheckingUpdate}
+            className="w-full flex items-center justify-center gap-1.5 py-2 px-3 text-xs font-bold text-[#2e5b9f] bg-blue-50 hover:bg-blue-100 rounded-xl transition cursor-pointer border border-blue-200"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUpdate ? 'animate-spin' : ''}`} />
+            <span>{isCheckingUpdate ? 'جاري المزامنة...' : 'تحديث وتزامن فوري'}</span>
+          </button>
+
           {isAdmin && (
             <button
               onClick={goAdmin}
@@ -202,6 +235,16 @@ export const CashierLayout: React.FC = () => {
             aria-label="فتح القائمة"
           >
             <Menu className="w-5 h-5" />
+          </button>
+
+          <button
+            onClick={handleManualCheckUpdate}
+            disabled={isCheckingUpdate}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-[#2e5b9f] font-bold text-xs border border-blue-200 transition cursor-pointer whitespace-nowrap shadow-2xs"
+            title="مزامنة وتحديث فوري مع أحدث نسخة من المنصة"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isCheckingUpdate ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline">{isCheckingUpdate ? 'جاري المزامنة...' : 'تحديث وتزامن'}</span>
           </button>
 
           <div className="hidden lg:flex items-center gap-2">
