@@ -50,12 +50,14 @@ export const CashierOrdersTrackerPage: React.FC = () => {
       setIsLoading(true);
       const res = await orderService.getOrders();
       if (res.success && res.data) {
-        // Filter strictly to today's orders
-        const todayOrders = res.data.filter((o) => isToday(o.createdAt));
+        // Filter strictly to today's orders (supports createdAt or created_at fallback)
+        const todayOrders = res.data.filter((o) => isToday(o.createdAt || (o as any).created_at));
         // Sort newest on top
-        const sorted = [...todayOrders].sort(
-          (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        );
+        const sorted = [...todayOrders].sort((a, b) => {
+          const timeA = new Date(a.createdAt || (a as any).created_at || 0).getTime();
+          const timeB = new Date(b.createdAt || (b as any).created_at || 0).getTime();
+          return timeB - timeA;
+        });
         setOrders(sorted);
       }
     } catch (err) {
@@ -100,6 +102,23 @@ export const CashierOrdersTrackerPage: React.FC = () => {
     setSelectedReceiptOrder(order);
   };
 
+  const productNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    products.forEach((p) => {
+      if (p?._id && p?.name) map.set(p._id, p.name);
+    });
+    return map;
+  }, [products]);
+
+  const getProductName = (it: any): string => {
+    if (!it) return 'مشروب';
+    if (it.product && typeof it.product === 'object' && (it.product as any).name) {
+      return (it.product as any).name;
+    }
+    const id = typeof it.product === 'string' ? it.product : '';
+    return (id && productNameById.get(id)) || 'مشروب';
+  };
+
   // Filter & Search Logic (Differentiates between Order Number vs Table Number vs Product)
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
@@ -124,7 +143,7 @@ export const CashierOrdersTrackerPage: React.FC = () => {
       if (searchMode === 'product') {
         // Specific search for product name inside items
         const hasProd = (order.items || []).some((it) => {
-          const name = it && typeof it.product === 'object' && it.product ? (it.product as any).name : '';
+          const name = getProductName(it);
           return String(name || '').toLowerCase().includes(q);
         });
         return matchesStatus && hasProd;
@@ -135,13 +154,13 @@ export const CashierOrdersTrackerPage: React.FC = () => {
       const matchesOrderNum = String(order.orderNumber || '').toLowerCase().includes(cleanQ);
       const matchesTable = order.tableNumber && String(order.tableNumber).includes(cleanQ);
       const matchesProd = (order.items || []).some((it) => {
-        const name = it && typeof it.product === 'object' && it.product ? (it.product as any).name : '';
+        const name = getProductName(it);
         return String(name || '').toLowerCase().includes(q);
       });
 
       return matchesStatus && (matchesOrderNum || matchesTable || matchesProd);
     });
-  }, [orders, statusFilter, searchQuery, searchMode]);
+  }, [orders, statusFilter, searchQuery, searchMode, productNameById]);
 
   const pendingCount = orders.filter((o) => o.status === 'pending').length;
   const completedCount = orders.filter((o) => o.status === 'completed').length;
@@ -455,8 +474,7 @@ export const CashierOrdersTrackerPage: React.FC = () => {
                   {/* Items List */}
                   <div className="space-y-2 py-2.5 border-y border-dashed border-gray-200 bg-[#faf8f5]/80 p-3 rounded-2xl">
                     {(order.items || []).map((item, itemIdx) => {
-                      const name =
-                        item && typeof item.product === 'object' && item.product ? (item.product as any).name : 'مشروب';
+                      const name = getProductName(item);
                       return (
                         <div key={itemIdx} className="flex justify-between items-center text-xs" dir="rtl">
                           <div className="flex items-center gap-1.5 truncate">
@@ -554,7 +572,7 @@ export const CashierOrdersTrackerPage: React.FC = () => {
                       </span>
                     </td>
                     <td className="py-3.5 px-3 text-gray-600">
-                      {(order.items || []).map((it) => `${it && typeof it.product === 'object' && it.product ? (it.product as any).name : 'صنف'} (×${it.quantity})`).join(', ')}
+                      {(order.items || []).map((it) => `${getProductName(it)} (×${it.quantity})`).join(', ')}
                     </td>
                     <td className="py-3.5 px-3 font-bold font-mono text-[#2e5b9f] text-sm">
                       {formatPrice(order.totalAmount)}

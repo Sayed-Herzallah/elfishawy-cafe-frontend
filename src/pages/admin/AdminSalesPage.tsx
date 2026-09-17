@@ -176,7 +176,7 @@ export const AdminSalesPage: React.FC = () => {
       if (stockQualityFilter === 'shortage' && !hasShortage) return false;
 
       let matchesDate = true;
-      const orderDate = new Date(o.createdAt);
+      const orderDate = new Date(o.createdAt || (o as any).created_at || Date.now());
       
       if (dateRange.from) {
         const from = new Date(dateRange.from);

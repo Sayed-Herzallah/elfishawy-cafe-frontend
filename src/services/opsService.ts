@@ -11,7 +11,11 @@ export const orderService = {
     const qs = query.toString();
 
     try {
-      return await ApiClient.request<Order[]>(`/orders${qs ? `?${qs}` : ''}`, { method: 'GET' });
+      const res = await ApiClient.request<Order[]>(`/orders${qs ? `?${qs}` : ''}`, { method: 'GET' });
+      if (res.success && Array.isArray(res.data) && offlineStore.isDesktop()) {
+        offlineStore.cacheOrders(res.data);
+      }
+      return res;
     } catch (err) {
       if (offlineStore.isDesktop()) {
         const localOrders = await offlineStore.getOfflineOrders();
@@ -180,7 +184,11 @@ export const expenseService = {
     const qs = query.toString();
 
     try {
-      return await ApiClient.request<Expense[]>(`/expenses${qs ? `?${qs}` : ''}`, { method: 'GET' });
+      const res = await ApiClient.request<Expense[]>(`/expenses${qs ? `?${qs}` : ''}`, { method: 'GET' });
+      if (res.success && Array.isArray(res.data) && offlineStore.isDesktop()) {
+        offlineStore.cacheEntities('expenses', res.data);
+      }
+      return res;
     } catch (err) {
       if (offlineStore.isDesktop()) {
         const localExpenses = await offlineStore.getOfflineExpenses();

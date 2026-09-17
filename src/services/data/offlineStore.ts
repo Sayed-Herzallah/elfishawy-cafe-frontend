@@ -24,7 +24,7 @@ export const offlineStore = {
     }
   },
 
-  async cacheEntities(entityType: 'products' | 'categories' | 'inventory' | 'recipes', records: any[]): Promise<void> {
+  async cacheEntities(entityType: 'products' | 'categories' | 'inventory' | 'recipes' | 'orders' | 'expenses', records: any[]): Promise<void> {
     if (isElectron() && window.electronAPI?.syncEntityCache) {
       try {
         await window.electronAPI.syncEntityCache(entityType, records);
@@ -32,6 +32,10 @@ export const offlineStore = {
         console.warn(`Failed to cache ${entityType} locally:`, e);
       }
     }
+  },
+
+  async cacheOrders(records: any[]): Promise<void> {
+    return this.cacheEntities('orders', records);
   },
 
   async getCachedProducts(): Promise<any[]> {

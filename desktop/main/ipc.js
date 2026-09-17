@@ -241,12 +241,28 @@ export function setupIpcHandlers(mainWindow) {
       if (!res.length) return [];
       const { columns, values } = res[0];
       return values.map((row) => {
-        const item = {};
-        columns.forEach((col, idx) => { item[col] = row[idx]; });
-        if (typeof item.items === 'string') {
-          try { item.items = JSON.parse(item.items); } catch {}
+        const raw = {};
+        columns.forEach((col, idx) => { raw[col] = row[idx]; });
+        let items = [];
+        if (typeof raw.items === 'string') {
+          try { items = JSON.parse(raw.items); } catch {}
+        } else if (Array.isArray(raw.items)) {
+          items = raw.items;
         }
-        return item;
+        return {
+          _id: raw._id,
+          orderNumber: raw.order_number || raw.client_order_id || raw._id,
+          items,
+          totalAmount: Number(raw.total_amount) || 0,
+          status: raw.status || 'completed',
+          tableNumber: raw.table_number,
+          cashierId: raw.cashier_id || '',
+          notes: raw.notes || '',
+          syncStatus: raw.sync_status || 'SYNCED',
+          clientOrderId: raw.client_order_id,
+          createdAt: raw.created_at || new Date().toISOString(),
+          updatedAt: raw.updated_at || raw.created_at || new Date().toISOString(),
+        };
       });
     } catch (err) {
       console.error('offline:get-orders error:', err);
@@ -340,9 +356,22 @@ export function setupIpcHandlers(mainWindow) {
       if (!res.length) return [];
       const { columns, values } = res[0];
       return values.map((row) => {
-        const item = {};
-        columns.forEach((col, idx) => { item[col] = row[idx]; });
-        return item;
+        const raw = {};
+        columns.forEach((col, idx) => { raw[col] = row[idx]; });
+        return {
+          _id: raw._id,
+          description: raw.description || '',
+          amount: Number(raw.amount) || 0,
+          category: raw.category || 'other',
+          inventoryItemLinked: raw.inventory_item_linked || undefined,
+          inventoryQuantityAdded: Number(raw.inventory_quantity_added) || undefined,
+          unitCost: Number(raw.unit_cost) || undefined,
+          date: raw.date || raw.created_at || new Date().toISOString(),
+          addedBy: raw.added_by || '',
+          syncStatus: raw.sync_status || 'SYNCED',
+          clientExpenseId: raw.client_expense_id,
+          createdAt: raw.created_at || raw.date || new Date().toISOString(),
+        };
       });
     } catch (err) {
       console.error('offline:get-expenses error:', err);
@@ -451,6 +480,62 @@ export function setupIpcHandlers(mainWindow) {
             JSON.stringify(r.ingredients || []),
             r.isActive ? 1 : 0,
             r.updatedAt || new Date().toISOString()
+          ]);
+        }
+      } else if (entityType === 'orders') {
+        for (const ord of records) {
+          if (!ord || !ord._id) continue;
+          db.run(`
+            INSERT INTO orders (_id, order_number, items, total_amount, status, table_number, cashier_id, notes, sync_status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?)
+            ON CONFLICT(_id) DO UPDATE SET
+              order_number = excluded.order_number,
+              items = excluded.items,
+              total_amount = excluded.total_amount,
+              status = excluded.status,
+              table_number = excluded.table_number,
+              notes = excluded.notes,
+              updated_at = excluded.updated_at
+          `, [
+            ord._id,
+            ord.orderNumber || ord._id,
+            JSON.stringify(ord.items || []),
+            Number(ord.totalAmount) || 0,
+            ord.status || 'completed',
+            ord.tableNumber || null,
+            typeof ord.cashierId === 'object' ? ord.cashierId?._id || '' : (ord.cashierId || ''),
+            ord.notes || '',
+            ord.createdAt || new Date().toISOString(),
+            ord.updatedAt || ord.createdAt || new Date().toISOString()
+          ]);
+        }
+      } else if (entityType === 'expenses') {
+        for (const exp of records) {
+          if (!exp || !exp._id) continue;
+          db.run(`
+            INSERT INTO expenses (_id, description, amount, category, inventory_item_linked, inventory_quantity_added, unit_cost, date, added_by, sync_status, client_expense_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?)
+            ON CONFLICT(_id) DO UPDATE SET
+              description = excluded.description,
+              amount = excluded.amount,
+              category = excluded.category,
+              inventory_item_linked = excluded.inventory_item_linked,
+              inventory_quantity_added = excluded.inventory_quantity_added,
+              unit_cost = excluded.unit_cost,
+              date = excluded.date,
+              added_by = excluded.added_by
+          `, [
+            exp._id,
+            exp.description || '',
+            Number(exp.amount) || 0,
+            exp.category || 'other',
+            typeof exp.inventoryItemLinked === 'object' ? exp.inventoryItemLinked?._id : (exp.inventoryItemLinked || null),
+            Number(exp.inventoryQuantityAdded) || null,
+            Number(exp.unitCost) || null,
+            exp.date || exp.createdAt || new Date().toISOString(),
+            typeof exp.addedBy === 'object' ? exp.addedBy?._id || '' : (exp.addedBy || ''),
+            exp._id,
+            exp.createdAt || exp.date || new Date().toISOString()
           ]);
         }
       }

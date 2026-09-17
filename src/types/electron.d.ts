@@ -12,7 +12,7 @@ export interface ElectronAPI {
   restockOfflineInventory: (data: any) => Promise<{ success: boolean; message?: string }>;
   getSyncQueue: () => Promise<any[]>;
   triggerSync: () => Promise<{ success: boolean; count?: number; error?: string }>;
-  syncEntityCache: (entityType: 'products' | 'categories' | 'inventory' | 'recipes', records: any[]) => Promise<{ success: boolean }>;
+  syncEntityCache: (entityType: 'products' | 'categories' | 'inventory' | 'recipes' | 'orders' | 'expenses', records: any[]) => Promise<{ success: boolean }>;
   onSyncProgress: (callback: (data: any) => void) => () => void;
   setAuthToken: (token: string) => Promise<{ success: boolean }>;
   cacheUserCredentials: (user: any, password?: string, token?: string) => Promise<{ success: boolean }>;
