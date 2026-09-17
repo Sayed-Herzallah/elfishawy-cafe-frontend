@@ -132,12 +132,34 @@ export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] =
   });
 };
 
-export const displayOrderNumber = (order: { orderNumber?: string; _id?: string } | null | undefined): string => {
-  const raw = String(order?.orderNumber || '').trim();
+/**
+ * رقم الفاتورة المعروض للكاشير.
+ * - فاتورة السيرفر: orderNumber (مثال "20")
+ * - فاتورة أوفلاين مؤقتة: OFF-1234 → تظهر 1234
+ * - لو الرقم مفقود تماماً (بيانات قديمة/محلية): نرجع لآخر جزء من _id أو clientOrderId
+ *   بدل ما نعرض "----" في شريط آخر الطلبات.
+ */
+export const displayOrderNumber = (order: any): string => {
+  const raw = String(order?.orderNumber ?? order?.order_number ?? '').trim();
   if (raw) {
-    const cleaned = raw.replace(/^OFF-/i, '');
-    return cleaned.slice(-6);
+    const cleaned = raw.replace(/^OFF-/i, '').trim();
+    if (cleaned) return cleaned.slice(-6);
   }
-  const id = String(order?._id || '');
-  return id ? id.slice(-4) : '----';
+
+  const clientId = String(order?.clientOrderId ?? order?.client_order_id ?? '').trim();
+  const id = String(order?._id ?? '').trim();
+  const fallbackSource = id || clientId;
+  if (fallbackSource) {
+    const stripped = fallbackSource.replace(/^off[_]/i, '').replace(/^OFF-/i, '');
+    const digits = stripped.replace(/\D/g, '');
+    if (digits) return digits.slice(-6);
+    return stripped.slice(-6) || fallbackSource.slice(-4);
+  }
+
+  const tableNumber = order?.tableNumber ?? order?.table_number;
+  if (tableNumber !== undefined && tableNumber !== null && String(tableNumber).trim() !== '') {
+    return `ط${String(tableNumber).trim()}`;
+  }
+
+  return '----';
 };

@@ -1,6 +1,80 @@
 // src/services/data/offlineStore.ts
+import {
+  ORDERS_SQL_CHUNK_SIZE,
+  buildOrdersUpsertQuery,
+  mergeCachedOrders,
+  normalizeCachedOrderRows,
+  readOrdersSnapshot,
+} from '../../utils/ordersCache';
+
 export const isElectron = (): boolean => {
   return typeof window !== 'undefined' && !!window.electronAPI?.isElectron;
+};
+
+/** أعمدة جدول orders محلياً — تُقرأ من المخطط نفسه حتى نتوافق مع أي إصدار Desktop */
+let ordersTableColumns: string[] | null = null;
+
+const getOrdersTableColumns = async (): Promise<string[]> => {
+  if (ordersTableColumns) return ordersTableColumns;
+  if (!isElectron() || !window.electronAPI?.query) return [];
+  try {
+    const rows = await window.electronAPI.query('PRAGMA table_info(orders)');
+    const columns = Array.isArray(rows)
+      ? rows.map((row: any) => String(row?.name || '').trim()).filter(Boolean)
+      : [];
+    if (columns.length > 0) ordersTableColumns = columns;
+    return columns;
+  } catch {
+    return [];
+  }
+};
+
+/** مفاتيح الفواتير التي لم تُزامن بعد (PENDING_SYNC) — ممنوع الكتابة فوقها */
+const getPendingOrderKeys = async (): Promise<{ ids: Set<string>; clientIds: Set<string> }> => {
+  const ids = new Set<string>();
+  const clientIds = new Set<string>();
+  if (!isElectron() || !window.electronAPI?.query) return { ids, clientIds };
+  try {
+    const rows = await window.electronAPI.query(
+      `SELECT IFNULL(_id, '') AS id, IFNULL(client_order_id, '') AS cid FROM orders WHERE IFNULL(sync_status, 'SYNCED') = 'PENDING_SYNC'`
+    );
+    (Array.isArray(rows) ? rows : []).forEach((row: any) => {
+      const id = String(row?.id || '').trim();
+      const cid = String(row?.cid || '').trim();
+      if (id) ids.add(id);
+      if (cid) clientIds.add(cid);
+    });
+  } catch {
+    /* لو الجدول/العمود غير موجود نكمل بدون حماية (الحماية الأساسية في SQL نفسها) */
+  }
+  return { ids, clientIds };
+};
+
+/**
+ * كتابة فواتير السيرفر داخل SQLite المحلية باستخدام أوامر الـ DB العامة.
+ * مهم: `syncEntityCache('orders')` غير مدعوم في إصدارات Desktop القديمة،
+ * لذلك نكتب مباشرة عبر `db:execute` حتى تعمل «فواتير اليوم» أوفلاين بعد أي تحديث.
+ */
+const writeOrdersToSqlite = async (records: any[]): Promise<void> => {
+  if (!isElectron() || !window.electronAPI?.execute) return;
+  const columns = await getOrdersTableColumns();
+  if (columns.length === 0) return;
+
+  const pending = await getPendingOrderKeys();
+  const rows = normalizeCachedOrderRows(records).filter((order) => {
+    if (!order._id) return false;
+    if (pending.ids.has(order._id)) return false;
+    if (order.clientOrderId && pending.clientIds.has(order.clientOrderId)) return false;
+    return true;
+  });
+  if (rows.length === 0) return;
+
+  for (let index = 0; index < rows.length; index += ORDERS_SQL_CHUNK_SIZE) {
+    const chunk = rows.slice(index, index + ORDERS_SQL_CHUNK_SIZE);
+    const { sql, params } = buildOrdersUpsertQuery(columns, chunk);
+    if (!sql) return;
+    await window.electronAPI.execute(sql, params);
+  }
 };
 
 export const offlineStore = {
@@ -34,8 +108,24 @@ export const offlineStore = {
     }
   },
 
+  /**
+   * حفظ فواتير السيرفر محلياً.
+   * نكتب في SQLite مباشرة عبر `db:execute` العامة (موجودة في كل إصدارات الديسكتوب)
+   * بدل الاعتماد على `sync:cache-entities` التي لا تدعم orders في النسخ القديمة المثبّتة،
+   * مع الاحتفاظ بالمسار القديم كاحتياط لو تعذّرت الكتابة العامة.
+   */
   async cacheOrders(records: any[]): Promise<void> {
-    return this.cacheEntities('orders', records);
+    if (!isElectron() || !Array.isArray(records) || records.length === 0) return;
+    try {
+      await writeOrdersToSqlite(records);
+    } catch (e) {
+      console.warn('Failed to write orders to local SQLite, falling back to syncEntityCache:', e);
+      try {
+        await window.electronAPI?.syncEntityCache?.('orders', records);
+      } catch (fallbackError) {
+        console.warn('Failed to cache orders via syncEntityCache:', fallbackError);
+      }
+    }
   },
 
   async getCachedProducts(): Promise<any[]> {
@@ -108,11 +198,41 @@ export const offlineStore = {
     throw new Error('Offline order creation is only available in Desktop mode');
   },
 
+  /**
+   * قراءة كل الفواتير المحفوظة محلياً **بدون أي حد أقصى**.
+   * - أولاً عبر `offline:get-orders` (الإصدار الأحدث)
+   * - وإن لم ترجع صفوفاً نقرأ جدول orders مباشرة بـ `db:query` العامة (تعمل مع أي إصدار)
+   * ثم نوحّد الشكل إلى camelCase (النسخ القديمة ترجع snake_case) ونحذف التكرار.
+   */
   async getOfflineOrders(): Promise<any[]> {
-    if (isElectron() && window.electronAPI?.getOfflineOrders) {
-      return await window.electronAPI.getOfflineOrders();
+    if (!isElectron()) return [];
+
+    let rows: any[] = [];
+    if (window.electronAPI?.getOfflineOrders) {
+      try {
+        const result = await window.electronAPI.getOfflineOrders();
+        if (Array.isArray(result)) rows = result;
+      } catch (e) {
+        console.warn('Failed to read offline orders via IPC:', e);
+      }
     }
-    return [];
+
+    if (rows.length === 0 && window.electronAPI?.query) {
+      try {
+        const result = await window.electronAPI.query(`SELECT * FROM orders ORDER BY created_at DESC`);
+        if (Array.isArray(result)) rows = result;
+      } catch (e) {
+        console.warn('Failed to read local orders table:', e);
+      }
+    }
+
+    return normalizeCachedOrderRows(rows);
+  },
+
+  /** كل الفواتير المتاحة أوفلاين = SQLite المحلية + لقطة المتصفح (بدون تكرار) */
+  async getAllCachedOrders(): Promise<any[]> {
+    const [dbOrders, snapshot] = [await this.getOfflineOrders(), readOrdersSnapshot()];
+    return mergeCachedOrders(dbOrders, snapshot);
   },
 
   // 2. OFFLINE EXPENSE / PURCHASE

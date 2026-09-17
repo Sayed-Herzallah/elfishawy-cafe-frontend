@@ -2,6 +2,7 @@ import { ApiClient } from './api/apiClient';
 import { ApiResponse, Order, InventoryItem, Expense, KPIStats, ChartsData, OrderStatus } from '../types';
 import { offlineStore } from './data/offlineStore';
 import { mergeOrderLists } from '../utils/orderDisplay';
+import { saveOrdersSnapshot } from '../utils/ordersCache';
 
 const ORDERS_FETCH_TIMEOUT_MS = 8000;
 
@@ -12,29 +13,49 @@ export const orderService = {
     if (params?.searchDate) query.append('searchDate', params.searchDate);
     if (params?.cashierId) query.append('cashierId', params.cashierId);
     const qs = query.toString();
+    // الجلب بدون فلاتر = القائمة الكاملة من السيرفر (كل استدعاءات التطبيق كذلك)،
+    // وهي اللقطة الصالحة لعرض «كل الفواتير» عند انقطاع الإنترنت.
+    const isFullList = !qs;
 
     try {
       const res = await ApiClient.request<Order[]>(`/orders${qs ? `?${qs}` : ''}`, {
         method: 'GET',
         signal: AbortSignal.timeout(ORDERS_FETCH_TIMEOUT_MS),
       });
-      if (res.success && Array.isArray(res.data) && offlineStore.isDesktop()) {
-        offlineStore.cacheOrders(res.data);
-        const localOrders = await offlineStore.getOfflineOrders();
-        return {
-          ...res,
-          data: mergeOrderLists(res.data, localOrders || []),
-        };
+      if (res.success && Array.isArray(res.data)) {
+        if (isFullList) {
+          // لقطة محلية في الديسكتوب والمتصفح: تضمن وجود كل الفواتير حتى لو فشلت كتابة SQLite
+          saveOrdersSnapshot(res.data, { replace: true });
+        }
+        if (offlineStore.isDesktop()) {
+          await offlineStore.cacheOrders(res.data);
+          const localOrders = await offlineStore.getAllCachedOrders();
+          return {
+            ...res,
+            data: mergeOrderLists(res.data, localOrders || []),
+          };
+        }
+        return res;
       }
       return res;
     } catch (err) {
-      if (offlineStore.isDesktop()) {
-        // نفس فكرة المخزون والمشتريات: عند انقطاع النت نرجع كل الفواتير المحفوظة محلياً
-        const localOrders = await offlineStore.getOfflineOrders();
+      // عند انقطاع النت: كل الفواتير المحفوظة محلياً (SQLite + لقطة المتصفح) بدون حد
+      const localOrders = await offlineStore.getAllCachedOrders();
+      if (localOrders.length > 0) {
         return {
           success: true,
-          message: 'Loaded from local offline database',
-          data: localOrders || [],
+          message: offlineStore.isDesktop()
+            ? 'Loaded from local offline database'
+            : 'Loaded from local cache',
+          data: localOrders as Order[],
+        };
+      }
+      if (offlineStore.isDesktop()) {
+        // لا يوجد كاش بعد (تشغيل أول بدون إنترنت) — نرجع قائمة فارغة بدل رفض غير معالج
+        return {
+          success: true,
+          message: 'No cached orders available',
+          data: [],
         };
       }
       throw err;
@@ -56,6 +77,8 @@ export const orderService = {
       if (!isOnline) {
         const offlineRes = await offlineStore.createOfflineOrder(payload);
         if (offlineRes.success && offlineRes.data) {
+          // نحفظ نسخة في اللقطة حتى تظهر في «آخر الطلبات / فواتير اليوم» بعد أي إعادة تحميل
+          saveOrdersSnapshot([offlineRes.data]);
           return {
             success: true,
             message: 'تم حفظ الطلب محلياً بنجاح (وضع غير متصل)',
@@ -70,8 +93,11 @@ export const orderService = {
         method: 'POST',
         body: JSON.stringify(payload),
       });
-      if (res.success && res.data && offlineStore.isDesktop()) {
-        offlineStore.cacheOrders([res.data]);
+      if (res.success && res.data) {
+        saveOrdersSnapshot([res.data]);
+        if (offlineStore.isDesktop()) {
+          await offlineStore.cacheOrders([res.data]);
+        }
       }
       return res;
     } catch (networkErr) {
@@ -79,6 +105,7 @@ export const orderService = {
       if (offlineStore.isDesktop()) {
         const offlineRes = await offlineStore.createOfflineOrder(payload);
         if (offlineRes.success && offlineRes.data) {
+          saveOrdersSnapshot([offlineRes.data]);
           return {
             success: true,
             message: 'تم حفظ الطلب محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت',
