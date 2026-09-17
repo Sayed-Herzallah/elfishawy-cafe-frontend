@@ -12,21 +12,35 @@ export const orderService = {
 
     try {
       const res = await ApiClient.request<Order[]>(`/orders${qs ? `?${qs}` : ''}`, { method: 'GET' });
-      if (res.success && Array.isArray(res.data) && offlineStore.isDesktop()) {
-        offlineStore.cacheOrders(res.data);
+      if (res.success && Array.isArray(res.data)) {
+        // ✅ كاش فوري متزامن مع آخر بيانات سيرفر — عشان سجل الفواتير يعرض
+        // نفس الفواتير (كلها) لما النت ينقطع، في المتصفح والديسكتوب.
+        // ملاحظة: كنا بنعملها fire-and-forget من غير await —
+        // فلو النت قطع بسرعة بعد التحميل، الكاش مكنش لحق يتكتب (وده سبب ظهور 3 فواتير بس).
+        // نكاش فقط القائمة الكاملة غير المفلترة — الفلاتر الجزئية (status/searchDate)
+        // مينفعش تمسح الكاش الكامل وإلا السجل الأوفلاين هيبقى ناقص.
+        if (!qs) {
+          await offlineStore.cacheOrders(res.data);
+        }
       }
       return res;
     } catch (err) {
-      if (offlineStore.isDesktop()) {
-        // Always return local orders when offline — even if the list is empty.
-        // This prevents an unhandled rejection in the POS page that leaves allOrders stuck as undefined.
+      // ✅ fallback موحّد: أي منصة (ديسكتوب أو متصفح) ترجع الكاش المحلي
+      // بدل رمي الخطأ — كده السجل يعرض آخر فواتير معروفة كاملة.
+      try {
         const localOrders = await offlineStore.getOfflineOrders();
-        return {
-          success: true,
-          message: 'Loaded from local offline database',
-          data: localOrders || [],
-        };
+        if (localOrders && localOrders.length > 0) {
+          return {
+            success: true,
+            message: 'Loaded from local offline cache',
+            data: localOrders,
+          };
+        }
+      } catch {
+        /* تجاهل — هنكمل لرمي خطأ الشبكة الأصلي */
       }
+      // لو مفيش كاش خالص: نرمي خطأ الشبكة الأصلي بدل قائمة فاضية ناجحة،
+      // عشان التحديث الدوري الصامت ميروحش يمسح فواتير معروضة بالفعل على الشاشة.
       throw err;
     }
   },
@@ -56,10 +70,16 @@ export const orderService = {
     }
 
     try {
-      return await ApiClient.request<Order>('/orders', {
+      const res = await ApiClient.request<Order>('/orders', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
+      // ✅ الفاتورة الجديدة تنضم للكاش فوراً — لو النت قطع بعد ثانية،
+      // سجل الفواتير لسه هيعرضها ضمن كل الفواتير.
+      if (res.success && res.data) {
+        offlineStore.prependOrderToCache(res.data);
+      }
+      return res;
     } catch (networkErr) {
       // If request failed due to network error and in Desktop, save offline immediately
       if (offlineStore.isDesktop()) {

@@ -486,8 +486,8 @@ export function setupIpcHandlers(mainWindow) {
         for (const ord of records) {
           if (!ord || !ord._id) continue;
           db.run(`
-            INSERT INTO orders (_id, order_number, items, total_amount, status, table_number, cashier_id, notes, sync_status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?)
+            INSERT INTO orders (_id, order_number, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?, ?)
             ON CONFLICT(_id) DO UPDATE SET
               order_number = excluded.order_number,
               items = excluded.items,
@@ -495,6 +495,8 @@ export function setupIpcHandlers(mainWindow) {
               status = excluded.status,
               table_number = excluded.table_number,
               notes = excluded.notes,
+              sync_status = 'SYNCED',
+              client_order_id = COALESCE(excluded.client_order_id, orders.client_order_id),
               updated_at = excluded.updated_at
           `, [
             ord._id,
@@ -505,6 +507,7 @@ export function setupIpcHandlers(mainWindow) {
             ord.tableNumber || null,
             typeof ord.cashierId === 'object' ? ord.cashierId?._id || '' : (ord.cashierId || ''),
             ord.notes || '',
+            ord.clientOrderId || null,
             ord.createdAt || new Date().toISOString(),
             ord.updatedAt || ord.createdAt || new Date().toISOString()
           ]);
