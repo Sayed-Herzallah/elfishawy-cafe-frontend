@@ -18,10 +18,14 @@ export const orderService = {
       return res;
     } catch (err) {
       if (offlineStore.isDesktop()) {
+        // Always return local orders when offline — even if the list is empty.
+        // This prevents an unhandled rejection in the POS page that leaves allOrders stuck as undefined.
         const localOrders = await offlineStore.getOfflineOrders();
-        if (localOrders && localOrders.length > 0) {
-          return { success: true, message: 'Loaded from local offline database', data: localOrders };
-        }
+        return {
+          success: true,
+          message: 'Loaded from local offline database',
+          data: localOrders || [],
+        };
       }
       throw err;
     }

@@ -90,7 +90,8 @@ export const CashierPOSPage: React.FC = () => {
     );
   const applyOrders = (data: Order[]) => {
     // Show today's orders (both completed and pending) so Cashier and Admin counts match perfectly
-    const todayOrders = data.filter((o: Order) => isToday(o.createdAt) && o.status !== 'cancelled');
+    // Accept both camelCase (createdAt) and snake_case (created_at) — offline SQLite rows may return either
+    const todayOrders = data.filter((o: any) => isToday(o.createdAt || o.created_at) && o.status !== 'cancelled');
     setAllOrders(todayOrders);
     setRecentOrders(todayOrders.slice(0, 4));
   };
@@ -416,6 +417,21 @@ export const CashierPOSPage: React.FC = () => {
             shortagesList
           );
         }
+
+        // ✅ أضف الطلب الجديد لقائمة allOrders فوراً — بدون انتظار loadData()
+        // هذا يضمن ظهور الفاتورة في "سجل الفواتير اليومية" حتى وقت انقطاع الإنترنت
+        const newOrder = {
+          ...orderRes.data,
+          // ضمان وجود createdAt بشكل صحيح لفلتر isToday
+          createdAt: orderRes.data.createdAt || orderRes.data.created_at || new Date().toISOString(),
+        };
+        setAllOrders((prev) => {
+          const alreadyExists = prev.some((o) => o._id === newOrder._id);
+          if (alreadyExists) return prev;
+          const updated = [newOrder as Order, ...prev];
+          setRecentOrders(updated.slice(0, 4));
+          return updated;
+        });
 
         showToast('تم تأكيد الطلب وحفظ الفاتورة بنجاح!');
         setSelectedReceiptOrder(orderRes.data);
