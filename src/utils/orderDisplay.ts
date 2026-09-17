@@ -1,0 +1,143 @@
+import { Order, OrderItem, Product } from '../types';
+
+type ProductLookup = Map<string, { name: string; price?: number }>;
+
+const parseItems = (items: unknown): any[] => {
+  if (Array.isArray(items)) return items;
+  if (typeof items === 'string' && items.trim()) {
+    try {
+      const parsed = JSON.parse(items);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
+export const productIdOf = (item: any): string => {
+  if (!item) return '';
+  if (typeof item.product === 'string') return item.product;
+  return String(item.product?._id || item.productId || '');
+};
+
+export const resolveOrderItemName = (
+  item: any,
+  products?: ProductLookup | Array<{ _id: string; name: string }>
+): string => {
+  if (!item) return 'مشروب';
+  if (item.product && typeof item.product === 'object' && item.product.name) {
+    return String(item.product.name);
+  }
+  if (item.productName) return String(item.productName);
+  const id = productIdOf(item);
+  if (!id || !products) return 'مشروب';
+  if (products instanceof Map) return products.get(id)?.name || 'مشروب';
+  const found = products.find((p) => p._id === id);
+  return found?.name || 'مشروب';
+};
+
+export const buildProductLookup = (
+  products: Array<{ _id: string; name: string; price?: number }>
+): ProductLookup => {
+  const map: ProductLookup = new Map();
+  products.forEach((p) => {
+    if (p?._id) map.set(p._id, { name: p.name, price: p.price });
+  });
+  return map;
+};
+
+const hydrateItems = (items: any[], lookup?: ProductLookup): OrderItem[] =>
+  items.map((it) => {
+    const id = productIdOf(it);
+    const lookupHit = id && lookup ? lookup.get(id) : undefined;
+    const name =
+      (typeof it.product === 'object' && it.product?.name) ||
+      it.productName ||
+      lookupHit?.name ||
+      'مشروب';
+    const price =
+      Number(it.price) ||
+      Number(typeof it.product === 'object' ? it.product?.price : 0) ||
+      Number(lookupHit?.price) ||
+      0;
+    return {
+      product: id ? { _id: id, name, price } as Product : it.product,
+      quantity: Number(it.quantity) || 0,
+      price,
+    };
+  });
+
+/** يوحّد شكل الفاتورة من السيرفر أو SQLite (camelCase / snake_case) */
+export const normalizeOrder = (raw: any, lookup?: ProductLookup): Order => {
+  const createdAt =
+    raw?.createdAt ||
+    raw?.created_at ||
+    raw?.updatedAt ||
+    raw?.updated_at ||
+    '';
+  const orderNumber = String(
+    raw?.orderNumber ||
+      raw?.order_number ||
+      raw?.clientOrderId ||
+      raw?.client_order_id ||
+      ''
+  );
+  const tableRaw = raw?.tableNumber ?? raw?.table_number;
+  const tableNumber =
+    tableRaw === null || tableRaw === undefined || tableRaw === ''
+      ? undefined
+      : Number(tableRaw);
+
+  return {
+    ...raw,
+    _id: String(raw?._id || raw?.clientOrderId || raw?.client_order_id || ''),
+    orderNumber,
+    items: hydrateItems(parseItems(raw?.items), lookup),
+    totalAmount: Number(raw?.totalAmount ?? raw?.total_amount) || 0,
+    status: raw?.status || 'completed',
+    tableNumber: Number.isFinite(tableNumber) ? tableNumber : undefined,
+    notes: raw?.notes || '',
+    cashierId: raw?.cashierId || raw?.cashier_id || '',
+    createdAt,
+    updatedAt: raw?.updatedAt || raw?.updated_at || createdAt,
+    clientOrderId: raw?.clientOrderId || raw?.client_order_id,
+  } as Order;
+};
+
+export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] => {
+  const byId = new Map<string, any>();
+  const clientIds = new Set<string>();
+
+  const take = (list: any[]) => {
+    for (const o of list) {
+      if (!o) continue;
+      const id = String(o._id || '');
+      const cid = String(o.clientOrderId || o.client_order_id || '');
+      if (id && byId.has(id)) continue;
+      if (cid && clientIds.has(cid)) continue;
+      if (id) byId.set(id, o);
+      else if (cid) byId.set(cid, o);
+      if (cid) clientIds.add(cid);
+    }
+  };
+
+  take(primary);
+  take(extra);
+
+  return Array.from(byId.values()).sort((a, b) => {
+    const ta = new Date(a.createdAt || a.created_at || 0).getTime();
+    const tb = new Date(b.createdAt || b.created_at || 0).getTime();
+    return tb - ta;
+  });
+};
+
+export const displayOrderNumber = (order: { orderNumber?: string; _id?: string } | null | undefined): string => {
+  const raw = String(order?.orderNumber || '').trim();
+  if (raw) {
+    const cleaned = raw.replace(/^OFF-/i, '');
+    return cleaned.slice(-6);
+  }
+  const id = String(order?._id || '');
+  return id ? id.slice(-4) : '----';
+};

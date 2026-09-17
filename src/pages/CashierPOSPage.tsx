@@ -16,6 +16,12 @@ import { productStockState } from '../utils/stockStatus';
 import { playAlertSound } from '../utils/soundFeedback';
 import { recordOrderShortages, appendShortagesToNotes } from '../utils/orderShortageJournal';
 import {
+  normalizeOrder,
+  buildProductLookup,
+  resolveOrderItemName,
+  displayOrderNumber,
+} from '../utils/orderDisplay';
+import {
   Plus,
   Trash2,
   Search,
@@ -75,6 +81,8 @@ export const CashierPOSPage: React.FC = () => {
   const [todaySearchMode, setTodaySearchMode] = useState<'all' | 'orderNumber' | 'table' | 'product'>('all');
 
   const { showToast, showError } = useNotification();
+  const productsRef = useRef<Product[]>([]);
+  productsRef.current = products;
 
   const applyProducts = (data: Product[]) =>
     setProducts(
@@ -89,9 +97,11 @@ export const CashierPOSPage: React.FC = () => {
       })
     );
   const applyOrders = (data: Order[]) => {
-    // Show today's orders (both completed and pending) so Cashier and Admin counts match perfectly
-    // Accept both camelCase (createdAt) and snake_case (created_at) — offline SQLite rows may return either
-    const todayOrders = data.filter((o: any) => isToday(o.createdAt || o.created_at) && o.status !== 'cancelled');
+    const lookup = buildProductLookup(productsRef.current);
+    const todayOrders = (data || [])
+      .map((o) => normalizeOrder(o, lookup))
+      .filter((o) => isToday(o.createdAt) && o.status !== 'cancelled')
+      .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     setAllOrders(todayOrders);
     setRecentOrders(todayOrders.slice(0, 4));
   };
@@ -234,6 +244,13 @@ export const CashierPOSPage: React.FC = () => {
 
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (products.length === 0) return;
+    const lookup = buildProductLookup(products);
+    setAllOrders((prev) => (prev.length ? prev.map((o) => normalizeOrder(o, lookup)) : prev));
+    setRecentOrders((prev) => (prev.length ? prev.map((o) => normalizeOrder(o, lookup)) : prev));
+  }, [products]);
 
   const handleViewProduct = (prod: Product) => {
     setViewingProduct(prod);
@@ -420,11 +437,18 @@ export const CashierPOSPage: React.FC = () => {
 
         // ✅ أضف الطلب الجديد لقائمة allOrders فوراً — بدون انتظار loadData()
         // هذا يضمن ظهور الفاتورة في "سجل الفواتير اليومية" حتى وقت انقطاع الإنترنت
-        const newOrder = {
+        const lookup = buildProductLookup(products);
+        const newOrder = normalizeOrder({
           ...orderRes.data,
-          // ضمان وجود createdAt بشكل صحيح لفلتر isToday
-          createdAt: orderRes.data.createdAt || orderRes.data.created_at || new Date().toISOString(),
-        };
+          createdAt: orderRes.data.createdAt || (orderRes.data as any).created_at || new Date().toISOString(),
+          orderNumber: orderRes.data.orderNumber || (orderRes.data as any).order_number,
+          tableNumber: orderRes.data.tableNumber ?? (orderRes.data as any).table_number,
+          items: cart.map((item) => ({
+            product: { _id: item.product._id, name: item.product.name, price: item.product.price },
+            quantity: item.quantity,
+            price: item.product.price,
+          })),
+        }, lookup);
         setAllOrders((prev) => {
           const alreadyExists = prev.some((o) => o._id === newOrder._id);
           if (alreadyExists) return prev;
@@ -486,7 +510,7 @@ export const CashierPOSPage: React.FC = () => {
 
       if (todaySearchMode === 'product') {
         return items.some((it) => {
-          const name = it && typeof it.product === 'object' && it.product ? it.product.name : '';
+          const name = resolveOrderItemName(it, products);
           return String(name).toLowerCase().includes(q);
         });
       }
@@ -496,13 +520,13 @@ export const CashierPOSPage: React.FC = () => {
       const matchesId = String(ord.orderNumber || '').toLowerCase().includes(cleanQ) || String(ord._id || '').toLowerCase().includes(cleanQ);
       const matchesTable = ord.tableNumber ? String(ord.tableNumber).includes(cleanQ) : false;
       const matchesDrink = items.some((it) => {
-        const pName = it && typeof it.product === 'object' && it.product ? it.product.name : '';
+        const pName = resolveOrderItemName(it, products);
         return String(pName).toLowerCase().includes(q);
       });
 
       return matchesId || matchesTable || matchesDrink;
     });
-  }, [allOrders, orderSearchText, todaySearchMode]);
+  }, [allOrders, orderSearchText, todaySearchMode, products]);
 
   // const todayRevenue = allOrders.reduce((sum, o) => sum + o.totalAmount, 0);
 
@@ -541,7 +565,7 @@ export const CashierPOSPage: React.FC = () => {
                   title="نقر لطباعة أو معاينة الفاتورة"
                 >
                   <Printer className="w-3.5 h-3.5 text-[#2e5b9f]" />
-                  <span className="font-bold">#{String(ord.orderNumber || '----').slice(-4)}</span>
+                  <span className="font-bold">#{displayOrderNumber(ord)}</span>
                 </button>
               </div>
             ))}
@@ -1086,7 +1110,7 @@ export const CashierPOSPage: React.FC = () => {
                           تسلسل #{sequentialIndex}
                         </span>
                         <span className="text-xs font-bold font-mono text-gray-900 bg-gray-100 px-2 py-0.5 rounded-md">
-                          فاتورة #{ord.orderNumber}
+                          فاتورة #{displayOrderNumber(ord)}
                         </span>
                         <span className="text-[11px] text-gray-500 font-mono flex items-center gap-1">
                           <Clock className="w-3 h-3 text-gray-400" />
@@ -1109,7 +1133,7 @@ export const CashierPOSPage: React.FC = () => {
                       {/* Drink items preview */}
                       <div className="text-xs text-gray-600 flex flex-wrap gap-1.5 pt-1">
                         {(ord.items || []).map((item, itemIdx) => {
-                          const name = item && typeof item.product === 'object' && item.product ? (item.product as any).name : 'مشروب';
+                          const name = resolveOrderItemName(item, products);
                           return (
                             <span key={itemIdx} className="bg-[#faf8f5] border border-gray-100 px-2 py-0.5 rounded text-[11px] font-medium">
                               {name} <strong className="text-[#2e5b9f] font-mono">×{formatNumber(item.quantity)}</strong>

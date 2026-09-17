@@ -37,6 +37,132 @@ const consumptionPerUnit = (inputQuantity, inputUnit, outputQuantity) => {
   return baseInputQty / (outputQuantity || 1);
 };
 
+const lookupProduct = (db, productId) => {
+  if (!productId) return null;
+  try {
+    const pRes = db.exec(`SELECT name, price FROM products WHERE _id = ?`, [String(productId)]);
+    if (pRes.length && pRes[0].values.length) {
+      return {
+        _id: String(productId),
+        name: pRes[0].values[0][0] || 'مشروب',
+        price: Number(pRes[0].values[0][1]) || 0,
+      };
+    }
+  } catch {}
+  return null;
+};
+
+const slimOrderItems = (items, db) => {
+  let parsed = items;
+  if (typeof parsed === 'string') {
+    try { parsed = JSON.parse(parsed); } catch { parsed = []; }
+  }
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed.map((it) => {
+    const pid = typeof it?.product === 'object' && it.product
+      ? (it.product._id || it.product.id)
+      : it?.product;
+    const fromObjName = typeof it?.product === 'object' ? it.product?.name : '';
+    const cached = pid ? lookupProduct(db, pid) : null;
+    const name = fromObjName || it?.productName || cached?.name || 'مشروب';
+    const price =
+      Number(it?.price) ||
+      Number(typeof it?.product === 'object' ? it.product?.price : 0) ||
+      Number(cached?.price) ||
+      0;
+    return {
+      product: { _id: pid || '', name, price },
+      quantity: Number(it?.quantity) || 0,
+      price,
+    };
+  });
+};
+
+const mapOrderRow = (raw, db) => {
+  const createdAt = raw.created_at || raw.createdAt || new Date().toISOString();
+  return {
+    _id: raw._id,
+    orderNumber: raw.order_number || raw.orderNumber || raw.client_order_id || raw._id || '',
+    items: slimOrderItems(raw.items, db),
+    totalAmount: Number(raw.total_amount ?? raw.totalAmount) || 0,
+    status: raw.status || 'completed',
+    tableNumber: raw.table_number ?? raw.tableNumber ?? null,
+    cashierId: raw.cashier_id || raw.cashierId || '',
+    notes: raw.notes || '',
+    syncStatus: raw.sync_status || raw.syncStatus || 'SYNCED',
+    clientOrderId: raw.client_order_id || raw.clientOrderId,
+    createdAt,
+    updatedAt: raw.updated_at || raw.updatedAt || createdAt,
+  };
+};
+
+const upsertSyncedOrder = (db, ord) => {
+  if (!ord || !ord._id) return;
+  const itemsJson = JSON.stringify(slimOrderItems(ord.items || [], db));
+  const createdAt = ord.createdAt || ord.created_at || new Date().toISOString();
+  const updatedAt = ord.updatedAt || ord.updated_at || createdAt;
+  const orderNumber = ord.orderNumber || ord.order_number || String(ord._id);
+  const tableNumber = ord.tableNumber ?? ord.table_number ?? null;
+  const cashierId = typeof ord.cashierId === 'object' ? (ord.cashierId?._id || '') : (ord.cashierId || '');
+  const clientOrderId = ord.clientOrderId || ord.client_order_id || null;
+
+  try {
+    const existing = db.exec(`SELECT sync_status FROM orders WHERE _id = ?`, [ord._id]);
+    if (existing.length && existing[0].values.length && existing[0].values[0][0] === 'PENDING_SYNC') {
+      return;
+    }
+  } catch {}
+
+  try {
+    db.run(`
+    INSERT INTO orders (_id, order_number, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?, ?)
+    ON CONFLICT(_id) DO UPDATE SET
+      order_number = excluded.order_number,
+      items = excluded.items,
+      total_amount = excluded.total_amount,
+      status = excluded.status,
+      table_number = excluded.table_number,
+      cashier_id = excluded.cashier_id,
+      notes = excluded.notes,
+      client_order_id = COALESCE(excluded.client_order_id, orders.client_order_id),
+      created_at = COALESCE(orders.created_at, excluded.created_at),
+      updated_at = excluded.updated_at
+    WHERE IFNULL(orders.sync_status, 'SYNCED') != 'PENDING_SYNC'
+  `, [
+    ord._id,
+    orderNumber,
+    itemsJson,
+    Number(ord.totalAmount ?? ord.total_amount) || 0,
+    ord.status || 'completed',
+    tableNumber,
+    cashierId,
+    ord.notes || '',
+    clientOrderId,
+    createdAt,
+    updatedAt,
+  ]);
+  } catch (upsertErr) {
+    db.run(`
+      INSERT OR REPLACE INTO orders (_id, order_number, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?, ?)
+    `, [
+      ord._id,
+      orderNumber,
+      itemsJson,
+      Number(ord.totalAmount ?? ord.total_amount) || 0,
+      ord.status || 'completed',
+      tableNumber,
+      cashierId,
+      ord.notes || '',
+      clientOrderId,
+      createdAt,
+      updatedAt,
+    ]);
+  }
+};
+
 function enqueueSecureOperation(db, { clientOpId, entityType, action, payload, createdAt }) {
   const masterKey = getMasterKey();
   const lastRes = db.exec(`SELECT sequence_id, op_hash FROM sync_queue ORDER BY id DESC LIMIT 1`);
@@ -126,16 +252,13 @@ export function setupIpcHandlers(mainWindow) {
       const processedItems = [];
 
       for (const it of orderData.items) {
-        let price = Number(it.price) || 0;
-        if (!price) {
-          const pRes = db.exec(`SELECT price, name FROM products WHERE _id = ?`, [it.product]);
-          if (pRes.length && pRes[0].values.length) {
-            price = Number(pRes[0].values[0][0]) || 0;
-          }
-        }
+        const productId = typeof it.product === 'object' ? (it.product?._id || it.product?.id) : it.product;
+        const cached = lookupProduct(db, productId);
+        let price = Number(it.price) || Number(cached?.price) || 0;
+        const name = (typeof it.product === 'object' && it.product?.name) || cached?.name || 'مشروب';
         totalAmount += price * it.quantity;
         processedItems.push({
-          product: it.product,
+          product: { _id: productId, name, price },
           quantity: it.quantity,
           price,
         });
@@ -161,15 +284,17 @@ export function setupIpcHandlers(mainWindow) {
 
       // Phase A: Deduct product stockQuantity
       for (const it of processedItems) {
+        const productId = typeof it.product === 'object' ? it.product._id : it.product;
         db.run(
           `UPDATE products SET stock_quantity = MAX(0, stock_quantity - ?), in_stock = CASE WHEN stock_quantity - ? > 0 THEN 1 ELSE 0 END WHERE _id = ?`,
-          [it.quantity, it.quantity, it.product]
+          [it.quantity, it.quantity, productId]
         );
       }
 
       // Phase B: Recipe-based Inventory Deductions (Same as Backend Phase 6)
       for (const it of processedItems) {
-        const rRes = db.exec(`SELECT ingredients FROM recipes WHERE product_id = ? AND is_active = 1`, [it.product]);
+        const productId = typeof it.product === 'object' ? it.product._id : it.product;
+        const rRes = db.exec(`SELECT ingredients FROM recipes WHERE product_id = ? AND is_active = 1`, [productId]);
         if (rRes.length && rRes[0].values.length) {
           try {
             const ingredients = JSON.parse(rRes[0].values[0][0]);
@@ -243,26 +368,7 @@ export function setupIpcHandlers(mainWindow) {
       return values.map((row) => {
         const raw = {};
         columns.forEach((col, idx) => { raw[col] = row[idx]; });
-        let items = [];
-        if (typeof raw.items === 'string') {
-          try { items = JSON.parse(raw.items); } catch {}
-        } else if (Array.isArray(raw.items)) {
-          items = raw.items;
-        }
-        return {
-          _id: raw._id,
-          orderNumber: raw.order_number || raw.client_order_id || raw._id,
-          items,
-          totalAmount: Number(raw.total_amount) || 0,
-          status: raw.status || 'completed',
-          tableNumber: raw.table_number,
-          cashierId: raw.cashier_id || '',
-          notes: raw.notes || '',
-          syncStatus: raw.sync_status || 'SYNCED',
-          clientOrderId: raw.client_order_id,
-          createdAt: raw.created_at || new Date().toISOString(),
-          updatedAt: raw.updated_at || raw.created_at || new Date().toISOString(),
-        };
+        return mapOrderRow(raw, db);
       });
     } catch (err) {
       console.error('offline:get-orders error:', err);
@@ -484,30 +590,11 @@ export function setupIpcHandlers(mainWindow) {
         }
       } else if (entityType === 'orders') {
         for (const ord of records) {
-          if (!ord || !ord._id) continue;
-          db.run(`
-            INSERT INTO orders (_id, order_number, items, total_amount, status, table_number, cashier_id, notes, sync_status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?)
-            ON CONFLICT(_id) DO UPDATE SET
-              order_number = excluded.order_number,
-              items = excluded.items,
-              total_amount = excluded.total_amount,
-              status = excluded.status,
-              table_number = excluded.table_number,
-              notes = excluded.notes,
-              updated_at = excluded.updated_at
-          `, [
-            ord._id,
-            ord.orderNumber || ord._id,
-            JSON.stringify(ord.items || []),
-            Number(ord.totalAmount) || 0,
-            ord.status || 'completed',
-            ord.tableNumber || null,
-            typeof ord.cashierId === 'object' ? ord.cashierId?._id || '' : (ord.cashierId || ''),
-            ord.notes || '',
-            ord.createdAt || new Date().toISOString(),
-            ord.updatedAt || ord.createdAt || new Date().toISOString()
-          ]);
+          try {
+            upsertSyncedOrder(db, ord);
+          } catch (ordErr) {
+            console.warn('Failed to cache order locally:', ord?._id, ordErr?.message);
+          }
         }
       } else if (entityType === 'expenses') {
         for (const exp of records) {

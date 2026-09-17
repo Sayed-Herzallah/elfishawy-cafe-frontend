@@ -1,6 +1,9 @@
 import { ApiClient } from './api/apiClient';
 import { ApiResponse, Order, InventoryItem, Expense, KPIStats, ChartsData, OrderStatus } from '../types';
 import { offlineStore } from './data/offlineStore';
+import { mergeOrderLists } from '../utils/orderDisplay';
+
+const ORDERS_FETCH_TIMEOUT_MS = 8000;
 
 export const orderService = {
   getOrders: async (params?: { status?: string; searchDate?: string; cashierId?: string }): Promise<ApiResponse<Order[]>> => {
@@ -11,15 +14,22 @@ export const orderService = {
     const qs = query.toString();
 
     try {
-      const res = await ApiClient.request<Order[]>(`/orders${qs ? `?${qs}` : ''}`, { method: 'GET' });
+      const res = await ApiClient.request<Order[]>(`/orders${qs ? `?${qs}` : ''}`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(ORDERS_FETCH_TIMEOUT_MS),
+      });
       if (res.success && Array.isArray(res.data) && offlineStore.isDesktop()) {
         offlineStore.cacheOrders(res.data);
+        const localOrders = await offlineStore.getOfflineOrders();
+        return {
+          ...res,
+          data: mergeOrderLists(res.data, localOrders || []),
+        };
       }
       return res;
     } catch (err) {
       if (offlineStore.isDesktop()) {
-        // Always return local orders when offline — even if the list is empty.
-        // This prevents an unhandled rejection in the POS page that leaves allOrders stuck as undefined.
+        // نفس فكرة المخزون والمشتريات: عند انقطاع النت نرجع كل الفواتير المحفوظة محلياً
         const localOrders = await offlineStore.getOfflineOrders();
         return {
           success: true,
@@ -56,10 +66,14 @@ export const orderService = {
     }
 
     try {
-      return await ApiClient.request<Order>('/orders', {
+      const res = await ApiClient.request<Order>('/orders', {
         method: 'POST',
         body: JSON.stringify(payload),
       });
+      if (res.success && res.data && offlineStore.isDesktop()) {
+        offlineStore.cacheOrders([res.data]);
+      }
+      return res;
     } catch (networkErr) {
       // If request failed due to network error and in Desktop, save offline immediately
       if (offlineStore.isDesktop()) {
