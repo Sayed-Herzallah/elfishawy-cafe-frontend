@@ -1,109 +1,137 @@
-# ☕ مقهى الفيشاوي — El-Fishawy Cafe POS & Management System
+# ☕ El-Fishawy Cafe — Smart POS & Management System
 
-نظام إدارة نقاط البيع (POS) والمخزون والمبيعات والمصروفات المتكامل لمقهى الفيشاوي، يعمل كمنظومة هجينة موحدة (**Web App + Offline-First Desktop Application**).
+> Modern, robust, and offline-first Point of Sale (POS), Inventory, and Order Management System designed specifically for **El-Fishawy Cafe**. Operates seamlessly across both web and desktop environments from a single unified codebase.
 
----
-
-## 🌟 أبرز مميزات النظام
-
-- **منظومة موحدة المصدر (Single Source of Truth):**
-  نفس كود الـ React/Vite يعمل على الويب (Vercel) وتطبيق الديسكتوب (Electron) مع مزامنة لحظية في وضع التطوير (Live Hot Reload).
-
-- **نظام غير متصل بالكامل (Offline-First Architecture):**
-  - قاعدة بيانات SQLite محلية مشفرة بالكامل (`AES-256-GCM`).
-  - القدرة على تسجيل الطلبات، التوريد، وتسجيل المصروفات حتى عند انقطاع الإنترنت التام.
-  - طابور مزامنة آمن ذو سلاسل تشفيرية (`Hash-Chained Sync Queue`) يقوم بترحيل كافة المعاملات للسيرفر تلقائياً بمجرد عودة الاتصال.
-
-- **التحديث التلقائي الصامت للديسكتوب (Frontend Hot-Update):**
-  - تطبيق الديسكتوب يتحقق تلقائياً في الخلفية من أحدث نسخة منشورة على Vercel ويقوم بتحديث ملفات الواجهة صامتاً مع نظام التراجع التلقائي (Atomic Swap & Rollback).
-
-- **سجل يومية الكاشير المتجدد تلقائياً (Cashier Orders Tracker):**
-  - يعرض حصرياً فواتير اليوم الحالي المرتبة من الأحدث إلى الأقدم.
-  - بمجرد حلول منتصف الليل (12:00 ص)، يبدأ السجل تلقائياً بيوم جديد نظيف ويصبح فارغاً لليوم الجديد.
-  - **لا يتم حذف أي فاتورة على الإطلاق:** تظل كافة الفواتير القديمة محفوظة للأبد في قاعدة البيانات والسيرفر، وتظهر في لوحة تحكم الأدمن في قسم **سجل المبيعات الشامل** مع إمكانية الفلترة بالتواريخ وتصدير تقارير PDF و CSV.
-
-- **نظام طباعة فواتير حرارية معزول (Thermal Receipt Printing 80mm):**
-  - طباعة فورية على الطابعات الحرارية بدون أي هوامش مقطوعة أو فراغات غير مرغوبة، مع دعم كامل للبيانات باللغة العربية والأرقام الإنجليزية.
-
-- **إدارة المخزون والمكونات والوصفات (Recipe Engine):**
-  - خصم فوري ومباشر لخامات المشروبات من المخزن مع نظام رصد النواقص الذكي.
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](package.json)
+[![React](https://img.shields.io/badge/React-19-61dafb.svg?logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-6-646cff.svg?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Electron](https://img.shields.io/badge/Electron-Desktop-47848f.svg?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![TailwindCSS](https://img.shields.io/badge/TailwindCSS-v4-38bdf8.svg?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 
 ---
 
-## 🛠 التقنيات المستخدمة (Tech Stack)
+## 🌟 Key Features
 
-| المجال | التقنيات |
+- **⚡ Single Source of Truth Architecture:**
+  - One unified React codebase serving both the public web platform (hosted on Vercel) and the standalone desktop app (powered by Electron).
+  - Instant live updates during development without manual copying, rebuilds, or dual-repository maintenance.
+
+- **🛡️ True Offline-First Operation:**
+  - Embedded local **SQLite database** encrypted at rest using hardware-protected **AES-256-GCM**.
+  - Cashiers can create orders, register expenses, and record inventory restocking without an internet connection.
+  - Cryptographically hash-chained background synchronization queue automatically reconciles all transactions with the cloud database (MongoDB) as soon as network connectivity is restored.
+
+- **🔄 Silent Auto-Update System (Vercel-Tracked):**
+  - Production desktop installations continuously track the latest live frontend build published on Vercel.
+  - Downloads and applies frontend updates silently in the background with zero downtime and automatic atomic rollback on failure.
+
+- **📅 Automated Daily Orders Lifecycle:**
+  - Real-time cashier order tracker dedicated to the active business day.
+  - Automatically rolls over to a clean, fresh slate every night at 12:00 AM (midnight).
+  - All historical records remain permanently stored in the local SQLite database and cloud MongoDB, fully accessible and searchable anytime in the **Admin Sales Archive** with date filters, export options (PDF/CSV), and financial KPIs.
+
+- **🖨️ Precision Thermal Printing (80mm):**
+  - Self-contained zero-external-dependency receipt rendering engine with millimeter precision.
+  - Prevents clipped footers, unwanted trailing blank pages, and driver margin inconsistencies.
+
+- **📦 Dynamic Recipe Deduction Engine:**
+  - Automatically calculates ingredient consumption and deducts from raw inventory in real time upon order checkout.
+
+---
+
+## 🛠 Tech Stack
+
+| Domain | Technologies |
 | :--- | :--- |
-| **Frontend** | React 19, TypeScript, Vite 6, Tailwind CSS |
-| **Icons & UI** | Lucide React, Motion |
-| **Desktop Shell** | Electron, Context Isolation, SQLite (`sql.js`), Node Crypto |
-| **Export & Print** | HTML2Canvas Pro, jsPDF |
-| **Backend & Cloud** | Node.js, Express, MongoDB, Vercel |
+| **Frontend Framework** | React 19, TypeScript, Vite 6, React Router DOM |
+| **Styling & Icons** | Tailwind CSS v4, Lucide React, Motion |
+| **Desktop Shell** | Electron, Context Isolation, Node.js Crypto, Preload Bridge |
+| **Local Database** | Encrypted SQLite (`sql.js`) with rolling backup mechanism |
+| **Export & Reporting** | HTML2Canvas Pro, jsPDF |
+| **Backend & Cloud** | Node.js, Express, MongoDB Atlas, Vercel |
 
 ---
 
-## 🚀 تشغيل المشروع في وضع التطوير (Development)
+## 🚀 Getting Started
 
-### المتطلبات الأساسية
-- Node.js (v18+)
-- npm
+### Prerequisites
+- [Node.js](https://nodejs.org/) (v18.0.0 or higher)
+- [npm](https://www.npmjs.com/) (v9.0.0 or higher)
 
-### 1. تثبيت الحزم
+### Installation
+Clone the repository and install all dependencies:
 ```bash
+git clone https://github.com/Sayed-Herzallah/elfishawy_Cafe_Front-End.git
+cd elfishawy_Cafe_Front-End
 npm install
 ```
 
-### 2. تشغيل الويب فقط (Web Browser)
+---
+
+## 💻 Development Workflow
+
+### Web Platform Only
+Run the Vite development server with local proxy:
 ```bash
 npm run dev
 ```
-يفتح على الرابط: `http://localhost:3000`
+Access the app in your browser at: `http://localhost:3000`
 
-### 3. تشغيل تطبيق الديسكتوب مع الـ Hot Reload للفرونت
+### Desktop Application with Live Hot Reload
+Launch Electron directly connected to the Vite development server:
 ```bash
 npm run desktop:dev
 ```
-يقوم بتشغيل سيرفر Vite وتشغيل نافذة Electron مرتبطة به مباشرة، بحيث أي تعديل في كود الـ React ينعكس لحظياً على تطبيق الديسكتوب دون إعادة بناء.
+Any change made in `src/` immediately updates the desktop application UI without reloading or restarting.
 
 ---
 
-## 📦 بناء نسخة الإنتاج (Production Build)
+## 📦 Building for Production
 
-### 1. بناء ملفات الويب والمانيفست
+### 1. Build Web Assets
 ```bash
 npm run build
 ```
 
-### 2. بناء ملف تثبيت الديسكتوب لنظام ويندوز (`.exe Setup`)
+### 2. Build Electron Bundle (Relative Path Assets)
+```bash
+npm run build:electron
+```
+
+### 3. Generate Windows Installer (`.exe`)
 ```bash
 npm run dist:win
 ```
-سيتم توليد ملف التثبيت داخل مجلد `release/` باسم:
-`ElFishawy Cafe Setup.exe`
+The setup package will be generated under the `release/` directory:
+`release/ElFishawy Cafe Setup.exe`
 
 ---
 
-## 📂 الهيكل التنظيمي للمشروع
+## 📂 Project Structure
 
 ```text
-├── desktop/                  # كود Electron (Main process, Preload, Updater, SQLite)
+├── desktop/                  # Electron main process & desktop integrations
 │   ├── main/
-│   │   ├── main.js           # نقطة انطلاق الديسكتوب والنوافذ
-│   │   ├── db.js             # محرك SQLite المشفر محلياً
-│   │   ├── sync.js           # محرك المزامنة التلقائية مع السيرفر
-│   │   ├── ipc.js            # جسور التواصل بين Electron وReact
-│   │   └── frontendUpdater.js# نظام التحديث الذاتي التلقائي
+│   │   ├── main.js           # Electron window lifecycle & entry point
+│   │   ├── db.js             # Encrypted local SQLite engine
+│   │   ├── sync.js           # Background sync queue & cloud reconciler
+│   │   ├── ipc.js            # IPC handlers for offline operations
+│   │   └── frontendUpdater.js# Silent frontend hot-updater
 │   └── preload/
-│       └── preload.cjs       # جسر الحماية وسياق الـ APIs
-├── src/                      # كود تطبيق الـ React الموحد
-│   ├── components/           # المكونات المشتركة (الأزرار، المودال، الطباعة)
-│   ├── pages/                # شاشات التطبيق (الكاشير، الأدمن، المخزن)
-│   ├── services/             # خدمات الربط بالـ API وقاعدة البيانات المحلية
-│   └── utils/                # دوال التنسيق، التواريخ، ومساعدات التقارير
-└── scripts/                  # سكربتات توليد المانيفست وبناء الحزم
+│       └── preload.cjs       # Secure context bridge API
+├── src/                      # Unified React frontend application
+│   ├── components/           # Reusable UI components & modals
+│   ├── contexts/             # Auth and notification state providers
+│   ├── pages/                # Application views (POS, Tracker, Admin, Inventory)
+│   ├── routes/               # Role-based route definitions
+│   ├── services/             # API client, offline store & sync triggers
+│   └── utils/                # Date/number formatters, PDF/CSV exporters
+└── scripts/                  # Build manifests & update generation scripts
 ```
 
 ---
 
-## 📄 الترخيص (License)
-جميع الحقوق محفوظة لمقهى الفيشاوي © 2026.
+## 📄 License & Attribution
+
+All rights reserved © 2026 **El-Fishawy Cafe**. Developed by [Sayed Herzallah](https://github.com/Sayed-Herzallah).
