@@ -3,52 +3,8 @@ export const isElectron = (): boolean => {
   return typeof window !== 'undefined' && !!window.electronAPI?.isElectron;
 };
 
-// ── كاش فواتير عام (localStorage) — يعمل في المتصفح والديسكتوب ──
-// الهدف: لما النت ينقطع، سجل الفواتير يعرض نفس الفواتير اللي اتحمّلت آخر مرة أونلاين.
-const ORDERS_CACHE_KEY = 'ef_cached_orders_v1';
-const MAX_CACHED_ORDERS = 400;
-
-function readWebOrdersCache(): any[] {
-  try {
-    if (typeof localStorage === 'undefined') return [];
-    const raw = localStorage.getItem(ORDERS_CACHE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeWebOrdersCache(orders: any[]): void {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.setItem(ORDERS_CACHE_KEY, JSON.stringify((orders || []).slice(0, MAX_CACHED_ORDERS)));
-  } catch {
-    /* مساحة التخزين ممتلئة أو وضع خاص — الكاش تحسيني مش حرج */
-  }
-}
-
 export const offlineStore = {
   isDesktop: isElectron,
-
-  /** هل الكاش المحلي فيه نفس بيانات اليوم؟ (تشخيص لمشكلة 3 فواتير أوفلاين) */
-  async getOrdersCacheStatus(): Promise<{ count: number; newest: string | null; oldest: string | null }> {
-    try {
-      const cached = readWebOrdersCache();
-      const times = cached
-        .map((o: any) => new Date(o?.createdAt || o?.created_at || 0).getTime() || 0)
-        .filter((t: number) => t > 0)
-        .sort((a: number, b: number) => a - b);
-      return {
-        count: cached.length,
-        newest: times.length ? new Date(times[times.length - 1]).toISOString() : null,
-        oldest: times.length ? new Date(times[0]).toISOString() : null,
-      };
-    } catch {
-      return { count: 0, newest: null, oldest: null };
-    }
-  },
 
   async isOnline(): Promise<boolean> {
     if (!navigator.onLine) return false;
@@ -79,31 +35,7 @@ export const offlineStore = {
   },
 
   async cacheOrders(records: any[]): Promise<void> {
-    // 1) كاش فوري في المتصفح (localStorage) — يضمن ظهور كل الفواتير أوفلاين
-    //    حتى خارج الديسكتوب (Chrome/الموبايل)، بنفس بيانات السيرفر الكاملة
-    //    (رقم الفاتورة، الطاولة، الوقت، أسماء المشروبات).
-    writeWebOrdersCache(records || []);
-    // 2) كاش SQLite في الديسكتوب — مهم لأسعار وأسماء الأصناف عند البيع أوفلاين
     return this.cacheEntities('orders', records);
-  },
-
-  /** إضافة فاتورة واحدة لأول الكاش المحلي (بعد إنشاء طلب أونلاين بنجاح) */
-  async prependOrderToCache(order: any): Promise<void> {
-    if (!order) return;
-    try {
-      const cached = readWebOrdersCache();
-      const key = (o: any) => String(o?.clientOrderId || o?.client_order_id || o?._id || '');
-      const nk = key(order);
-      const filtered = nk ? cached.filter((o) => key(o) !== nk) : cached;
-      writeWebOrdersCache([order, ...filtered]);
-    } catch {
-      /* تجاهل — الكاش تحسيني مش حرج */
-    }
-  },
-
-  /** قراءة كاش المتصفح مباشرة (تستخدم كـ fallback عند انقطاع النت) */
-  async getWebCachedOrders(): Promise<any[]> {
-    return readWebOrdersCache();
   },
 
   async getCachedProducts(): Promise<any[]> {
@@ -177,35 +109,10 @@ export const offlineStore = {
   },
 
   async getOfflineOrders(): Promise<any[]> {
-    const webCached = readWebOrdersCache();
     if (isElectron() && window.electronAPI?.getOfflineOrders) {
-      try {
-        const sqliteOrders = (await window.electronAPI.getOfflineOrders()) || [];
-        // دمج المصدرين: صفوف SQLite هي الأحدث (حالات المزامنة والطلبات الأوفلاين)،
-        // وكاش المتصفح يكمّل باقي الفواتير — بدون أي تكرار.
-        const seen = new Set<string>();
-        const merged: any[] = [];
-        const push = (o: any) => {
-          if (!o) return;
-          const k = String(o.clientOrderId || o.client_order_id || o._id || '');
-          if (k && seen.has(k)) return;
-          if (k) seen.add(k);
-          merged.push(o);
-        };
-        sqliteOrders.forEach(push);
-        webCached.forEach(push);
-        merged.sort((a, b) => {
-          const ta = new Date(a.createdAt || a.created_at || 0).getTime() || 0;
-          const tb = new Date(b.createdAt || b.created_at || 0).getTime() || 0;
-          return tb - ta;
-        });
-        return merged;
-      } catch {
-        return webCached;
-      }
+      return await window.electronAPI.getOfflineOrders();
     }
-    // وضع المتصفح: كل الفواتير المحفوظة من آخر تحميل أونلاين
-    return webCached;
+    return [];
   },
 
   // 2. OFFLINE EXPENSE / PURCHASE
