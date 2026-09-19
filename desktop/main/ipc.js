@@ -243,8 +243,30 @@ export function setupIpcHandlers(mainWindow) {
   ipcMain.handle('offline:create-order', async (_event, orderData) => {
     try {
       const db = getDb();
-      const clientOrderId = `off_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-      const tempOrderNumber = `OFF-${Math.floor(1000 + Math.random() * 9000)}`;
+      const clientOrderId = orderData.clientOrderId || `off_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+
+      // ─── رقم فاتورة مؤقت تسلسلي بدل الرقم العشوائي ──────────────────────────
+      // نقرأ أكبر order_number نقي (أرقام فقط) من SQLite المحلية ونزيد عليه 1.
+      // هكذا يبدو الرقم المؤقت متسلسلاً (#46، #47 ...) بدل رقم عشوائي (#4521).
+      // بعد المزامنة مع السيرفر، الرقم الحقيقي يحل محله تلقائياً في الـ UI.
+      let tempOrderNumber;
+      try {
+        const lastNumRes = db.exec(
+          `SELECT MAX(CAST(order_number AS INTEGER)) AS last_num
+           FROM orders
+           WHERE order_number GLOB '[0-9]*'
+             AND CAST(order_number AS INTEGER) < 1000000`
+        );
+        const lastNum =
+          lastNumRes.length && lastNumRes[0].values.length
+            ? Number(lastNumRes[0].values[0][0]) || 0
+            : 0;
+        tempOrderNumber = String(lastNum + 1);
+      } catch {
+        // احتياط: لو فشلت القراءة → رقم مميز يُظهر أنه مؤقت (ما بيعارضش السيرفر)
+        tempOrderNumber = `tmp_${Date.now() % 100000}`;
+      }
+
       const now = new Date().toISOString();
 
       // Calculate total
@@ -341,12 +363,14 @@ export function setupIpcHandlers(mainWindow) {
         success: true,
         data: {
           _id: clientOrderId,
+          clientOrderId,
           orderNumber: tempOrderNumber,
           items: processedItems,
           totalAmount,
           status: 'completed',
           tableNumber: orderData.tableNumber,
           notes: orderData.notes,
+          syncStatus: 'PENDING_SYNC',
           createdAt: now,
           updatedAt: now,
           isOffline: true,

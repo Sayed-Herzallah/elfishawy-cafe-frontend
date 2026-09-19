@@ -107,18 +107,38 @@ export const normalizeOrder = (raw: any, lookup?: ProductLookup): Order => {
 
 export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] => {
   const byId = new Map<string, any>();
-  const clientIds = new Set<string>();
+  // خريطة منفصلة: clientOrderId → مفتاح الصف في byId
+  // تمنع ظهور نفس الفاتورة مرتين (مرة بـ clientOrderId ومرة بـ _id السيرفر)
+  const byCid = new Map<string, string>();
+
+  const isPending = (o: any): boolean =>
+    String(o?.syncStatus || o?.sync_status || '').toUpperCase() === 'PENDING_SYNC';
 
   const take = (list: any[]) => {
     for (const o of list) {
       if (!o) continue;
-      const id = String(o._id || '');
+      const id  = String(o._id || '');
       const cid = String(o.clientOrderId || o.client_order_id || '');
+
+      // ── هل الفاتورة موجودة بنفس clientOrderId؟ ──────────────────────────
+      // (مثلاً: فاتورة أوفلاين جاءت مرة بـ clientOrderId ومرة بـ _id السيرفر)
+      if (cid && byCid.has(cid)) {
+        const existingKey = byCid.get(cid)!;
+        const existing = byId.get(existingKey);
+        // نحتفظ بالنسخة المُزامَنة (غير PENDING) وإن وُجدت
+        if (existing && isPending(existing) && !isPending(o)) {
+          byId.set(existingKey, o);
+        }
+        continue;
+      }
+
+      // ── هل الفاتورة موجودة بنفس _id؟ ────────────────────────────────────
       if (id && byId.has(id)) continue;
-      if (cid && clientIds.has(cid)) continue;
-      if (id) byId.set(id, o);
-      else if (cid) byId.set(cid, o);
-      if (cid) clientIds.add(cid);
+
+      const key = id || cid;
+      if (!key) continue;
+      byId.set(key, o);
+      if (cid) byCid.set(cid, key);
     }
   };
 
@@ -131,6 +151,8 @@ export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] =
     return tb - ta;
   });
 };
+
+
 
 /**
  * رقم الفاتورة المعروض للكاشير.

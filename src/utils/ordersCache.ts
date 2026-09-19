@@ -110,24 +110,42 @@ export const normalizeCachedOrderRows = (rows: any[]): any[] => {
 /** دمج قائمتين من الفواتير بدون تكرار (دمج كاش SQLite مع لقطة localStorage) */
 export const mergeCachedOrders = (primary: any[] = [], extra: any[] = []): any[] => {
   const byKey = new Map<string, any>();
+  // خريطة منفصلة: clientOrderId → مفتاح الصف في byKey
+  const byCid = new Map<string, string>();
+
   const take = (list: any[]) => {
     (list || []).forEach((order) => {
       if (!order || typeof order !== 'object') return;
+      const id  = String(order._id || order.clientOrderId || order.client_order_id || '');
+      const cid = String(order.clientOrderId || order.client_order_id || '');
+
+      // هل الفاتورة موجودة بنفس clientOrderId؟ → نحتفظ بالنسخة المُزامَنة
+      if (cid && byCid.has(cid)) {
+        const existingKey = byCid.get(cid)!;
+        const existing = byKey.get(existingKey);
+        if (existing) {
+          // صف «قيد المزامنة» يُستبدل بالنسخة المُزامَنة عند وجودها
+          if (isPendingSync(existing) && !isPendingSync(order)) byKey.set(existingKey, order);
+        }
+        return;
+      }
+
       const key = uniqueKeyOf(order);
       if (!key) return;
       const previous = byKey.get(key);
       if (previous) {
-        // نفس الفاتورة من مصدرين: نُبقي النسخة المُزامَنة ونطرح صف «قيد المزامنة»
         if (isPendingSync(previous) && !isPendingSync(order)) byKey.set(key, order);
         return;
       }
       byKey.set(key, order);
+      if (cid) byCid.set(cid, key);
     });
   };
   take(primary);
   take(extra);
   return Array.from(byKey.values()).sort((a, b) => timeOf(b) - timeOf(a));
 };
+
 
 /** قراءة لقطة الفواتير المحفوظة في المتصفح */
 export const readOrdersSnapshot = (): any[] => {
