@@ -39,6 +39,11 @@
       "createStartMenuShortcut": true,
       "shortcutName": "كافيه الفيشاوي",
       "runAfterFinish": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "Sayed-Herzallah",
+      "repo": "elfishawy-cafe-frontend"
     }
   },
   "dependencies": {

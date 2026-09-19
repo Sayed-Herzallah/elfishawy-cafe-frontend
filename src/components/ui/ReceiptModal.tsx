@@ -3,6 +3,7 @@ import { Order } from '../../types';
 import { Button } from './Button';
 import { X, Printer, AlertTriangle, PackageX, ReceiptText, Clock, Calendar, Hash } from 'lucide-react';
 import { formatPrice, formatNumber, formatDateTime, formatDate, formatTime, formatStat } from '../../utils/formatters';
+import { displayOrderNumber } from '../../utils/orderDisplay';
 import { getCleanNotes } from '../../utils/orderShortageJournal';
 
 /* ============================================================================
@@ -475,7 +476,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
                 كافيه الفيشاوي
               </p>
               <p className="text-xl font-black font-arabic-heading leading-tight truncate">
-                فاتورة #{String(order.orderNumber || order._id || '').slice(-6)}
+                فاتورة #{displayOrderNumber(order)}
               </p>
             </div>
           </div>
@@ -520,7 +521,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             {/* صف الفاتورة والطاولة */}
             <div className="mt-2 flex items-center justify-center gap-2 text-sm text-gray-800 font-bold" dir="rtl">
               <span className="border-2 border-gray-700 rounded-md py-1 px-3 bg-gray-50">
-                فاتورة: <strong className="font-mono text-sm font-extrabold text-gray-900">{String(order.orderNumber || order._id || '').slice(-6)}</strong>
+                فاتورة: <strong className="font-mono text-sm font-extrabold text-gray-900">{displayOrderNumber(order)}</strong>
               </span>
               <span className="border-2 border-gray-700 rounded-md py-1 px-3 bg-gray-50">
                 طاولة: <strong className="font-mono text-sm font-extrabold text-gray-900">{order.tableNumber || '—'}</strong>

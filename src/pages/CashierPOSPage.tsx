@@ -433,14 +433,17 @@ export const CashierPOSPage: React.FC = () => {
     const orderTotal = cart.reduce((s, i) => s + i.product.price * i.quantity, 0);
 
     // ─── بناء فاتورة مؤقتة فوراً من البيانات المحلية ───────────────
-    const clientOrderId = `off_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const ts = Date.now();
+    const clientOrderId = `off_${ts}_${Math.random().toString(36).slice(2, 7)}`;
+    // رقم مؤقت بالأرقام فقط (آخر 6 أرقام من الـ timestamp) ← يتبدّل برقم حقيقي لما السيرفر يرد
+    const tempOrderNumber = ts.toString().slice(-6);
     const now = new Date().toISOString();
     const lookup = buildProductLookup(products);
 
     const optimisticRaw = {
       _id: clientOrderId,
       clientOrderId,
-      orderNumber: clientOrderId,
+      orderNumber: tempOrderNumber,
       items: cartSnapshot,
       totalAmount: orderTotal,
       status: 'completed' as const,
