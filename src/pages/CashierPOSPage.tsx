@@ -475,7 +475,9 @@ export const CashierPOSPage: React.FC = () => {
         showToast('تم تأكيد الطلب وحفظ الفاتورة بنجاح!');
         setSelectedReceiptOrder(orderRes.data);
         handleClearCart();
-        loadData();
+        // 🚀 التحديث في الخلفية — لا ننتظره: الفاتورة اتحفظت وظهرت فوراً في allOrders
+        // setTimeout(0) بيضمن إن الـ UI يتحدث أولاً (receipt modal يظهر) قبل ما يبدأ الطلبات
+        setTimeout(() => loadData(), 0);
       }
     } catch (err: any) {
       showError(err);
