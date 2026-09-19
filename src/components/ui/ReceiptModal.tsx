@@ -599,12 +599,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
                 <span className="font-mono text-sm text-[#2e5b9f] font-extrabold">{formatNumber(totalItemsCount)} قطعة</span>
               </div>
               <div className="flex items-center justify-between border-t border-gray-200/60 pt-1.5">
-                <span className="text-gray-500">تاريخ الفاتورة:</span>
-                <span className="font-mono text-gray-900">{formatDate(order.createdAt)}</span>
-              </div>
-              <div className="flex items-center justify-between border-t border-gray-200/60 pt-1.5">
-                <span className="text-gray-500">وقت الفاتورة:</span>
-                <span className="font-mono text-gray-900">{formatTime(order.createdAt)}</span>
+                <span className="text-gray-500">إجمالي الفاتورة:</span>
+                <span className="font-mono text-sm text-emerald-700 font-extrabold">{formatPrice(order.totalAmount)}</span>
               </div>
             </div>
           </div>

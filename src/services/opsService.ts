@@ -2,7 +2,7 @@ import { ApiClient } from './api/apiClient';
 import { ApiResponse, Order, InventoryItem, Expense, KPIStats, ChartsData, OrderStatus } from '../types';
 import { offlineStore } from './data/offlineStore';
 import { mergeOrderLists } from '../utils/orderDisplay';
-import { saveOrdersSnapshot } from '../utils/ordersCache';
+import { saveOrdersSnapshot, readOrdersSnapshot } from '../utils/ordersCache';
 
 const ORDERS_FETCH_TIMEOUT_MS = 8000;
 
@@ -56,6 +56,15 @@ export const orderService = {
           success: true,
           message: 'No cached orders available',
           data: [],
+        };
+      }
+      // المتصفح: نحاول localStorage snapshot كطبقة أخيرة قبل الـ throw
+      const snapshot = readOrdersSnapshot();
+      if (snapshot.length > 0) {
+        return {
+          success: true,
+          message: 'Loaded from browser local cache',
+          data: snapshot as Order[],
         };
       }
       throw err;

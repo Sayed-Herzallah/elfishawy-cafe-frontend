@@ -21,6 +21,7 @@ import {
   resolveOrderItemName,
   displayOrderNumber,
 } from '../utils/orderDisplay';
+import { readOrdersSnapshot } from '../utils/ordersCache';
 import {
   Plus,
   Trash2,
@@ -158,7 +159,13 @@ export const CashierPOSPage: React.FC = () => {
 
       ordPromise
         .then((res) => { if (res.success && res.data) applyOrders(res.data); })
-        .catch((err) => console.error('Silent orders load error:', err));
+        .catch((err) => {
+          console.error('Silent orders load error:', err);
+          // طبقة أمان ثانية: لو getOrders رمى error رغم fallback السيرفس،
+          // نقرأ الـ snapshot مباشرة ونعرض ما تم حفظه سابقاً
+          const snapshot = readOrdersSnapshot();
+          if (snapshot.length > 0) applyOrders(snapshot as any);
+        });
 
       recPromise
         .then((res) => {
@@ -239,6 +246,14 @@ export const CashierPOSPage: React.FC = () => {
         }
       } catch (err) {
         console.error('Silent POS data refresh error:', err);
+        // عند فشل التحديث الدوري (بدون نت): نحاول تحديث الفواتير من الـ snapshot فقط
+        // بدون مسح allOrders الحالية (تظل الفواتير المعروضة كما هي)
+        try {
+          const snapshot = readOrdersSnapshot();
+          if (snapshot.length > 0) applyOrders(snapshot as any);
+        } catch {
+          /* نتجاهل بصمت */
+        }
       }
     }, 15000);
 
