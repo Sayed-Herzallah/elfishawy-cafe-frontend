@@ -435,8 +435,16 @@ export const CashierPOSPage: React.FC = () => {
     // ─── بناء فاتورة مؤقتة فوراً من البيانات المحلية ───────────────
     const ts = Date.now();
     const clientOrderId = `off_${ts}_${Math.random().toString(36).slice(2, 7)}`;
-    // رقم مؤقت بالأرقام فقط (آخر 6 أرقام من الـ timestamp) ← يتبدّل برقم حقيقي لما السيرفر يرد
-    const tempOrderNumber = ts.toString().slice(-6);
+
+    // ─── رقم تسلسلي مؤقت = آخر رقم فاتورة معروف + 1 ─────────────────
+    // هذا يجعل الرقم المؤقت يشبه تسلسل السيرفر تماماً (#46, #47, ...)
+    // لما السيرفر يرد → الرقم الحقيقي يحل محله في الـ UI والـ localStorage
+    const lastKnownNumber = allOrders.reduce((max, o) => {
+      const n = parseInt(String(o.orderNumber ?? o._id ?? '').replace(/\D/g, ''), 10);
+      return isNaN(n) ? max : Math.max(max, n);
+    }, 0);
+    const tempOrderNumber = String(lastKnownNumber > 0 ? lastKnownNumber + 1 : ts % 100000);
+
     const now = new Date().toISOString();
     const lookup = buildProductLookup(products);
 
