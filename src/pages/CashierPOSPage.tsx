@@ -21,7 +21,7 @@ import {
   resolveOrderItemName,
   displayOrderNumber,
 } from '../utils/orderDisplay';
-import { readOrdersSnapshot } from '../utils/ordersCache';
+import { readOrdersSnapshot, saveOrdersSnapshot } from '../utils/ordersCache';
 import {
   Plus,
   Trash2,
@@ -396,13 +396,13 @@ export const CashierPOSPage: React.FC = () => {
   const totalAmount = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-  const handleCheckoutAndPrint = async () => {
+  const handleCheckoutAndPrint = () => {
     if (cart.length === 0) {
       showToast('السلة فارغة. الرجاء اختيار طلبات أولاً', 'error');
       return;
     }
 
-    // ✅ رقم الطاولة إجباري — Validation أحمر على الحقل نفسه
+    // ✅ رقم الطاولة إجباري
     const parsedTableNumber = tableNumber ? parseInt(tableNumber, 10) : NaN;
     if (isNaN(parsedTableNumber) || parsedTableNumber < 1) {
       setTableNumberError('رقم الطاولة مطلوب — اكتب رقم الطاولة قبل تأكيد الطلب');
@@ -411,79 +411,108 @@ export const CashierPOSPage: React.FC = () => {
     }
     setTableNumberError('');
 
-    try {
-      setIsSubmitting(true);
+    // حماية ضد الضغط المزدوج السريع
+    if (isSubmitting) return;
+    setIsSubmitting(true);
 
-      // ✅ حساب العجز اللحظي للمواد الثانوية (مثل السكر أو اللبن) وقت إنشاء الفاتورة
-      const shortagesForThisOrder = new Set<string>();
-      cart.forEach((cartItem) => {
-        const depSec = recipeDepletedMap[cartItem.product._id];
-        if (depSec && depSec.length > 0) {
-          depSec.forEach((name) => shortagesForThisOrder.add(name));
-        }
-      });
-      const shortagesList = Array.from(shortagesForThisOrder);
+    // ─── جمع بيانات العجز والملاحظات ───────────────────────────────
+    const shortagesForThisOrder = new Set<string>();
+    cart.forEach((cartItem) => {
+      const depSec = recipeDepletedMap[cartItem.product._id];
+      if (depSec && depSec.length > 0) depSec.forEach((n) => shortagesForThisOrder.add(n));
+    });
+    const shortagesList = Array.from(shortagesForThisOrder);
+    const payloadNotes = appendShortagesToNotes(orderNote, shortagesList);
 
-      // ✅ دمج وسم العجز داخل notes لترسل وتخزن في قاعدة البيانات في السيرفر (Vercel)
-      // ليقرأها أي جهاز وسيرفر السحاب بنفس الدقة للأبد!
-      const payloadNotes = appendShortagesToNotes(orderNote, shortagesList);
+    // ─── لقطة ثابتة من السلة قبل المسح ─────────────────────────────
+    const cartSnapshot = cart.map((item) => ({
+      product: { _id: item.product._id, name: item.product.name, price: item.product.price },
+      quantity: item.quantity,
+      price: item.product.price,
+    }));
+    const orderTotal = cart.reduce((s, i) => s + i.product.price * i.quantity, 0);
 
-      const orderPayload = {
-        items: cart.map((item) => ({
-          product: item.product._id,
-          quantity: item.quantity,
-        })),
-        tableNumber: parsedTableNumber,
-        notes: payloadNotes,
-      };
+    // ─── بناء فاتورة مؤقتة فوراً من البيانات المحلية ───────────────
+    const clientOrderId = `off_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const now = new Date().toISOString();
+    const lookup = buildProductLookup(products);
 
-      const orderRes = await orderService.createOrder(orderPayload);
-      if (orderRes.success && orderRes.data) {
-        // ✅ لا حاجة لخصم المخزون من هنا — الـ Backend يخصم stockQuantity والمخزون الخام
-        // (عبر الوصفات) تلقائياً عند إنشاء الطلب. أي خصم إضافي كان يسبب خصماً مزدوجاً.
+    const optimisticRaw = {
+      _id: clientOrderId,
+      clientOrderId,
+      orderNumber: clientOrderId,
+      items: cartSnapshot,
+      totalAmount: orderTotal,
+      status: 'completed' as const,
+      tableNumber: parsedTableNumber,
+      notes: payloadNotes,
+      syncStatus: 'PENDING_SYNC',
+      createdAt: now,
+      updatedAt: now,
+    };
+    const optimisticOrder = normalizeOrder(optimisticRaw, lookup) as Order;
 
-        if (shortagesList.length > 0) {
-          recordOrderShortages(
-            orderRes.data._id,
-            String(orderRes.data.orderNumber || ''),
-            shortagesList
-          );
-        }
+    // ─── تحديث الـ UI فوراً — بدون أي انتظار ───────────────────────
+    setAllOrders((prev) => {
+      const updated = [optimisticOrder, ...prev];
+      setRecentOrders(updated.slice(0, 4));
+      return updated;
+    });
+    setSelectedReceiptOrder(optimisticOrder);
+    saveOrdersSnapshot([optimisticRaw]);
 
-        // ✅ أضف الطلب الجديد لقائمة allOrders فوراً — بدون انتظار loadData()
-        // هذا يضمن ظهور الفاتورة في "سجل الفواتير اليومية" حتى وقت انقطاع الإنترنت
-        const lookup = buildProductLookup(products);
-        const newOrder = normalizeOrder({
-          ...orderRes.data,
-          createdAt: orderRes.data.createdAt || (orderRes.data as any).created_at || new Date().toISOString(),
-          orderNumber: orderRes.data.orderNumber || (orderRes.data as any).order_number,
-          tableNumber: orderRes.data.tableNumber ?? (orderRes.data as any).table_number,
-          items: cart.map((item) => ({
-            product: { _id: item.product._id, name: item.product.name, price: item.product.price },
-            quantity: item.quantity,
-            price: item.product.price,
-          })),
-        }, lookup);
-        setAllOrders((prev) => {
-          const alreadyExists = prev.some((o) => o._id === newOrder._id);
-          if (alreadyExists) return prev;
-          const updated = [newOrder as Order, ...prev];
-          setRecentOrders(updated.slice(0, 4));
-          return updated;
-        });
-
-        showToast('تم تأكيد الطلب وحفظ الفاتورة بنجاح!');
-        setSelectedReceiptOrder(orderRes.data);
-        handleClearCart();
-        // 🚀 التحديث في الخلفية — لا ننتظره: الفاتورة اتحفظت وظهرت فوراً في allOrders
-        // setTimeout(0) بيضمن إن الـ UI يتحدث أولاً (receipt modal يظهر) قبل ما يبدأ الطلبات
-        setTimeout(() => loadData(), 0);
-      }
-    } catch (err: any) {
-      showError(err);
-    } finally {
-      setIsSubmitting(false);
+    if (shortagesList.length > 0) {
+      recordOrderShortages(clientOrderId, clientOrderId, shortagesList);
     }
+
+    showToast('تم تأكيد الطلب وحفظ الفاتورة بنجاح!');
+    handleClearCart();
+    setIsSubmitting(false);  // ← يُطلق الزر فوراً بعد عرض الـ UI
+
+    // ─── إرسال للسيرفر في الخلفية — بدون await ──────────────────────
+    const serverPayload = {
+      items: cartSnapshot.map((i) => ({ product: i.product._id, quantity: i.quantity })),
+      tableNumber: parsedTableNumber,
+      notes: payloadNotes,
+    };
+
+    orderService.createOrder(serverPayload)
+      .then((res) => {
+        if (!res.success || !res.data) return;
+        // استبدال الفاتورة المؤقتة بالنسخة الرسمية من السيرفر (رقم فاتورة حقيقي)
+        const serverOrder = normalizeOrder({
+          ...res.data,
+          createdAt: res.data.createdAt || now,
+          items: cartSnapshot,
+        }, lookup) as Order;
+
+        setAllOrders((prev) =>
+          prev.map((o) =>
+            o._id === clientOrderId || (o as any).clientOrderId === clientOrderId
+              ? serverOrder
+              : o
+          )
+        );
+        setRecentOrders((prev) =>
+          prev.map((o) =>
+            o._id === clientOrderId || (o as any).clientOrderId === clientOrderId
+              ? serverOrder
+              : o
+          )
+        );
+        // لو الكاشير لسه شايف الفاتورة المؤقتة → حدّثها برقم الفاتورة الحقيقي
+        setSelectedReceiptOrder((prev) =>
+          prev && (prev._id === clientOrderId || (prev as any).clientOrderId === clientOrderId)
+            ? serverOrder
+            : prev
+        );
+        saveOrdersSnapshot([res.data]);
+        // تحديث المخزون في الخلفية بعد ما السيرفر يرد
+        setTimeout(() => loadData(), 500);
+      })
+      .catch(() => {
+        // الفاتورة محفوظة محلياً — ستُزامن تلقائياً
+      });
   };
 
   const filteredProducts = products.filter((p) => {
