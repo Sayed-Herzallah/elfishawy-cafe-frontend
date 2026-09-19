@@ -97,10 +97,17 @@ export const orderService = {
       }
     }
 
+    /** مُعرّف عميل فريد — يُستخدم لدمج النسخة المحلية بالمزامنة لاحقاً */
+    const clientOrderId = `off_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    /** timeout 5 ثواني للـ POST — لو Vercel بطيء نرجع نسخة محلية فوراً */
+    const CREATE_ORDER_TIMEOUT_MS = 5000;
+
     try {
       const res = await ApiClient.request<Order>('/orders', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, clientOrderId }),
+        signal: AbortSignal.timeout(CREATE_ORDER_TIMEOUT_MS),
       });
       if (res.success && res.data) {
         saveOrdersSnapshot([res.data]);
@@ -109,10 +116,16 @@ export const orderService = {
         }
       }
       return res;
-    } catch (networkErr) {
-      // If request failed due to network error and in Desktop, save offline immediately
+    } catch (networkErr: any) {
+      // timeout أو خطأ شبكة → نبني فاتورة محلية فوراً ونبعت للسيرفر في الخلفية
+      const isTimeout =
+        networkErr?.name === 'TimeoutError' ||
+        networkErr?.name === 'AbortError' ||
+        networkErr?.code === 'ECONNABORTED';
+
+      // Desktop: حفظ أوفلاين كامل
       if (offlineStore.isDesktop()) {
-        const offlineRes = await offlineStore.createOfflineOrder(payload);
+        const offlineRes = await offlineStore.createOfflineOrder({ ...payload, clientOrderId } as any);
         if (offlineRes.success && offlineRes.data) {
           saveOrdersSnapshot([offlineRes.data]);
           return {
@@ -122,6 +135,42 @@ export const orderService = {
           };
         }
       }
+
+      // متصفح + timeout → نصنع فاتورة مبدئية محلياً ونرفعها في الخلفية
+      if (isTimeout) {
+        const now = new Date().toISOString();
+        const localOrder: any = {
+          _id: clientOrderId,
+          clientOrderId,
+          orderNumber: clientOrderId,
+          items: payload.items,
+          totalAmount: 0,
+          status: 'completed',
+          tableNumber: payload.tableNumber,
+          notes: payload.notes || '',
+          syncStatus: 'PENDING_SYNC',
+          createdAt: now,
+          updatedAt: now,
+        };
+        saveOrdersSnapshot([localOrder]);
+
+        // محاولة رفع الفاتورة للسيرفر في الخلفية بهدوء
+        ApiClient.request<Order>('/orders', {
+          method: 'POST',
+          body: JSON.stringify({ ...payload, clientOrderId }),
+        })
+          .then((res) => {
+            if (res.success && res.data) saveOrdersSnapshot([res.data]);
+          })
+          .catch(() => { /* سيُعاد المحاولة عند أي نشاط قادم */ });
+
+        return {
+          success: true,
+          message: 'تم حفظ الفاتورة مؤقتاً وسيتم رفعها تلقائياً',
+          data: localOrder as Order,
+        };
+      }
+
       throw networkErr;
     }
   },
