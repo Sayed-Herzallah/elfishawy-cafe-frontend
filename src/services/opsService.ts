@@ -79,6 +79,7 @@ export const orderService = {
     items: { product: string; quantity: number; price?: number }[];
     tableNumber: number;
     notes?: string;
+    clientOrderId?: string;  // ← يُمرَّر من handleCheckoutAndPrint للتطابق لاحقاً
   }): Promise<ApiResponse<Order>> => {
     // If on Desktop, check if online before calling server
     if (offlineStore.isDesktop()) {
@@ -86,7 +87,6 @@ export const orderService = {
       if (!isOnline) {
         const offlineRes = await offlineStore.createOfflineOrder(payload);
         if (offlineRes.success && offlineRes.data) {
-          // نحفظ نسخة في اللقطة حتى تظهر في «آخر الطلبات / فواتير اليوم» بعد أي إعادة تحميل
           saveOrdersSnapshot([offlineRes.data]);
           return {
             success: true,
@@ -97,16 +97,20 @@ export const orderService = {
       }
     }
 
-    /** مُعرّف عميل فريد — يُستخدم لدمج النسخة المحلية بالمزامنة لاحقاً */
-    const clientOrderId = `off_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    /** نستخدم الـ clientOrderId الممرَّر — أو نولّد جديد لو لم يُمرَّر */
+    const clientOrderId =
+      payload.clientOrderId ||
+      `off_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-    /** timeout 5 ثواني للـ POST — لو Vercel بطيء نرجع نسخة محلية فوراً */
-    const CREATE_ORDER_TIMEOUT_MS = 5000;
+    const { clientOrderId: _omit, ...serverBody } = payload as any;
+
+    /** timeout 8 ثواني — كافٍ لـ Vercel cold start بدون تعطيل الـ UI (الـ UI أصبح optimistic) */
+    const CREATE_ORDER_TIMEOUT_MS = 8000;
 
     try {
       const res = await ApiClient.request<Order>('/orders', {
         method: 'POST',
-        body: JSON.stringify({ ...payload, clientOrderId }),
+        body: JSON.stringify({ ...serverBody, clientOrderId }),
         signal: AbortSignal.timeout(CREATE_ORDER_TIMEOUT_MS),
       });
       if (res.success && res.data) {
@@ -117,15 +121,9 @@ export const orderService = {
       }
       return res;
     } catch (networkErr: any) {
-      // timeout أو خطأ شبكة → نبني فاتورة محلية فوراً ونبعت للسيرفر في الخلفية
-      const isTimeout =
-        networkErr?.name === 'TimeoutError' ||
-        networkErr?.name === 'AbortError' ||
-        networkErr?.code === 'ECONNABORTED';
-
-      // Desktop: حفظ أوفلاين كامل
+      // Desktop: حفظ أوفلاين كامل عند أي خطأ شبكة
       if (offlineStore.isDesktop()) {
-        const offlineRes = await offlineStore.createOfflineOrder({ ...payload, clientOrderId } as any);
+        const offlineRes = await offlineStore.createOfflineOrder({ ...serverBody, clientOrderId } as any);
         if (offlineRes.success && offlineRes.data) {
           saveOrdersSnapshot([offlineRes.data]);
           return {
@@ -135,42 +133,7 @@ export const orderService = {
           };
         }
       }
-
-      // متصفح + timeout → نصنع فاتورة مبدئية محلياً ونرفعها في الخلفية
-      if (isTimeout) {
-        const now = new Date().toISOString();
-        const localOrder: any = {
-          _id: clientOrderId,
-          clientOrderId,
-          orderNumber: clientOrderId,
-          items: payload.items,
-          totalAmount: 0,
-          status: 'completed',
-          tableNumber: payload.tableNumber,
-          notes: payload.notes || '',
-          syncStatus: 'PENDING_SYNC',
-          createdAt: now,
-          updatedAt: now,
-        };
-        saveOrdersSnapshot([localOrder]);
-
-        // محاولة رفع الفاتورة للسيرفر في الخلفية بهدوء
-        ApiClient.request<Order>('/orders', {
-          method: 'POST',
-          body: JSON.stringify({ ...payload, clientOrderId }),
-        })
-          .then((res) => {
-            if (res.success && res.data) saveOrdersSnapshot([res.data]);
-          })
-          .catch(() => { /* سيُعاد المحاولة عند أي نشاط قادم */ });
-
-        return {
-          success: true,
-          message: 'تم حفظ الفاتورة مؤقتاً وسيتم رفعها تلقائياً',
-          data: localOrder as Order,
-        };
-      }
-
+      // متصفح: رمي الخطأ — الـ caller (handleCheckoutAndPrint) قد حفظ الفاتورة optimistically
       throw networkErr;
     }
   },

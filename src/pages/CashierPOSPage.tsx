@@ -470,10 +470,13 @@ export const CashierPOSPage: React.FC = () => {
     setIsSubmitting(false);  // ← يُطلق الزر فوراً بعد عرض الـ UI
 
     // ─── إرسال للسيرفر في الخلفية — بدون await ──────────────────────
+    // نمرر نفس clientOrderId اللي بنيت بيه الفاتورة المؤقتة
+    // عشان لما السيرفر يرد نقدر نستبدل الفاتورة المؤقتة بالحقيقية صح
     const serverPayload = {
       items: cartSnapshot.map((i) => ({ product: i.product._id, quantity: i.quantity })),
       tableNumber: parsedTableNumber,
       notes: payloadNotes,
+      clientOrderId,  // ← نفس الـ ID المستخدم في الفاتورة المؤقتة
     };
 
     orderService.createOrder(serverPayload)
