@@ -13,6 +13,7 @@ import { exportElementToPdf } from '../../utils/pdfExport';
 import { useNotification } from '../../contexts/NotificationContext';
 import { BarChart3, TrendingUp, TrendingDown, DollarSign, Download, Award, AlertCircle, Calendar, PieChart, Medal, Info, X, ReceiptText } from 'lucide-react';
 import { formatPrice, formatNumber, formatDate } from '../../utils/formatters';
+import { displayOrderNumber } from '../../utils/orderDisplay';
 import {
   useSalesComparison,
   useExpensesComparison,
@@ -736,7 +737,7 @@ export const AdminReportsPage: React.FC = () => {
               <div key={order._id} className="flex items-center justify-between gap-2 p-3 rounded-xl bg-white border border-gray-100 hover:border-[#2e5b9f]/30 hover:shadow-sm transition">
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="w-7 h-7 rounded-lg bg-[#faf8f5] border border-gray-100 flex items-center justify-center font-mono text-[10px] font-black text-gray-700 shrink-0">
-                    #{String(order.orderNumber || order._id || '').slice(-4)}
+                    #{displayOrderNumber(order)}
                   </span>
                   <div className="flex flex-col min-w-0">
                     <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full w-fit ${

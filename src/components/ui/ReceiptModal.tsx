@@ -161,7 +161,7 @@ const buildReceiptBodyHTML = (
     <div class="r-header">
       <div class="r-title">كافيه الفيشاوي</div>
       <div class="r-invoice-row">
-        <span>رقم الفاتورة: <strong>${escapeHtmlText(String(order.orderNumber || order._id || '').slice(-6))}</strong></span>
+        <span>رقم الفاتورة: <strong>${escapeHtmlText(displayOrderNumber(order))}</strong></span>
         <span>طاولة: <strong>${escapeHtmlText(String(order.tableNumber ?? '—'))}</strong></span>
       </div>
       <div class="r-dt-row">

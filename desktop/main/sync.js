@@ -133,12 +133,23 @@ export async function processSyncQueue(mainWindow) {
             success = true;
             serverResult = data.data;
 
-            // Reconcile SQLite order with real Mongo _id and sequence orderNumber
+            // Reconcile SQLite order with real Mongo _id and sequence orderNumber safely
             if (serverResult && serverResult.orderNumber) {
-              db.run(
-                `UPDATE orders SET _id = ?, order_number = ?, sync_status = 'SYNCED', updated_at = ? WHERE client_order_id = ?`,
-                [serverResult._id, serverResult.orderNumber, new Date().toISOString(), clientOpId]
-              );
+              const nowIso = new Date().toISOString();
+              // إذا كان السجل بنفس الـ _id موجود مسبقاً (جاء من fetch سابق)، نحذف السطر المؤقت ونحدث المعتمد
+              const existingCheck = db.exec(`SELECT _id FROM orders WHERE _id = ?`, [serverResult._id]);
+              if (existingCheck.length && existingCheck[0].values.length) {
+                db.run(`DELETE FROM orders WHERE client_order_id = ? AND _id != ?`, [clientOpId, serverResult._id]);
+                db.run(
+                  `UPDATE orders SET order_number = ?, sync_status = 'SYNCED', client_order_id = ?, updated_at = ? WHERE _id = ?`,
+                  [serverResult.orderNumber, clientOpId, nowIso, serverResult._id]
+                );
+              } else {
+                db.run(
+                  `UPDATE orders SET _id = ?, order_number = ?, sync_status = 'SYNCED', updated_at = ? WHERE client_order_id = ?`,
+                  [serverResult._id, serverResult.orderNumber, nowIso, clientOpId]
+                );
+              }
             }
           } else {
             throw new Error(data.message || `Server returned ${orderResponse.status} for order`);

@@ -224,6 +224,25 @@ function runMigrations(db) {
   try { db.run(`ALTER TABLE sync_queue ADD COLUMN sequence_id INTEGER;`); } catch {}
   try { db.run(`ALTER TABLE sync_queue ADD COLUMN prev_hash TEXT;`); } catch {}
   try { db.run(`ALTER TABLE sync_queue ADD COLUMN op_hash TEXT;`); } catch {}
+
+  // Seed default offline cashier if no local users exist
+  try {
+    const userCountRes = db.exec(`SELECT COUNT(*) FROM local_users`);
+    const count = userCountRes.length && userCountRes[0].values.length ? Number(userCountRes[0].values[0][0]) || 0 : 0;
+    if (count === 0) {
+      // Password hash for 'CAShier@12345' via sha256 to match auth:verify-offline
+      const seedHash = '1305333a361fbaa6eecf000cbe35b2fcaf7905a82056fe98c8ce638d31c56224'; // sha256('CAShier@12345')
+      const offlineJwt = 'offline_default_cashier_token';
+      const encToken = encryptSensitiveString(offlineJwt);
+      db.run(`
+        INSERT INTO local_users (_id, user_name, email, role_type, password_hash, session_token, cached_at)
+        VALUES ('local_seed_cashier_01', 'كاشير الفيشاوي', 'cashier@elfishawy.com', 'cashier', ?, ?, ?)
+      `, [seedHash, encToken, new Date().toISOString()]);
+      console.log('✅ Seeded default offline cashier account (cashier@elfishawy.com)');
+    }
+  } catch (seedErr) {
+    console.warn('Failed to seed default offline user:', seedErr.message);
+  }
 }
 
 export function getDb() {

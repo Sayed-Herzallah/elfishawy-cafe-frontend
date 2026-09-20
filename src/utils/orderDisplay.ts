@@ -106,46 +106,69 @@ export const normalizeOrder = (raw: any, lookup?: ProductLookup): Order => {
 };
 
 export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] => {
-  const byId = new Map<string, any>();
-  // خريطة منفصلة: clientOrderId → مفتاح الصف في byId
-  // تمنع ظهور نفس الفاتورة مرتين (مرة بـ clientOrderId ومرة بـ _id السيرفر)
+  const byKey = new Map<string, any>();
+  // خريطة: clientOrderId -> مفتاح السجل في byKey
   const byCid = new Map<string, string>();
+  // خريطة: _id -> مفتاح السجل في byKey
+  const byId = new Map<string, string>();
 
   const isPending = (o: any): boolean =>
     String(o?.syncStatus || o?.sync_status || '').toUpperCase() === 'PENDING_SYNC';
 
   const take = (list: any[]) => {
     for (const o of list) {
-      if (!o) continue;
-      const id  = String(o._id || '');
-      const cid = String(o.clientOrderId || o.client_order_id || '');
+      if (!o || typeof o !== 'object') continue;
+      const cid = String(o.clientOrderId || o.client_order_id || '').trim();
+      const id  = String(o._id || '').trim();
 
-      // ── هل الفاتورة موجودة بنفس clientOrderId؟ ──────────────────────────
-      // (مثلاً: فاتورة أوفلاين جاءت مرة بـ clientOrderId ومرة بـ _id السيرفر)
-      if (cid && byCid.has(cid)) {
-        const existingKey = byCid.get(cid)!;
-        const existing = byId.get(existingKey);
-        // نحتفظ بالنسخة المُزامَنة (غير PENDING) وإن وُجدت
-        if (existing && isPending(existing) && !isPending(o)) {
-          byId.set(existingKey, o);
+      // ── 1. الهوية الأساسية الأولى: clientOrderId / client_order_id ──────────
+      if (cid) {
+        if (byCid.has(cid)) {
+          const existingKey = byCid.get(cid)!;
+          const existing = byKey.get(existingKey);
+          if (existing) {
+            // تفضيل نسخة السيرفر المعتمدة (التي ليست PENDING_SYNC أو التي تملك _id سيرفر ورقم رسمي)
+            if (isPending(existing) && !isPending(o)) {
+              byKey.set(existingKey, { ...existing, ...o });
+            } else if (!isPending(existing) && isPending(o)) {
+              // احتفظ بنسخة السيرفر الحالية
+            } else {
+              // دمج الحقول مع الحفاظ على نسخة أحدث
+              byKey.set(existingKey, { ...existing, ...o });
+            }
+          }
+          if (id) byId.set(id, existingKey);
+          continue;
         }
+      }
+
+      // ── 2. Fallback: الاعتماد على _id فقط عند عدم وجود clientOrderId ──────────
+      if (id && byId.has(id)) {
+        const existingKey = byId.get(id)!;
+        const existing = byKey.get(existingKey);
+        if (existing) {
+          if (isPending(existing) && !isPending(o)) {
+            byKey.set(existingKey, { ...existing, ...o });
+          }
+        }
+        if (cid) byCid.set(cid, existingKey);
         continue;
       }
 
-      // ── هل الفاتورة موجودة بنفس _id؟ ────────────────────────────────────
-      if (id && byId.has(id)) continue;
-
-      const key = id || cid;
+      // ── 3. إضافة سجل جديد ──────────────────────────────────────────────────
+      const key = cid || id;
       if (!key) continue;
-      byId.set(key, o);
+
+      byKey.set(key, o);
       if (cid) byCid.set(cid, key);
+      if (id) byId.set(id, key);
     }
   };
 
   take(primary);
   take(extra);
 
-  return Array.from(byId.values()).sort((a, b) => {
+  return Array.from(byKey.values()).sort((a, b) => {
     const ta = new Date(a.createdAt || a.created_at || 0).getTime();
     const tb = new Date(b.createdAt || b.created_at || 0).getTime();
     return tb - ta;
@@ -156,32 +179,31 @@ export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] =
 
 /**
  * رقم الفاتورة المعروض للكاشير.
- * - فاتورة السيرفر: orderNumber (مثال "20")
- * - فاتورة أوفلاين مؤقتة: OFF-1234 → تظهر 1234
- * - لو الرقم مفقود تماماً (بيانات قديمة/محلية): نرجع لآخر جزء من _id أو clientOrderId
- *   بدل ما نعرض "----" في شريط آخر الطلبات.
+ * - رقم الفاتورة الرسمي القادم من السيرفر أو المحلي التسلسلي (مثال "1", "2", "20").
+ * - لا يستخدم Mongo _id كرقم فاتورة إطلاقاً.
+ * - لا يستخدم slice(-4) أو slice(-6).
  */
 export const displayOrderNumber = (order: any): string => {
   const raw = String(order?.orderNumber ?? order?.order_number ?? '').trim();
   if (raw) {
     const cleaned = raw.replace(/^OFF-/i, '').trim();
-    if (cleaned) return cleaned.slice(-6);
+    // إذا كان الرقم تسلسلياً نقياً نرجعه بالكامل دون اقتطاع
+    if (cleaned && !cleaned.startsWith('tmp_')) {
+      return cleaned;
+    }
+    if (cleaned.startsWith('tmp_')) {
+      // إزالة بادئة tmp_ لو وُجدت من بيانات قديمة
+      const numOnly = cleaned.replace(/\D/g, '');
+      if (numOnly) return numOnly;
+    }
+    if (cleaned) return cleaned;
   }
 
-  const clientId = String(order?.clientOrderId ?? order?.client_order_id ?? '').trim();
-  const id = String(order?._id ?? '').trim();
-  const fallbackSource = id || clientId;
-  if (fallbackSource) {
-    const stripped = fallbackSource.replace(/^off[_]/i, '').replace(/^OFF-/i, '');
-    const digits = stripped.replace(/\D/g, '');
-    if (digits) return digits.slice(-6);
-    return stripped.slice(-6) || fallbackSource.slice(-4);
-  }
-
+  // إذا لم يتوفر orderNumber إطلاقاً، نستخدم رقم الطاولة كمرجع واضح بدل تشويه الأرقام بـ Mongo _id
   const tableNumber = order?.tableNumber ?? order?.table_number;
   if (tableNumber !== undefined && tableNumber !== null && String(tableNumber).trim() !== '') {
     return `ط${String(tableNumber).trim()}`;
   }
 
-  return '----';
+  return '—';
 };

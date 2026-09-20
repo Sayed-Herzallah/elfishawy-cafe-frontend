@@ -114,6 +114,14 @@ const upsertSyncedOrder = (db, ord) => {
     }
   } catch {}
 
+  // 🛡️ فحص ومنع التكرار الصارم بواسطة client_order_id:
+  // إذا كان هناك صف محلي مسجل بمعرف مؤقت لنفس الـ client_order_id، نحذفه لتجنب تكرار الصف
+  if (clientOrderId) {
+    try {
+      db.run(`DELETE FROM orders WHERE client_order_id = ? AND _id != ?`, [clientOrderId, ord._id]);
+    } catch {}
+  }
+
   try {
     db.run(`
     INSERT INTO orders (_id, order_number, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
@@ -245,11 +253,10 @@ export function setupIpcHandlers(mainWindow) {
       const db = getDb();
       const clientOrderId = orderData.clientOrderId || `off_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
-      // ─── رقم فاتورة مؤقت تسلسلي بدل الرقم العشوائي ──────────────────────────
+      // ─── رقم فاتورة مؤقت تسلسلي محلي ──────────────────────────
       // نقرأ أكبر order_number نقي (أرقام فقط) من SQLite المحلية ونزيد عليه 1.
-      // هكذا يبدو الرقم المؤقت متسلسلاً (#46، #47 ...) بدل رقم عشوائي (#4521).
-      // بعد المزامنة مع السيرفر، الرقم الحقيقي يحل محله تلقائياً في الـ UI.
-      let tempOrderNumber;
+      // إذا لم توجد فواتير يبدأ من 1 دائماً.
+      let tempOrderNumber = '1';
       try {
         const lastNumRes = db.exec(
           `SELECT MAX(CAST(order_number AS INTEGER)) AS last_num
@@ -261,10 +268,9 @@ export function setupIpcHandlers(mainWindow) {
           lastNumRes.length && lastNumRes[0].values.length
             ? Number(lastNumRes[0].values[0][0]) || 0
             : 0;
-        tempOrderNumber = String(lastNum + 1);
+        tempOrderNumber = String(lastNum > 0 ? lastNum + 1 : 1);
       } catch {
-        // احتياط: لو فشلت القراءة → رقم مميز يُظهر أنه مؤقت (ما بيعارضش السيرفر)
-        tempOrderNumber = `tmp_${Date.now() % 100000}`;
+        tempOrderNumber = '1';
       }
 
       const now = new Date().toISOString();
