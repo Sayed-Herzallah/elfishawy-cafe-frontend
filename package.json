@@ -30,7 +30,7 @@
     "win": {
       "target": "nsis",
       "icon": "desktop/icon.ico",
-      "artifactName": "${productName} Setup.${ext}"
+      "artifactName": "ElFishawy-Cafe-Setup.${ext}"
     },
     "nsis": {
       "oneClick": false,
