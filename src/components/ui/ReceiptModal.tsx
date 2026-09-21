@@ -39,7 +39,9 @@ const RECEIPT_RULES: Array<[string, string]> = [
   ['.r-title', 'margin: 0; padding: 0; font-size: 15pt; font-weight: 900; line-height: 1.15;'],
   ['.r-invoice-row', 'margin-top: 1.5mm; border: 0.5mm solid #000000; border-radius: 2mm; padding: 0.8mm 2mm; display: flex; justify-content: space-between; align-items: center; font-size: 8.5pt; font-weight: 800;'],
   ['.r-dt-row', 'margin-top: 1.2mm; padding: 0 1mm; display: flex; justify-content: space-between; font-size: 8.5pt; font-weight: 800;'],
-  ['.r-notes', 'margin-top: 1.2mm; border: 0.35mm solid #000000; border-radius: 1.5mm; padding: 1mm 1.5mm; font-size: 8.5pt; font-weight: 700; text-align: right;'],
+  ['.r-notes', 'margin-top: 1.2mm; border: 0.35mm solid #000000; border-radius: 1.5mm; padding: 1mm 1.5mm; font-size: 10pt !important; line-height: 1.45; font-weight: 800; text-align: right;'],
+  // نص الملاحظات وبياناتها: حجم ثابت موحّد في كل الفواتير (Browser Print) — لا يتأثر بأي وراثة أو مسار طباعة
+  ['.r-notes, .r-notes *', 'font-size: 10pt !important; line-height: 1.45 !important;'],
   ['.r-shortage', 'margin-top: 1.5mm; border: 0.5mm solid #000000; background: #f3f4f6; padding: 1.5mm; font-size: 8.5pt; font-weight: 700; text-align: right;'],
   ['.r-shortage-title', 'color: #b91c1c; font-weight: 900; margin-bottom: 0.8mm;'],
   ['.r-shortage-line', 'font-weight: 700;'],
@@ -275,6 +277,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
     pageStyle.textContent = `
       @media print {
         @page { size: 80mm auto !important; margin: 0 !important; }
+        /* توحيد حجم خط الملاحظات حتى في مسار window.print الأخير (طباعة المعاينة مباشرة) */
+        .receipt-notes-preview { font-size: 10pt !important; line-height: 1.45 !important; }
       }
     `;
     document.head.appendChild(pageStyle);
@@ -535,7 +539,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
             </div>
 
             {cleanNotes && (
-              <div className="mt-1.5 border border-gray-400 p-1.5 rounded text-xs text-gray-700 text-right font-bold bg-gray-50">
+              <div className="receipt-notes-preview mt-1.5 border border-gray-400 p-1.5 rounded text-xs text-gray-700 text-right font-bold bg-gray-50">
                 <span>ملاحظات:</span> <span className="mr-1">{cleanNotes}</span>
               </div>
             )}
