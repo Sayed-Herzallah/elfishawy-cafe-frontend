@@ -436,9 +436,15 @@ export const CashierPOSPage: React.FC = () => {
     const ts = Date.now();
     const clientOrderId = `off_${ts}_${Math.random().toString(36).slice(2, 7)}`;
 
-    // ─── رقم تسلسلي مؤقت = آخر رقم فاتورة معروف + 1 ─────────────────
-    // إذا لم تكن هناك فواتير معروفة بعد، يبدأ التسلسل من 1 بدون أرقام عشوائية
-    const lastKnownNumber = allOrders.reduce((max, o) => {
+    // ─── رقم تسلسلي مؤقت = آخر رقم فاتورة اليوم + 1 ─────────────────
+    // نفلتر فواتير اليوم فقط حتى يبدأ الترقيم من 1 في كل يوم جديد
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayOrders = allOrders.filter((o) => {
+      const d = new Date(o.createdAt || 0);
+      return d >= todayStart;
+    });
+    const lastKnownNumber = todayOrders.reduce((max, o) => {
       const n = parseInt(String(o.orderNumber ?? '').replace(/\D/g, ''), 10);
       return isNaN(n) ? max : Math.max(max, n);
     }, 0);
