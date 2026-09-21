@@ -253,16 +253,21 @@ export function setupIpcHandlers(mainWindow) {
       const db = getDb();
       const clientOrderId = orderData.clientOrderId || `off_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
-      // ─── رقم فاتورة مؤقت تسلسلي محلي ──────────────────────────
-      // نقرأ أكبر order_number نقي (أرقام فقط) من SQLite المحلية ونزيد عليه 1.
-      // إذا لم توجد فواتير يبدأ من 1 دائماً.
+      // ─── رقم فاتورة مؤقت تسلسلي يومي ──────────────────────────
+      // نقرأ أكبر order_number لـ اليوم الحالي فقط من SQLite.
+      // كل يوم يبدأ الترقيم من 1 من جديد — لا علاقة بأرقام أمس.
       let tempOrderNumber = '1';
       try {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayStartISO = todayStart.toISOString();
         const lastNumRes = db.exec(
           `SELECT MAX(CAST(order_number AS INTEGER)) AS last_num
            FROM orders
            WHERE order_number GLOB '[0-9]*'
-             AND CAST(order_number AS INTEGER) < 1000000`
+             AND CAST(order_number AS INTEGER) < 1000000
+             AND created_at >= ?`,
+          [todayStartISO]
         );
         const lastNum =
           lastNumRes.length && lastNumRes[0].values.length
