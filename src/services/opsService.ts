@@ -331,11 +331,21 @@ export const expenseService = {
 };
 
 export const analyticsService = {
-  getStats: (): Promise<ApiResponse<KPIStats>> => {
-    return ApiClient.request<KPIStats>('/analytics/stats', { method: 'GET' });
+  // F2: الفترة الزمنية اختيارية (from/to = أيام تجارية بتوقيت القاهرة على السيرفر) —
+  // بدون params يبقى السلوك القديم الكامل (backward-compatible)
+  getStats: (params?: { from?: string; to?: string }): Promise<ApiResponse<KPIStats>> => {
+    const query = new URLSearchParams();
+    if (params?.from) query.append('from', params.from);
+    if (params?.to) query.append('to', params.to);
+    const qs = query.toString();
+    return ApiClient.request<KPIStats>(`/analytics/stats${qs ? `?${qs}` : ''}`, { method: 'GET' });
   },
 
-  getCharts: (): Promise<ApiResponse<ChartsData>> => {
-    return ApiClient.request<ChartsData>('/analytics/charts', { method: 'GET' });
+  getCharts: (params?: { from?: string; to?: string }): Promise<ApiResponse<ChartsData>> => {
+    const query = new URLSearchParams();
+    if (params?.from) query.append('from', params.from);
+    if (params?.to) query.append('to', params.to);
+    const qs = query.toString();
+    return ApiClient.request<ChartsData>(`/analytics/charts${qs ? `?${qs}` : ''}`, { method: 'GET' });
   },
 };

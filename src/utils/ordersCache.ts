@@ -14,7 +14,10 @@
 import { normalizeOrder } from './orderDisplay';
 
 const ORDERS_CACHE_KEY = 'elfishawy_orders_cache_v1';
-const MAX_CACHED_ORDERS = 400;
+// F3: 2000 فاتورة كحد أقصى (بدل 400) — يغطي أيام كاملة من البيانات للعرض أوفلاين،
+// مع بقاء الكاش محدوداً (وليس full-history unbounded). الأولوية دائماً للأحدث
+// زمنياً (فواتير اليوم أولاً) لأن القائمة مرتبة تنازلياً قبل القص.
+const MAX_CACHED_ORDERS = 2000;
 /** الحد الأقصى لعدد الفواتير في جملة SQL واحدة (حماية لحجم الـ IPC) */
 export const ORDERS_SQL_CHUNK_SIZE = 60;
 

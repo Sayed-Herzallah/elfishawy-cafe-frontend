@@ -31,3 +31,13 @@ export const orderBusinessDayKey = (createdAt?: string | number | Date | null): 
   if (isNaN(d.getTime())) return getBusinessDayKey(new Date());
   return getBusinessDayKey(d);
 };
+
+/**
+ * إزاحة مفتاح يوم تجاري بعدد أيام (سالب = الماضي).
+ * الفرق بين يومين تقويميين — آمن مع حدود الشهور والسنوات.
+ */
+export const shiftDayKey = (dayKey: string, deltaDays: number): string => {
+  const [y, m, d] = String(dayKey).split("-").map(Number);
+  const dt = new Date(Date.UTC(y, (m || 1) - 1, (d || 1) + deltaDays));
+  return dt.toISOString().slice(0, 10);
+};

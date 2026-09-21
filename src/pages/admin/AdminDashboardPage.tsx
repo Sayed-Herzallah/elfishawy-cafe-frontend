@@ -29,6 +29,7 @@ import {
   type ComparisonResult
 } from '../../hooks/useStatisticsComparison';
 import { usePersistentState, readSessionCache, writeSessionCache, isSessionCacheUsable } from '../../hooks/usePersistentState';
+import { getBusinessDayKey, orderBusinessDayKey, shiftDayKey } from '../../utils/businessDay';
 import {
   TrendingUp,
   TrendingDown,
@@ -52,6 +53,8 @@ export const AdminDashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const DASH_CACHE_KEY = 'dash_cache_v1';
   const [stats, setStats] = useState<KPIStats | null>(null);
+  // F2: وسم الفترة الزمنية التي جُلبت لها إحصائيات السيرفر — يمنع عرض قيم فترة قديمة
+  const [statsPeriod, setStatsPeriod] = useState<string | null>(null);
   const [charts, setCharts] = useState<ChartsData | null>(null);
   const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [recentOrders, setRecentOrders] = useState<Order[]>([]);
@@ -73,17 +76,46 @@ export const AdminDashboardPage: React.FC = () => {
   // مرجع لمحتوى التقرير عشان تصدير الـ PDF
   const contentRef = useRef<HTMLDivElement>(null);
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
+  // F7: منع تكرار toast فشل الإحصائيات — مرة واحدة حتى ينجح التحديث من جديد
+  const kpisFailStreakRef = useRef(false);
+
+  // F2/F6: نطاق الفترة الحالية كأيام تجارية بتوقيت القاهرة (يُرسل للسيرفر كمصدر حقيقة)
+  const getPeriodParams = (): { from?: string; to?: string } => {
+    if (dateRange.from || dateRange.to) {
+      return { from: dateRange.from || undefined, to: dateRange.to || undefined };
+    }
+    const todayKey = getBusinessDayKey();
+    if (timeRange === 'today') return { from: todayKey, to: todayKey };
+    const [cy, cm] = todayKey.split('-');
+    if (timeRange === 'week') return { from: shiftDayKey(todayKey, -6), to: todayKey };
+    if (timeRange === 'month') return { from: `${cy}-${cm}-01`, to: todayKey };
+    return { from: `${cy}-01-01`, to: todayKey };
+  };
+  const currentPeriodKey = (() => {
+    if (dateRange.from || dateRange.to) return `custom:${dateRange.from || ''}:${dateRange.to || ''}`;
+    return `${timeRange}:${getBusinessDayKey()}`;
+  })();
+
 
   const fetchData = async (silent = false) => {
     try {
       if (!silent) setIsLoading(true);
 
-      const statsPromise = analyticsService.getStats().then((res) => {
-        if (res.success && res.data) setStats(res.data);
+      // F2: جلب إحصائيات الفترة الحالية من السيرفر (MongoDB = مصدر الحقيقة عند الاتصال)
+      const periodParams = getPeriodParams();
+      const periodKeyUsed = currentPeriodKey;
+      let statsPeriodUsed: string | null = null;
+      const statsPromise = analyticsService.getStats(periodParams).then((res) => {
+        if (res.success && res.data) {
+          setStats(res.data);
+          setStatsPeriod(periodKeyUsed);
+          statsPeriodUsed = periodKeyUsed;
+          kpisFailStreakRef.current = false;
+        }
         return res;
       }).catch((e) => { console.warn('Stats load error:', e); return null; });
 
-      const chartsPromise = analyticsService.getCharts().then((res) => {
+      const chartsPromise = analyticsService.getCharts(periodParams).then((res) => {
         if (res.success && res.data) setCharts(res.data);
         return res;
       }).catch((e) => { console.warn('Charts load error:', e); return null; });
@@ -134,7 +166,20 @@ export const AdminDashboardPage: React.FC = () => {
       // Update session cache with all resolved results
       const prevCache = readSessionCache<any>(DASH_CACHE_KEY) || {};
       const nextCache: Record<string, any> = { ...prevCache, savedAt: Date.now() };
-      if (statsRes.status === 'fulfilled' && statsRes.value?.success && statsRes.value?.data) nextCache.stats = statsRes.value.data;
+      if (statsRes.status === 'fulfilled' && statsRes.value?.success && statsRes.value?.data) {
+        nextCache.stats = statsRes.value.data;
+        nextCache.statsPeriod = statsPeriodUsed;
+      }
+
+      // F7: عدم ابتلاع فشل تحديث الإحصائيات بصمت — toast واحد حتى ينجح التحديث من جديد
+      const statsFailed = statsRes.status === 'rejected' || !statsRes.value?.success;
+      const chartsFailed = chartsRes.status === 'rejected' || !chartsRes.value?.success;
+      if ((statsFailed || chartsFailed) && !kpisFailStreakRef.current) {
+        kpisFailStreakRef.current = true;
+        showToast('تعذّر تحديث الإحصائيات من الخادم — يتم عرض آخر بيانات متاحة', 'info');
+      } else if (!statsFailed && kpisFailStreakRef.current) {
+        kpisFailStreakRef.current = false;
+      }
       if (chartsRes.status === 'fulfilled' && chartsRes.value?.success && chartsRes.value?.data) nextCache.charts = chartsRes.value.data;
       if (ordersRes.status === 'fulfilled' && ordersRes.value?.success && ordersRes.value?.data) nextCache.orders = ordersRes.value.data;
       if (invRes.status === 'fulfilled' && invRes.value?.success && invRes.value?.data) nextCache.inventory = invRes.value.data;
@@ -156,7 +201,10 @@ export const AdminDashboardPage: React.FC = () => {
     try {
       const cached = readSessionCache<any>(DASH_CACHE_KEY);
       if (cached) {
-        if (cached.stats) setStats(cached.stats);
+        if (cached.stats) {
+          setStats(cached.stats);
+          setStatsPeriod(cached.statsPeriod || null);
+        }
         if (cached.charts) setCharts(cached.charts);
         if (Array.isArray(cached.orders)) {
           setAllOrders(cached.orders);
@@ -189,6 +237,17 @@ export const AdminDashboardPage: React.FC = () => {
     return () => clearInterval(interval);
   }, []);
 
+  // F2: إعادة جلب إحصائيات السيرفر فور تغيير الفترة (وليس انتظار التحديث الدوري)
+  const skipFirstPeriodFetchRef = useRef(true);
+  useEffect(() => {
+    if (skipFirstPeriodFetchRef.current) {
+      skipFirstPeriodFetchRef.current = false;
+      return;
+    }
+    fetchData(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeRange, dateRange.from, dateRange.to]);
+
   const handleRefresh = () => {
     setIsRefreshing(true);
     fetchData();
@@ -201,90 +260,96 @@ export const AdminDashboardPage: React.FC = () => {
   const hasCustomRange = Boolean(dateRange.from || dateRange.to);
 
   // Filter orders by time range (+ نطاق تاريخ مخصص من الفلتر إن وجد)
+  // F6: حدود اليوم التجاري بتوقيت القاهرة — موحّدة مع السيرفر (وليس timezone الجهاز)
+  const todayKey = getBusinessDayKey();
+  const customFromKey = dateRange.from ? orderBusinessDayKey(dateRange.from) : null;
+  const customToKey = dateRange.to ? orderBusinessDayKey(dateRange.to) : null;
+
   const filteredOrders = allOrders.filter((o) => {
-    const orderDate = new Date(o.createdAt);
+    const orderDayKey = orderBusinessDayKey(o.createdAt);
     const now = new Date();
 
-    // ✅ توصيل فلتر التاريخ المخصص — كان معزولاً عن منطق التصفية
-    if (dateRange.from) {
-      const from = new Date(dateRange.from);
-      from.setHours(0, 0, 0, 0);
-      if (orderDate < from) return false;
-    }
-    if (dateRange.to) {
-      const to = new Date(dateRange.to);
-      to.setHours(23, 59, 59, 999);
-      if (orderDate > to) return false;
-    }
+    // ✅ توصيل فلتر التاريخ المخصص — مقارنة أيام تجارية (Cairo) بدل منتصف الليل المحلي
+    if (customFromKey && orderDayKey < customFromKey) return false;
+    if (customToKey && orderDayKey > customToKey) return false;
 
     // ✅ الفلتر المخصص شغال؟ يبقى متقيدش بنطاق الأزرار السريعة
     if (hasCustomRange) return true;
 
     if (timeRange === 'today') {
-      return orderDate.toDateString() === now.toDateString();
+      return orderDayKey === todayKey;
     } else if (timeRange === 'week') {
+      // مقارنة لحظات مطلقة — مستقلة عن timezone الحدود (نفس السلوك الأصلي)
       const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      return orderDate >= weekAgo;
+      return new Date(o.createdAt) >= weekAgo;
     } else if (timeRange === 'month') {
-      return orderDate.getMonth() === now.getMonth() && orderDate.getFullYear() === now.getFullYear();
+      // شهر القاهرة الحالي (المفتاح يبدأ بـ YYYY-MM)
+      return orderDayKey.slice(0, 7) === todayKey.slice(0, 7);
     } else if (timeRange === 'year') {
       const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-      return orderDate >= yearAgo;
+      return new Date(o.createdAt) >= yearAgo;
     }
     return true;
   });
 
-  // Dynamic KPIs from filtered data
-  const totalSales = filteredOrders
+  // Dynamic KPIs from filtered data — الحساب المحلي يبقى fallback أوفلاين فقط (F2)
+  const localTotalSales = filteredOrders
     .filter((o) => o.status === 'completed')
     .reduce((sum, o) => sum + o.totalAmount, 0);
 
   // 🛒 فصل مصروفات الفترة: تشغيلية vs مشتريات مخزون
   const periodExpenses = expenses
     .filter((e) => {
-      const expDate = new Date(e.date || e.createdAt || '');
+      const expDayKey = orderBusinessDayKey(e.date || e.createdAt);
       const now = new Date();
 
-      // ✅ نفس فلتر التاريخ المخصص على المصروفات
-      if (dateRange.from) {
-        const from = new Date(dateRange.from);
-        from.setHours(0, 0, 0, 0);
-        if (expDate < from) return false;
-      }
-      if (dateRange.to) {
-        const to = new Date(dateRange.to);
-        to.setHours(23, 59, 59, 999);
-        if (expDate > to) return false;
-      }
+      // ✅ نفس فلتر التاريخ المخصص على المصروفات (أيام تجارية Cairo)
+      if (customFromKey && expDayKey < customFromKey) return false;
+      if (customToKey && expDayKey > customToKey) return false;
 
       // ✅ الفلتر المخصص شغال؟ يبقى متقيدش بنطاق الأزرار السريعة
       if (hasCustomRange) return true;
 
       if (timeRange === 'today') {
-        return expDate.toDateString() === now.toDateString();
+        return expDayKey === todayKey;
       } else if (timeRange === 'week') {
         const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        return expDate >= weekAgo;
+        return new Date(e.date || e.createdAt || '') >= weekAgo;
       } else if (timeRange === 'month') {
-        return expDate.getMonth() === now.getMonth() && expDate.getFullYear() === now.getFullYear();
+        return expDayKey.slice(0, 7) === todayKey.slice(0, 7);
       } else if (timeRange === 'year') {
         const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-        return expDate >= yearAgo;
+        return new Date(e.date || e.createdAt || '') >= yearAgo;
       }
       return true;
     });
 
-  const totalPurchases = periodExpenses
-    .filter((e) => e.category === 'inventory')
-    .reduce((sum, e) => sum + e.amount, 0);
-  const totalOperating = periodExpenses
-    .filter((e) => e.category !== 'inventory')
-    .reduce((sum, e) => sum + e.amount, 0);
-  const totalExpenses = totalOperating + totalPurchases;
+  // F2: قيم السيرفر (MongoDB) هي مصدر الحقيقة عند الاتصال — الحساب المحلي fallback أوفلاين فقط
+  const serverStatsValid = Boolean(stats && statsPeriod === currentPeriodKey);
+  const statsAny = stats as any;
+  const totalSales = serverStatsValid && stats && typeof stats.totalSales === 'number' ? stats.totalSales : localTotalSales;
 
-  const ordersCount = filteredOrders.length;
+  const totalPurchases = serverStatsValid && stats && typeof statsAny.totalPurchases === 'number'
+    ? statsAny.totalPurchases
+    : periodExpenses
+        .filter((e) => e.category === 'inventory')
+        .reduce((sum, e) => sum + e.amount, 0);
+  const totalOperating = serverStatsValid && stats && typeof stats.totalExpenses === 'number' && typeof statsAny.totalPurchases === 'number'
+    ? stats.totalExpenses - statsAny.totalPurchases
+    : periodExpenses
+        .filter((e) => e.category !== 'inventory')
+        .reduce((sum, e) => sum + e.amount, 0);
+  const totalExpenses = serverStatsValid && stats && typeof stats.totalExpenses === 'number'
+    ? stats.totalExpenses
+    : totalOperating + totalPurchases;
+
+  const ordersCount = serverStatsValid && stats && typeof stats.totalOrdersCount === 'number'
+    ? stats.totalOrdersCount
+    : filteredOrders.length;
   // ✅ صافي الربح الحقيقي — السالب يعني خسارة (المصروفات أكبر من المبيعات)
-  const netProfit = totalSales - totalExpenses;
+  const netProfit = serverStatsValid && stats && typeof stats.netProfit === 'number'
+    ? stats.netProfit
+    : totalSales - totalExpenses;
 
   // 💰 قيمة المخزون الحالية = Σ (الكمية × سعر تكلفة الوحدة)
   const inventoryValue = allInventory.reduce(
@@ -292,26 +357,28 @@ export const AdminDashboardPage: React.FC = () => {
     0
   );
 
-  // Dynamic comparison with previous period
+  // Dynamic comparison with previous period (F6: 'today' على أيام تجارية Cairo)
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const oneDayMs = 24 * 60 * 60 * 1000;
 
-  let prevStart: Date;
-  let prevEnd: Date;
+  let prevStart: Date = new Date(0);
+  let prevEnd: Date = new Date(0);
   let prevPeriodLabel = 'أمس';
+  // F6: الفترة السابقة لـ today/month تُحدَّد بمفاتيح أيام تجارية Cairo
+  let prevDayKey: string | null = null;
+  let prevMonthPrefix: string | null = null;
 
   if (timeRange === 'today') {
-    prevStart = new Date(todayStart.getTime() - oneDayMs);
-    prevEnd = todayStart;
+    prevDayKey = shiftDayKey(todayKey, -1);
     prevPeriodLabel = 'اليوم السابق (أمس)';
   } else if (timeRange === 'week') {
-    prevStart = new Date(now.getTime() - 14 * oneDayMs);
-    prevEnd = new Date(now.getTime() - 7 * oneDayMs);
+    prevStart = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    prevEnd = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     prevPeriodLabel = 'الأسبوع السابق';
   } else if (timeRange === 'month') {
-    prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    prevEnd = new Date(now.getFullYear(), now.getMonth(), 1);
+    const [py, pm] = todayKey.split('-').map(Number);
+    const prevMonth = pm === 1 ? 12 : pm - 1;
+    const prevYear = pm === 1 ? py - 1 : py;
+    prevMonthPrefix = `${prevYear}-${String(prevMonth).padStart(2, '0')}`;
     prevPeriodLabel = 'الشهر السابق';
   } else {
     prevStart = new Date(now.getFullYear() - 1, 0, 1);
@@ -319,19 +386,20 @@ export const AdminDashboardPage: React.FC = () => {
     prevPeriodLabel = 'العام السابق';
   }
 
-  const prevOrdersList = allOrders.filter((o) => {
-    const orderDate = new Date(o.createdAt);
-    return orderDate >= prevStart && orderDate < prevEnd;
-  });
+  const inPrevRange = (dateInput: string | Date | undefined | null): boolean => {
+    if (prevDayKey) return orderBusinessDayKey(dateInput) === prevDayKey;
+    if (prevMonthPrefix) return orderBusinessDayKey(dateInput).startsWith(prevMonthPrefix);
+    const d = new Date(dateInput || 0);
+    return d >= prevStart && d < prevEnd;
+  };
+
+  const prevOrdersList = allOrders.filter((o) => inPrevRange(o.createdAt));
 
   const prevSales = prevOrdersList
     .filter((o) => o.status === 'completed')
     .reduce((sum, o) => sum + o.totalAmount, 0);
 
-  const prevPeriodExpenses = expenses.filter((e) => {
-    const expDate = new Date(e.date || e.createdAt || '');
-    return expDate >= prevStart && expDate < prevEnd;
-  });
+  const prevPeriodExpenses = expenses.filter((e) => inPrevRange(e.date || e.createdAt));
   const prevOperating = prevPeriodExpenses
     .filter((e) => e.category !== 'inventory')
     .reduce((sum, e) => sum + e.amount, 0);

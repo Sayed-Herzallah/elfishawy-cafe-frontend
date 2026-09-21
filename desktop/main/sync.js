@@ -121,10 +121,16 @@ export async function processSyncQueue(mainWindow) {
               items: payload.items.map((it) => ({
                 product: it.product,
                 quantity: it.quantity,
+                // F5: سعر البيع الفعلي وقت إنشاء الفاتورة أوفلاين —
+                // تغيير سعر المنتج الحالي على السيرفر لا يغيّر فاتورة قديمة
+                price: it.price,
               })),
               tableNumber: payload.tableNumber,
               notes: payload.notes || '',
               clientOrderId: clientOpId,
+              // F4: وقت الإنشاء الأصلي للفاتورة الأوفلاين — السيرفر يخزنه كـ createdAt
+              // مع تجاهل أي تاريخ مستقبلي (حماية من التلاعب)
+              clientCreatedAt: payload.createdAt,
             }),
           });
 

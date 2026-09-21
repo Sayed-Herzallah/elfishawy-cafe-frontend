@@ -2,6 +2,7 @@
  * Utility functions for central text, date, and number formatting.
  * Enforces English digits (1234567890) inside Arabic layouts.
  */
+import { getBusinessDayKey } from './businessDay';
 
 /** القيمة البديلة عند غياب البيانات — بتظهر فقط بعد اكتمال التحميل والتأكد إن مفيش داتا فعلاً */
 export const EMPTY_LABEL = 'لا يوجد';
@@ -101,17 +102,14 @@ export const formatDateTime = (dateInput: string | Date | undefined | null): str
 };
 
 /**
- * Checks if a given date string/Date corresponds to today in local client time.
+ * Checks if a given date string/Date corresponds to today.
+ * F6: "اليوم" هنا هو اليوم التجاري بتوقيت القاهرة (Africa/Cairo) — موحّد مع السيرفر
+ * والديسكتوب، ولا يعتمد على timezone جهاز المستخدم.
  */
 export const isToday = (dateInput: string | Date | undefined | null): boolean => {
   if (!dateInput) return false;
   const d = new Date(dateInput);
   if (isNaN(d.getTime())) return false;
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
+  return getBusinessDayKey(d) === getBusinessDayKey(new Date());
 };
 

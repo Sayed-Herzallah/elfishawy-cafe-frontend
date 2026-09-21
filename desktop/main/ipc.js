@@ -418,11 +418,13 @@ export function setupIpcHandlers(mainWindow) {
       }
 
       // Add to sync queue with cryptographic hash-chaining
+      // F4: نرفق وقت الإنشاء الأصلي (now) بالـ payload حتى تحافظ المزامنة على
+      // اليوم التجاري الصحيح للفاتورة في MongoDB (وليس وقت المزامنة)
       enqueueSecureOperation(db, {
         clientOpId: clientOrderId,
         entityType: 'order',
         action: 'CREATE',
-        payload: orderData,
+        payload: { ...orderData, createdAt: now },
         createdAt: now,
       });
 
