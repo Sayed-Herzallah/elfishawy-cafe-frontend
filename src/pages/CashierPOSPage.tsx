@@ -22,6 +22,7 @@ import {
   displayOrderNumber,
 } from '../utils/orderDisplay';
 import { readOrdersSnapshot, saveOrdersSnapshot } from '../utils/ordersCache';
+import { getBusinessDayKey, orderBusinessDayKey } from '../utils/businessDay';
 import {
   Plus,
   Trash2,
@@ -437,13 +438,12 @@ export const CashierPOSPage: React.FC = () => {
     const clientOrderId = `off_${ts}_${Math.random().toString(36).slice(2, 7)}`;
 
     // ─── رقم تسلسلي مؤقت = آخر رقم فاتورة اليوم + 1 ─────────────────
-    // نفلتر فواتير اليوم فقط حتى يبدأ الترقيم من 1 في كل يوم جديد
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-    const todayOrders = allOrders.filter((o) => {
-      const d = new Date(o.createdAt || 0);
-      return d >= todayStart;
-    });
+    // نفلتر فواتير اليوم التجاري فقط (بتوقيت القاهرة — نفس تعريف السيرفر)
+    // حتى يبدأ الترقيم من 1 في كل يوم جديد على كل المنصات.
+    const todayKey = getBusinessDayKey();
+    const todayOrders = allOrders.filter((o) =>
+      orderBusinessDayKey((o as any).dayKey ?? o.createdAt) === todayKey
+    );
     const lastKnownNumber = todayOrders.reduce((max, o) => {
       const n = parseInt(String(o.orderNumber ?? '').replace(/\D/g, ''), 10);
       return isNaN(n) ? max : Math.max(max, n);

@@ -6,6 +6,67 @@ import { frontendUpdater } from './frontendUpdater.js';
 import { encryptSensitiveString, decryptSensitiveString, computeOpHash } from './security.js';
 import crypto from 'crypto';
 
+// ============================================================
+// اليوم التجاري الموحّد بتوقيت القاهرة (Africa/Cairo)
+// نفس تعريف اليوم المستخدم في السيرفر → الترقيم اليومي للفواتير
+// يبدأ من 1 في نفس اللحظة على كل الأجهزة مهما كان توقيت الجهاز.
+// ============================================================
+const CAIRO_TIMEZONE = 'Africa/Cairo';
+
+const getBusinessDayKey = (date = new Date()) => {
+  const d = date instanceof Date ? date : new Date(date);
+  try {
+    // en-CA ينتج الصيغة ISO "YYYY-MM-DD" مباشرة
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: CAIRO_TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+  } catch {
+    return d.toISOString().slice(0, 10);
+  }
+};
+
+/** إزاحة توقيت القاهرة عن UTC بالدقائق عند لحظة معينة (يدعم التوقيت الصيفي) */
+const cairoOffsetMinutes = (date) => {
+  try {
+    const dtf = new Intl.DateTimeFormat('en-US', {
+      timeZone: CAIRO_TIMEZONE,
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    const parts = {};
+    for (const p of dtf.formatToParts(date)) {
+      if (p.type !== 'literal') parts[p.type] = p.value;
+    }
+    const asUtc = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour) % 24,
+      Number(parts.minute),
+      Number(parts.second)
+    );
+    return Math.round((asUtc - date.getTime()) / 60000);
+  } catch {
+    return 120; // fallback: UTC+2
+  }
+};
+
+/** بداية اليوم التجاري (بتوقيت القاهرة) كـ ISO UTC string */
+const getBusinessDayStartIso = (dayKey) => {
+  const [y, m, d] = String(dayKey).split('-').map(Number);
+  const noonGuess = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
+  const offsetMin = cairoOffsetMinutes(noonGuess);
+  return new Date(Date.UTC(y, (m || 1) - 1, d || 1, 0, 0, 0) - offsetMin * 60000).toISOString();
+};
+
 // Conversion system mirroring backend utils/recipe/unitConverter.js
 const CONVERSION_TO_BASE = {
   KG: 1000,
@@ -253,21 +314,20 @@ export function setupIpcHandlers(mainWindow) {
       const db = getDb();
       const clientOrderId = orderData.clientOrderId || `off_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
-      // ─── رقم فاتورة مؤقت تسلسلي يومي ──────────────────────────
-      // نقرأ أكبر order_number لـ اليوم الحالي فقط من SQLite.
-      // كل يوم يبدأ الترقيم من 1 من جديد — لا علاقة بأرقام أمس.
+      // ─── رقم فاتورة مؤقت تسلسلي يومي (اليوم التجاري بتوقيت القاهرة) ──
+      // نقرأ أكبر order_number لنفس اليوم التجاري فقط من SQLite.
+      // كل يوم تجاري يبدأ الترقيم من 1 من جديد — لا علاقة بأرقام أمس،
+      // ونفس تعريف اليوم المستخدم في السيرفر (Africa/Cairo).
       let tempOrderNumber = '1';
+      let businessDayKey = getBusinessDayKey(new Date());
       try {
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        const todayStartISO = todayStart.toISOString();
         const lastNumRes = db.exec(
           `SELECT MAX(CAST(order_number AS INTEGER)) AS last_num
            FROM orders
            WHERE order_number GLOB '[0-9]*'
              AND CAST(order_number AS INTEGER) < 1000000
-             AND created_at >= ?`,
-          [todayStartISO]
+             AND (day_key = ? OR (day_key IS NULL AND created_at >= ?))`,
+          [businessDayKey, getBusinessDayStartIso(businessDayKey)]
         );
         const lastNum =
           lastNumRes.length && lastNumRes[0].values.length
@@ -299,11 +359,12 @@ export function setupIpcHandlers(mainWindow) {
 
       // Save order to SQLite
       db.run(`
-        INSERT INTO orders (_id, order_number, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_SYNC', ?, ?, ?)
+        INSERT INTO orders (_id, order_number, day_key, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_SYNC', ?, ?, ?)
       `, [
         clientOrderId,
         tempOrderNumber,
+        businessDayKey,
         JSON.stringify(processedItems),
         totalAmount,
         'completed',

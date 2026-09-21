@@ -178,6 +178,7 @@ function runMigrations(db) {
     CREATE TABLE IF NOT EXISTS orders (
       _id TEXT PRIMARY KEY,
       order_number TEXT,
+      day_key TEXT,
       items TEXT NOT NULL,
       total_amount REAL NOT NULL,
       status TEXT DEFAULT 'completed',
@@ -224,6 +225,8 @@ function runMigrations(db) {
   try { db.run(`ALTER TABLE sync_queue ADD COLUMN sequence_id INTEGER;`); } catch {}
   try { db.run(`ALTER TABLE sync_queue ADD COLUMN prev_hash TEXT;`); } catch {}
   try { db.run(`ALTER TABLE sync_queue ADD COLUMN op_hash TEXT;`); } catch {}
+  // ترقيم الفواتير اليومي الموحّد: مفتاح اليوم التجاري بتوقيت القاهرة
+  try { db.run(`ALTER TABLE orders ADD COLUMN day_key TEXT;`); } catch {}
 
   // Seed default offline cashier if no local users exist
   try {
