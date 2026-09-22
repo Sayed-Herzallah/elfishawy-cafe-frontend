@@ -55,8 +55,7 @@ const RECEIPT_RULES: Array<[string, string]> = [
   ['*', 'box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact;'],
   ['html, body', `margin: 0; padding: 0; width: 80mm; background: #ffffff; color: #000000; font-family: ${RECEIPT_FONT};`],
   // 80mm paper - 70mm receipt: pin the physical left offset to 5mm. Some RTL drivers
-  // ignore symmetric auto margins and otherwise pin the receipt against the left edge.
-  ['#receipt', 'width: 70mm; max-width: 70mm; padding: 0 3mm; margin: 0 auto !important; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
+  ['#receipt', 'width: 74mm; max-width: 74mm; padding: 0 2mm; margin: 0 auto !important; box-sizing: border-box !important; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
   ['.r-header', 'margin: 0; padding: 0 0 1.5mm 0; text-align: center; border-bottom: 0.6mm solid #000000;'],
   ['.r-title', 'margin: 0; padding: 0; font-size: 15pt; font-weight: 900; line-height: 1.15;'],
   ['.r-invoice-row', 'margin-top: 1.5mm; border: 0.5mm solid #000000; border-radius: 2mm; padding: 0.8mm 2mm; display: flex; justify-content: space-between; align-items: center; font-size: 8.5pt; font-weight: 800;'],
@@ -247,18 +246,19 @@ const printViaMainWindow = (bodyHTML: string, heightMm: number): Promise<void> =
         }
         body > *:not(#${holderId}) { display: none !important; }
         #${holderId} {
-          display: block !important;
+          display: flex !important;
+          justify-content: center !important;
+          align-items: flex-start !important;
           position: fixed !important;
           top: 0 !important;
           left: 0 !important;
           right: 0 !important;
           margin: 0 auto !important;
-          width: 70mm !important;
+          width: 80mm !important;
+          box-sizing: border-box !important;
         }
 ${buildReceiptCss(`#${holderId}`)}
-        /* إصلاح: الحاوية مركّزة بالفعل (width:70mm + margin:0 auto) —
-           لا يجوز إضافة margin-left:5mm على #receipt بداخلها وإلا تجاوز الحد */
-        #${holderId} #receipt { margin: 0 !important; margin-left: 0 !important; }
+        #${holderId} #receipt { margin: 0 auto !important; width: 74mm !important; max-width: 74mm !important; }
       }
     `;
     document.head.appendChild(style);
