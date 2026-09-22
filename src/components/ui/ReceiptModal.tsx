@@ -180,15 +180,23 @@ const buildReceiptBodyHTML = (
     })
     .join('');
 
-  const shortageNote = hasAnyShortage
-    ? Array.from(shortagesPerProduct.entries())
-        .map(([productName, shortages]) => `${productName}: ${shortages.join('، ')} (نافذ)`)
-        .join(' — ')
+  // جمع كل الخامات النافذة الفريدة من كل المنتجات → "سكر نافذ، لبن نافذ"
+  const uniqueShortageIngredients = hasAnyShortage
+    ? Array.from(new Set(Array.from(shortagesPerProduct.values()).flat()))
+    : [];
+  const shortageNote = uniqueShortageIngredients.length > 0
+    ? uniqueShortageIngredients.map((ing) => `${ing} نافذ`).join('، ')
     : '';
-  const combinedNotes = [cleanNotes, shortageNote].filter(Boolean).join(' — ');
-  const notesHTML = combinedNotes
-    ? `<div class="r-notes"><strong>ملاحظات:</strong> ${escapeHtmlText(combinedNotes)}</div>`
-    : '';
+
+  // الملاحظات: فقط لو في نص مكتوب / عجز — ولو الاثنين موجودين يظهر كل منهما في سطر
+  let notesHTML = '';
+  if (cleanNotes && shortageNote) {
+    notesHTML = `<div class="r-notes"><strong>ملاحظات:</strong> ${escapeHtmlText(cleanNotes)}<br>${escapeHtmlText(shortageNote)}</div>`;
+  } else if (cleanNotes) {
+    notesHTML = `<div class="r-notes"><strong>ملاحظات:</strong> ${escapeHtmlText(cleanNotes)}</div>`;
+  } else if (shortageNote) {
+    notesHTML = `<div class="r-notes">${escapeHtmlText(shortageNote)}</div>`;
+  }
 
   return `<div id="receipt">
     <div class="r-header">
@@ -577,15 +585,25 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
               <span>الوقت: <strong className="font-mono text-sm text-gray-900">{formatTime(order.createdAt)}</strong></span>
             </div>
 
-            {cleanNotes && (
+            {/* ملاحظات + عجز في صندوق واحد — يظهر فقط لو في محتوى */}
+            {(cleanNotes || hasAnyShortage) && (
               <div className="receipt-notes-preview mt-1.5 border border-gray-400 p-1.5 rounded text-xs text-gray-700 text-right font-bold bg-gray-50">
-                <span>ملاحظات:</span> <span className="mr-1">{cleanNotes}</span>
+                {cleanNotes && (
+                  <div><span>ملاحظات:</span> <span className="mr-1">{cleanNotes}</span></div>
+                )}
+                {hasAnyShortage && (
+                  <div className="text-red-700">
+                    {Array.from(new Set(Array.from(shortagesPerProduct.values()).flat()))
+                      .map((ing) => `${ing} نافذ`)
+                      .join('، ')}
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* بانر العجز */}
-          {hasAnyShortage && (
+          {/* بانر العجز — محذوف: العجز الآن داخل صندوق الملاحظات مباشرة */}
+          {false && hasAnyShortage && (
             <div className="my-2 border-2 border-red-300 bg-red-50 p-2 text-xs font-bold text-gray-800 rounded">
               <div className="text-red-700 font-extrabold mb-1">⚠️ تنبيه: عجز في مواد الفاتورة</div>
               {Array.from(shortagesPerProduct.entries()).map(([productName, shortages]) => (
@@ -595,6 +613,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
                 </div>
               ))}
             </div>
+
           )}
 
           {/* جدول الأصناف */}
