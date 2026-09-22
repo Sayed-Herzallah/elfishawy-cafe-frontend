@@ -53,9 +53,8 @@ const buildCairoFontFaceCss = (): string => {
 /** كل قواعد CSS الخاصة بفاتورة الطباعة (مقاسات ملم — مناسبة لطابعة حرارية 80mm) */
 const RECEIPT_RULES: Array<[string, string]> = [
   ['*', 'box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact;'],
-  ['html, body', `margin: 0; padding: 0; width: 80mm; background: #ffffff; color: #000000; font-family: ${RECEIPT_FONT};`],
-  // 80mm paper - 70mm receipt: pin the physical left offset to 5mm. Some RTL drivers
-  ['#receipt', 'width: 100%; max-width: 100%; padding: 0 3mm; margin: 0 !important; box-sizing: border-box !important; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
+  ['html, body', `margin: 0; padding: 0; width: 72mm; background: #ffffff; color: #000000; font-family: ${RECEIPT_FONT};`],
+  ['#receipt', 'width: 72mm; max-width: 72mm; padding: 0 1.5mm; margin: 0 auto !important; box-sizing: border-box !important; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
   ['.r-header', 'margin: 0; padding: 0 0 1.5mm 0; text-align: center; border-bottom: 0.6mm solid #000000;'],
   ['.r-title', 'margin: 0; padding: 0; font-size: 15pt; font-weight: 900; line-height: 1.15;'],
   ['.r-invoice-row', 'margin-top: 1.5mm; border: 0.5mm solid #000000; border-radius: 2mm; padding: 0.8mm 2mm; display: flex; justify-content: space-between; align-items: center; font-size: 8.5pt; font-weight: 800;'],
@@ -92,11 +91,11 @@ const buildReceiptCss = (scope?: string): string =>
 /** لفّ فاتورة مستقلة في مستند HTML كامل — pageHeightMm = null لوضع القياس */
 const wrapReceiptDocument = (bodyHTML: string, pageHeightMm: number | null): string => {
   const pageSizeRule = pageHeightMm
-    ? `size: 80mm ${pageHeightMm}mm;`
-    : 'size: 80mm auto;';
+    ? `size: 72mm ${pageHeightMm}mm;`
+    : 'size: 72mm auto;';
   const heightLockRule = pageHeightMm
-    ? `width: 80mm !important; height: ${pageHeightMm}mm !important; min-height: ${pageHeightMm}mm !important; max-height: none !important; overflow: visible !important;`
-    : 'width: 80mm !important; height: auto !important; min-height: 0 !important; overflow: visible !important;';
+    ? `width: 72mm !important; height: ${pageHeightMm}mm !important; min-height: ${pageHeightMm}mm !important; max-height: none !important; overflow: visible !important;`
+    : 'width: 72mm !important; height: auto !important; min-height: 0 !important; overflow: visible !important;';
 
   const cairoFontFaceCss = buildCairoFontFaceCss();
   return `<!DOCTYPE html>
@@ -120,7 +119,7 @@ const wrapReceiptDocument = (bodyHTML: string, pageHeightMm: number | null): str
       position: relative !important;
       top: 0 !important;
       left: 0 !important;
-      width: 80mm !important;
+      width: 72mm !important;
       box-sizing: border-box !important;
     }
 ${buildReceiptCss()}
@@ -248,11 +247,11 @@ const printViaMainWindow = (bodyHTML: string, heightMm: number): Promise<void> =
           position: fixed !important;
           top: 0 !important;
           left: 0 !important;
-          width: 80mm !important;
+          width: 72mm !important;
           box-sizing: border-box !important;
         }
 ${buildReceiptCss(`#${holderId}`)}
-        #${holderId} #receipt { margin: 0 !important; width: 100% !important; max-width: 100% !important; }
+        #${holderId} #receipt { margin: 0 auto !important; width: 72mm !important; max-width: 72mm !important; }
       }
     `;
     document.head.appendChild(style);
@@ -337,7 +336,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       measureFrame.style.position = 'fixed';
       measureFrame.style.top = '-99999px';
       measureFrame.style.left = '-99999px';
-      measureFrame.style.width = '80mm';
+      measureFrame.style.width = '72mm';
       measureFrame.style.height = '4000px';
       measureFrame.style.border = 'none';
       measureFrame.style.visibility = 'hidden';
@@ -368,11 +367,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
 
       if (!heightPx || heightPx <= 0) heightPx = 300;
 
-      // تحويل البكسل إلى ملم (96px = 25.4mm). الحد الأدنى أكبر من عرض 80mm
+      // تحويل البكسل إلى ملم (96px = 25.4mm). الحد الأدنى أكبر من عرض 72mm
       // حتى لا يفسر تعريف الطابعة الفواتير القصيرة كصفحات أفقية.
       // 4mm أمان محسوب يحمي آخر سطر من القص بسبب تقريب الطابعة والخطوط.
       const PX_PER_MM = 96 / 25.4;
-      const heightMm = Math.min(1500, Math.max(81, Math.ceil(heightPx / PX_PER_MM) + 4));
+      const heightMm = Math.min(1500, Math.max(75, Math.ceil(heightPx / PX_PER_MM) + 4));
 
       // تشخيص: تسجيل القياس الفعلي
       setPrintInfo(`iframe · ${heightMm}mm`);
@@ -388,7 +387,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       printFrame.style.position = 'fixed';
       printFrame.style.top = '0px';
       printFrame.style.left = '0px';
-      printFrame.style.width = '80mm';
+      printFrame.style.width = '72mm';
       printFrame.style.height = `${Math.ceil(heightPx + 60)}px`;
       printFrame.style.border = 'none';
       printFrame.style.zIndex = '-99999';
