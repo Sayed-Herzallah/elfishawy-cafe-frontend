@@ -116,7 +116,16 @@ const wrapReceiptDocument = (bodyHTML: string, pageHeightMm: number | null): str
       ${heightLockRule}
       background: #ffffff !important;
     }
-    body { display: block !important; position: relative !important; top: 0 !important; left: 0 !important; }
+    body {
+      display: flex !important;
+      justify-content: center !important;
+      align-items: flex-start !important;
+      position: relative !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 80mm !important;
+      box-sizing: border-box !important;
+    }
 ${buildReceiptCss()}
   </style>
 </head>
