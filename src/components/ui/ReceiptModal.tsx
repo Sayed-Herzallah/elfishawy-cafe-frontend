@@ -55,7 +55,7 @@ const RECEIPT_RULES: Array<[string, string]> = [
   ['*', 'box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact;'],
   ['html, body', `margin: 0; padding: 0; width: 80mm; background: #ffffff; color: #000000; font-family: ${RECEIPT_FONT};`],
   // 80mm paper - 70mm receipt: pin the physical left offset to 5mm. Some RTL drivers
-  ['#receipt', 'width: 74mm; max-width: 74mm; padding: 0 2mm; margin: 0 auto !important; box-sizing: border-box !important; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
+  ['#receipt', 'width: 100%; max-width: 100%; padding: 0 3mm; margin: 0 !important; box-sizing: border-box !important; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
   ['.r-header', 'margin: 0; padding: 0 0 1.5mm 0; text-align: center; border-bottom: 0.6mm solid #000000;'],
   ['.r-title', 'margin: 0; padding: 0; font-size: 15pt; font-weight: 900; line-height: 1.15;'],
   ['.r-invoice-row', 'margin-top: 1.5mm; border: 0.5mm solid #000000; border-radius: 2mm; padding: 0.8mm 2mm; display: flex; justify-content: space-between; align-items: center; font-size: 8.5pt; font-weight: 800;'],
@@ -116,9 +116,7 @@ const wrapReceiptDocument = (bodyHTML: string, pageHeightMm: number | null): str
       background: #ffffff !important;
     }
     body {
-      display: flex !important;
-      justify-content: center !important;
-      align-items: flex-start !important;
+      display: block !important;
       position: relative !important;
       top: 0 !important;
       left: 0 !important;
@@ -246,19 +244,15 @@ const printViaMainWindow = (bodyHTML: string, heightMm: number): Promise<void> =
         }
         body > *:not(#${holderId}) { display: none !important; }
         #${holderId} {
-          display: flex !important;
-          justify-content: center !important;
-          align-items: flex-start !important;
+          display: block !important;
           position: fixed !important;
           top: 0 !important;
           left: 0 !important;
-          right: 0 !important;
-          margin: 0 auto !important;
           width: 80mm !important;
           box-sizing: border-box !important;
         }
 ${buildReceiptCss(`#${holderId}`)}
-        #${holderId} #receipt { margin: 0 auto !important; width: 74mm !important; max-width: 74mm !important; }
+        #${holderId} #receipt { margin: 0 !important; width: 100% !important; max-width: 100% !important; }
       }
     `;
     document.head.appendChild(style);
