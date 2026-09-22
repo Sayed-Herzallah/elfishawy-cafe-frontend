@@ -15,6 +15,7 @@ import { DashboardFilterBar } from '../../components/ui/DashboardFilterBar';
 import { ProfessionalCard, OrderCard } from '../../components/ui/ProfessionalCard';
 import { useNotification } from '../../contexts/NotificationContext';
 import { formatPrice, formatNumber, formatDate, formatTime, formatStat } from '../../utils/formatters';
+import { displayOrderNumber } from '../../utils/orderDisplay';
 import {
   ShoppingBag,
   TrendingUp,
@@ -398,7 +399,7 @@ export const AdminSalesPage: React.FC = () => {
                       onClick={() => setSelectedReceiptOrder(order)}
                     >
                       <td className="py-3 px-3 font-mono font-bold text-[#2e5b9f]">
-                        #{String(order.orderNumber || order._id || '').slice(-6)}
+                        #{displayOrderNumber(order) || '—'}
                       </td>
                       <td className="py-3 px-3 font-mono text-gray-500">
                         {formatDate(order.createdAt)} • {formatTime(order.createdAt)}
@@ -490,8 +491,8 @@ export const AdminSalesPage: React.FC = () => {
                   key={order._id}
                   id={order._id}
                   status={statusStyle as any}
-                  title={String(order.orderNumber || `طلب #${String(order._id || '').slice(-6)}`)}
-                  subtitle={`#${order._id.slice(-6)} • ${formatDate(order.createdAt)}`}
+                  title={`فاتورة #${displayOrderNumber(order) || '—'}`}
+                  subtitle={`${formatDate(order.createdAt)}`}
                   onClick={() => setSelectedReceiptOrder(order)}
                   onDoubleClick={() => setSelectedReceiptOrder(order)}
                   amounts={{

@@ -56,7 +56,7 @@ const RECEIPT_RULES: Array<[string, string]> = [
   ['html, body', `margin: 0; padding: 0; width: 80mm; background: #ffffff; color: #000000; font-family: ${RECEIPT_FONT};`],
   // 80mm paper - 70mm receipt: pin the physical left offset to 5mm. Some RTL drivers
   // ignore symmetric auto margins and otherwise pin the receipt against the left edge.
-  ['#receipt', 'width: 70mm; max-width: 70mm; padding: 0 3mm; margin: 0 !important; margin-left: 5mm !important; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
+  ['#receipt', 'width: 70mm; max-width: 70mm; padding: 0 3mm; margin: 0 auto !important; direction: rtl; text-align: right; background: #ffffff; color: #000000;'],
   ['.r-header', 'margin: 0; padding: 0 0 1.5mm 0; text-align: center; border-bottom: 0.6mm solid #000000;'],
   ['.r-title', 'margin: 0; padding: 0; font-size: 15pt; font-weight: 900; line-height: 1.15;'],
   ['.r-invoice-row', 'margin-top: 1.5mm; border: 0.5mm solid #000000; border-radius: 2mm; padding: 0.8mm 2mm; display: flex; justify-content: space-between; align-items: center; font-size: 8.5pt; font-weight: 800;'],
@@ -247,6 +247,9 @@ const printViaMainWindow = (bodyHTML: string, heightMm: number): Promise<void> =
           width: 70mm !important;
         }
 ${buildReceiptCss(`#${holderId}`)}
+        /* إصلاح: الحاوية مركّزة بالفعل (width:70mm + margin:0 auto) —
+           لا يجوز إضافة margin-left:5mm على #receipt بداخلها وإلا تجاوز الحد */
+        #${holderId} #receipt { margin: 0 !important; margin-left: 0 !important; }
       }
     `;
     document.head.appendChild(style);

@@ -79,8 +79,6 @@ export const normalizeOrder = (raw: any, lookup?: ProductLookup): Order => {
   const orderNumber = String(
     raw?.orderNumber ||
       raw?.order_number ||
-      raw?.clientOrderId ||
-      raw?.client_order_id ||
       ''
   );
   const tableRaw = raw?.tableNumber ?? raw?.table_number;
@@ -187,16 +185,17 @@ export const displayOrderNumber = (order: any): string => {
   const raw = String(order?.orderNumber ?? order?.order_number ?? '').trim();
   if (raw) {
     const cleaned = raw.replace(/^OFF-/i, '').trim();
-    // إذا كان الرقم تسلسلياً نقياً نرجعه بالكامل دون اقتطاع
-    if (cleaned && !cleaned.startsWith('tmp_')) {
+    // بيانات قديمة: clientOrderId مخزّن خطأً كـ order_number — نتجاهله
+    if (cleaned.startsWith('off_')) {
+      // no orderNumber available, fall through to tableNumber fallback
+    } else if (cleaned && !cleaned.startsWith('tmp_')) {
+      // إذا كان الرقم تسلسلياً نقياً نرجعه بالكامل دون اقتطاع
       return cleaned;
-    }
-    if (cleaned.startsWith('tmp_')) {
+    } else if (cleaned.startsWith('tmp_')) {
       // إزالة بادئة tmp_ لو وُجدت من بيانات قديمة
       const numOnly = cleaned.replace(/\D/g, '');
       if (numOnly) return numOnly;
     }
-    if (cleaned) return cleaned;
   }
 
   // إذا لم يتوفر orderNumber إطلاقاً، نستخدم رقم الطاولة كمرجع واضح بدل تشويه الأرقام بـ Mongo _id

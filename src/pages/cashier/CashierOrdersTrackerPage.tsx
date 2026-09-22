@@ -9,6 +9,7 @@ import { ExportModal } from '../../components/ui/ExportModal';
 import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
 import { exportElementToPdf } from '../../utils/pdfExport';
 import { formatPrice, formatNumber, formatTime, formatDate, formatDateTime, isToday } from '../../utils/formatters';
+import { displayOrderNumber } from '../../utils/orderDisplay';
 import {
   Clock,
   Printer,
@@ -191,7 +192,7 @@ export const CashierOrdersTrackerPage: React.FC = () => {
         ['التسلسل', 'رقم الفاتورة', 'الوقت', 'الطاولة', 'عدد الأصناف', 'المبلغ', 'الحالة'],
         ...filteredOrders.map((o, idx) => [
           `#${filteredOrders.length - idx}`,
-          `#${String(o.orderNumber || o._id || '').slice(-8)}`,
+          `#${displayOrderNumber(o) || '—'}`,
           formatTime(o.createdAt),
           `طاولة #${o.tableNumber || 1}`,
           `${(o.items || []).length} أصناف`,

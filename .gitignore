@@ -8,3 +8,22 @@ coverage/
 !.env.example
 release/
 
+# Databases & local sqlite
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.db-journal
+
+# Archives & Binaries / Installers
+*.zip
+*.tar
+*.tar.gz
+*.exe
+*.msi
+
+# Temp profiles & cache
+.chrome-test-profile/
+.kilo/
+*.tmp
+

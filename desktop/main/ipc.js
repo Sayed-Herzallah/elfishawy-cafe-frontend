@@ -144,7 +144,7 @@ const mapOrderRow = (raw, db) => {
   const createdAt = raw.created_at || raw.createdAt || new Date().toISOString();
   return {
     _id: raw._id,
-    orderNumber: raw.order_number || raw.orderNumber || raw.client_order_id || raw._id || '',
+    orderNumber: raw.order_number || raw.orderNumber || '',
     items: slimOrderItems(raw.items, db),
     totalAmount: Number(raw.total_amount ?? raw.totalAmount) || 0,
     status: raw.status || 'completed',
