@@ -89,14 +89,7 @@ const buildReceiptCss = (scope?: string): string =>
     .join('\n');
 
 /** لفّ فاتورة مستقلة في مستند HTML كامل — pageHeightMm = null لوضع القياس */
-const wrapReceiptDocument = (bodyHTML: string, pageHeightMm: number | null): string => {
-  const pageSizeRule = pageHeightMm
-    ? `size: 72mm ${pageHeightMm}mm;`
-    : 'size: 72mm auto;';
-  const heightLockRule = pageHeightMm
-    ? `width: 72mm !important; height: ${pageHeightMm}mm !important; min-height: ${pageHeightMm}mm !important; max-height: none !important; overflow: visible !important;`
-    : 'width: 72mm !important; height: auto !important; min-height: 0 !important; overflow: visible !important;';
-
+const wrapReceiptDocument = (bodyHTML: string, _pageHeightMm: number | null): string => {
   const cairoFontFaceCss = buildCairoFontFaceCss();
   return `<!DOCTYPE html>
 <html lang="ar" dir="rtl">
@@ -107,20 +100,28 @@ const wrapReceiptDocument = (bodyHTML: string, pageHeightMm: number | null): str
     ? `<style>${cairoFontFaceCss}</style>`
     : '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@700;800;900&display=swap">'}
   <style>
-    @page { ${pageSizeRule} margin: 0 !important; }
+    @page {
+      size: 72mm auto !important;
+      margin: 0 !important;
+    }
+    *, *::before, *::after {
+      box-sizing: border-box !important;
+    }
     html, body {
       margin: 0 !important;
       padding: 0 !important;
-      ${heightLockRule}
+      width: 72mm !important;
+      max-width: 72mm !important;
+      min-height: 0 !important;
+      height: auto !important;
       background: #ffffff !important;
+      overflow: visible !important;
     }
     body {
       display: block !important;
-      position: relative !important;
-      top: 0 !important;
-      left: 0 !important;
-      width: 72mm !important;
-      box-sizing: border-box !important;
+      position: static !important;
+      margin: 0 !important;
+      padding: 0 !important;
     }
 ${buildReceiptCss()}
   </style>
@@ -229,13 +230,18 @@ const printViaMainWindow = (bodyHTML: string, heightMm: number): Promise<void> =
       #${holderId} { display: none; }
       @media print {
         ${cairoFontFaceCss}
-        @page { size: 80mm ${heightMm}mm; margin: 0 !important; }
+        @page {
+          size: 72mm auto !important;
+          margin: 0 !important;
+        }
+        *, *::before, *::after {
+          box-sizing: border-box !important;
+        }
         html, body {
-          width: 80mm !important;
-          max-width: none !important;
-          height: ${heightMm}mm !important;
-          min-height: ${heightMm}mm !important;
-          max-height: none !important;
+          width: 72mm !important;
+          max-width: 72mm !important;
+          min-height: 0 !important;
+          height: auto !important;
           margin: 0 !important;
           padding: 0 !important;
           background: #ffffff !important;
@@ -244,11 +250,11 @@ const printViaMainWindow = (bodyHTML: string, heightMm: number): Promise<void> =
         body > *:not(#${holderId}) { display: none !important; }
         #${holderId} {
           display: block !important;
-          position: fixed !important;
-          top: 0 !important;
-          left: 0 !important;
+          position: static !important;
+          margin: 0 !important;
+          padding: 0 !important;
           width: 72mm !important;
-          box-sizing: border-box !important;
+          max-width: 72mm !important;
         }
 ${buildReceiptCss(`#${holderId}`)}
         #${holderId} #receipt { margin: 0 auto !important; width: 72mm !important; max-width: 72mm !important; }
@@ -309,7 +315,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
     pageStyle.id = pageStyleId;
     pageStyle.textContent = `
       @media print {
-        @page { size: 80mm auto !important; margin: 0 !important; }
+        @page { size: 72mm auto !important; margin: 0 !important; }
         /* توحيد حجم خط الملاحظات حتى في مسار window.print الأخير (طباعة المعاينة مباشرة) */
         .receipt-notes-preview { font-size: 10pt !important; line-height: 1.45 !important; }
       }
