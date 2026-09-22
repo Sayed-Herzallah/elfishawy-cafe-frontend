@@ -82,7 +82,10 @@ export const AdminDashboardPage: React.FC = () => {
   // F2/F6: نطاق الفترة الحالية كأيام تجارية بتوقيت القاهرة (يُرسل للسيرفر كمصدر حقيقة)
   const getPeriodParams = (): { from?: string; to?: string } => {
     if (dateRange.from || dateRange.to) {
-      return { from: dateRange.from || undefined, to: dateRange.to || undefined };
+      return {
+        from: dateRange.from ? dateRange.from.toISOString() : undefined,
+        to: dateRange.to ? dateRange.to.toISOString() : undefined,
+      };
     }
     const todayKey = getBusinessDayKey();
     if (timeRange === 'today') return { from: todayKey, to: todayKey };

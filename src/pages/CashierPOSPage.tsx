@@ -10,7 +10,7 @@ import { ReceiptModal } from '../components/ui/ReceiptModal';
 import { Modal } from '../components/ui/Modal';
 import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { formatPrice, formatNumber, formatTime, EMPTY_LABEL, isToday } from '../utils/formatters';
+import { formatPrice, formatNumber, formatTime, EMPTY_LABEL, isToday, isWithinLast24Hours } from '../utils/formatters';
 import { toBase } from '../utils/stockSync';
 import { productStockState } from '../utils/stockStatus';
 import { playAlertSound } from '../utils/soundFeedback';
@@ -100,12 +100,12 @@ export const CashierPOSPage: React.FC = () => {
     );
   const applyOrders = (data: Order[]) => {
     const lookup = buildProductLookup(productsRef.current);
-    const todayOrders = (data || [])
+    const recentOrders = (data || [])
       .map((o) => normalizeOrder(o, lookup))
-      .filter((o) => isToday(o.createdAt) && o.status !== 'cancelled')
+      .filter((o) => isWithinLast24Hours(o.createdAt) && o.status !== 'cancelled')
       .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-    setAllOrders(todayOrders);
-    setRecentOrders(todayOrders.slice(0, 4));
+    setAllOrders(recentOrders);
+    setRecentOrders(recentOrders.slice(0, 4));
   };
 
   // 🔔 تنبيه صوتي ومرئي لحظة نفاد أو انخفاض مخزون أي منتج —

@@ -113,3 +113,18 @@ export const isToday = (dateInput: string | Date | undefined | null): boolean =>
   return getBusinessDayKey(d) === getBusinessDayKey(new Date());
 };
 
+/**
+ * Checks if a given date string/Date falls within the last 24 hours from now.
+ * Used for the "Recent 24h" orders view in the POS Cashier page.
+ * Covers both online and offline orders using their original createdAt,
+ * not the sync/receipt time. Offline orders sync later keep their original timestamp.
+ */
+export const isWithinLast24Hours = (dateInput: string | Date | undefined | null): boolean => {
+  if (!dateInput) return false;
+  const d = new Date(dateInput);
+  if (isNaN(d.getTime())) return false;
+  const now = Date.now();
+  const cutoff = now - 24 * 60 * 60 * 1000;
+  return d.getTime() >= cutoff && d.getTime() <= now;
+};
+
