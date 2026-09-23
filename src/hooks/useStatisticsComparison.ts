@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { getBusinessDayKey, shiftDayKey } from '../utils/businessDay';
 
 export type TimeRange = 'today' | 'week' | 'month' | 'year';
 
@@ -21,6 +22,55 @@ export interface ComparisonConfig {
   label?: string;
 }
 
+/**
+ * تحويل مفتاح يوم تجاري (YYYY-MM-DD) إلى بداية ذلك اليوم بتوقيت القاهرة (Date UTC).
+ * يضمن توافق حدود الفترات مع منطق orderBusinessDayKey المستخدم في سجلات الفواتير.
+ */
+function cairoBusinessDayStart(dayKey: string): Date {
+  // نستخدم Intl لتحديد offset توقيت القاهرة في تلك اللحظة
+  const [y, m, d] = dayKey.split('-').map(Number);
+  // نقدّر الـ offset من وسط اليوم (لتفادي أي حدود توقيت صيفي)
+  const noonUtcGuess = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Africa/Cairo',
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const parts: Record<string, string> = {};
+  for (const p of dtf.formatToParts(noonUtcGuess)) {
+    if (p.type !== 'literal') parts[p.type] = p.value;
+  }
+  const asUtc = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour) % 24,
+    Number(parts.minute),
+    Number(parts.second)
+  );
+  const offsetMin = Math.round((asUtc - noonUtcGuess.getTime()) / 60000);
+  // بداية اليوم 00:00:00.000 بتوقيت القاهرة → UTC
+  return new Date(Date.UTC(y, (m || 1) - 1, d || 1, 0, 0, 0, 0) - offsetMin * 60000);
+}
+
+/**
+ * نهاية اليوم التجاري (بداية اليوم التالي) بتوقيت القاهرة.
+ * الفلتر يكون: start <= date < end  (حصري من الأعلى)
+ */
+function cairoBusinessDayEnd(dayKey: string): Date {
+  const nextDayKey = shiftDayKey(dayKey, 1);
+  return cairoBusinessDayStart(nextDayKey);
+}
+
+/**
+ * F-UNIFIED: حدود الفترات الزمنية تعتمد على اليوم التجاري بتوقيت القاهرة
+ * حتى تتطابق مع orderBusinessDayKey المستخدم في سجلات الفواتير (filteredOrders).
+ */
 function getPeriodBounds(timeRange: TimeRange, referenceDate: Date = new Date()): {
   currentStart: Date;
   currentEnd: Date;
@@ -32,14 +82,21 @@ function getPeriodBounds(timeRange: TimeRange, referenceDate: Date = new Date())
   const now = new Date(referenceDate);
   const oneDayMs = 24 * 60 * 60 * 1000;
 
+  // مفتاح اليوم الحالي بتوقيت القاهرة — نفس المرجع المستخدم في filteredOrders
+  const todayKey = getBusinessDayKey(now);
+
   switch (timeRange) {
     case 'today': {
-      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      // F-UNIFIED: بداية ونهاية اليوم التقويمي بتوقيت القاهرة
+      // (بدل new Date(y, m, d) التي تستخدم توقيت الجهاز)
+      const currentStart = cairoBusinessDayStart(todayKey);
+      const currentEnd = cairoBusinessDayEnd(todayKey);
+      const prevDayKey = shiftDayKey(todayKey, -1);
       return {
-        currentStart: todayStart,
-        currentEnd: new Date(todayStart.getTime() + oneDayMs),
-        previousStart: new Date(todayStart.getTime() - oneDayMs),
-        previousEnd: todayStart,
+        currentStart,
+        currentEnd,
+        previousStart: cairoBusinessDayStart(prevDayKey),
+        previousEnd: cairoBusinessDayEnd(prevDayKey),
         previousLabel: 'أمس',
         currentLabel: 'اليوم',
       };

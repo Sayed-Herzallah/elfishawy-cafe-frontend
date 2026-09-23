@@ -1,5 +1,5 @@
 // desktop/main/ipc.js
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import { getDb, saveDatabase, getMasterKey } from './db.js';
 import { processSyncQueue, configureSync } from './sync.js';
 import { frontendUpdater } from './frontendUpdater.js';
@@ -821,5 +821,95 @@ export function setupIpcHandlers(mainWindow) {
 
   ipcMain.handle('frontend:apply-update', async () => {
     return frontendUpdater.applyUpdateNow(mainWindow);
+  });
+
+  // ============================================================
+  // 🖨️ الطباعة الصامتة — بدون Print Dialog
+  // ============================================================
+
+  /** جلب قائمة الطابعات المتاحة على الجهاز */
+  ipcMain.handle('print:get-printers', async () => {
+    try {
+      const printers = await mainWindow.webContents.getPrintersAsync();
+      // نرجّع الاسم والحالة فقط — بدون بيانات تقنية زيادة
+      return {
+        ok: true,
+        printers: printers.map((p) => ({
+          name: p.name,
+          displayName: p.displayName || p.name,
+          isDefault: p.isDefault,
+          status: p.status,
+        })),
+      };
+    } catch (err) {
+      console.error('[print:get-printers]', err);
+      return { ok: false, printers: [], error: err.message };
+    }
+  });
+
+  /** طباعة HTML صامتة على طابعة محددة — بدون فتح أي dialog */
+  ipcMain.handle('print:silent', async (_event, { html, printerName }) => {
+    return new Promise((resolve) => {
+      let printWin = null;
+      const cleanup = () => {
+        try { if (printWin && !printWin.isDestroyed()) printWin.close(); } catch {}
+        printWin = null;
+      };
+
+      try {
+        printWin = new BrowserWindow({
+          show: false,
+          skipTaskbar: true,
+          webPreferences: {
+            contextIsolation: true,
+            nodeIntegration: false,
+            javascript: true,
+          },
+        });
+
+        // تحميل HTML الفاتورة مباشرةً كـ data URL
+        const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+        printWin.loadURL(dataUrl);
+
+        printWin.webContents.once('did-finish-load', () => {
+          // هامش بسيط لضمان تحميل الخطوط قبل الطباعة
+          setTimeout(() => {
+            try {
+              printWin.webContents.print(
+                {
+                  silent: true,
+                  printBackground: true,
+                  printerName: printerName || undefined,
+                  margins: { marginType: 'none' },
+                  pageSize: 'A4', // سيُستبدل بـ @page في CSS الفاتورة
+                },
+                (success, reason) => {
+                  cleanup();
+                  resolve({ ok: success, reason: reason || null });
+                }
+              );
+            } catch (printErr) {
+              console.error('[print:silent] print() error:', printErr);
+              cleanup();
+              resolve({ ok: false, reason: printErr.message });
+            }
+          }, 600);
+        });
+
+        // timeout أمان: لو لم يكتمل التحميل بعد 15 ثانية
+        setTimeout(() => {
+          if (printWin) {
+            console.warn('[print:silent] timeout — closing print window');
+            cleanup();
+            resolve({ ok: false, reason: 'timeout' });
+          }
+        }, 15000);
+
+      } catch (err) {
+        console.error('[print:silent] setup error:', err);
+        cleanup();
+        resolve({ ok: false, reason: err.message });
+      }
+    });
   });
 }

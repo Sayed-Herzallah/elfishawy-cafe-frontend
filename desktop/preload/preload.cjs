@@ -47,4 +47,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('frontend:update-ready', handler);
     return () => ipcRenderer.removeListener('frontend:update-ready', handler);
   },
+
+  // 🖨️ الطباعة الصامتة — بدون Print Dialog
+  getPrinters: () => ipcRenderer.invoke('print:get-printers'),
+  silentPrint: (html, printerName) => ipcRenderer.invoke('print:silent', { html, printerName }),
 });

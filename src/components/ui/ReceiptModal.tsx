@@ -5,6 +5,12 @@ import { X, Printer, AlertTriangle, PackageX, ReceiptText, Clock, Calendar, Hash
 import { formatPrice, formatNumber, formatDateTime, formatDate, formatTime, formatStat } from '../../utils/formatters';
 import { displayOrderNumber } from '../../utils/orderDisplay';
 import { getCleanNotes } from '../../utils/orderShortageJournal';
+import { useNotification } from '../../contexts/NotificationContext';
+import {
+  getConfiguredCashierPrinters,
+  setConfiguredCashierPrinters,
+  CashierPrinterInfo,
+} from '../../utils/printerConfig';
 
 /* ============================================================================
  * نظام طباعة الفواتير المستقل (Self-Contained Receipt Printing)
@@ -309,9 +315,49 @@ interface ReceiptModalProps {
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClose, products, shortageMap }) => {
   if (!isOpen || !order) return null;
 
+  const isElectron = !!(window as any).electronAPI?.isElectron;
+  const { showToast } = useNotification();
+
   const [isPrinting, setIsPrinting] = React.useState(false);
-  // معلومات تشخيصية لآخر عملية طباعة — للتأكد من إن النظام المستقل v2 شغال
   const [printInfo, setPrintInfo] = React.useState('');
+
+  // --- طابعات الكاشير المخصصة لهذا الـ Desktop ---
+  const [configuredPrinters, setConfiguredPrintersState] = React.useState<string[]>(() =>
+    getConfiguredCashierPrinters()
+  );
+  const [availablePrinters, setAvailablePrinters] = React.useState<CashierPrinterInfo[]>([]);
+  const [showPrinterSettings, setShowPrinterSettings] = React.useState(false);
+
+  // تحديث قائمة الطابعات المكتشفة من النظام (Desktop فقط)
+  React.useEffect(() => {
+    if (!isOpen || !isElectron) return;
+    (window as any).electronAPI.getPrinters().then((res: any) => {
+      if (res?.ok && Array.isArray(res.printers)) {
+        setAvailablePrinters(res.printers);
+        // لو مفيش أي طابعة مخصصة بعد، نحدد الافتراضية
+        const saved = getConfiguredCashierPrinters();
+        if (saved.length === 0) {
+          const def = res.printers.find((p: any) => p.isDefault);
+          if (def?.name) {
+            const initial = [def.name];
+            setConfiguredPrintersState(initial);
+            setConfiguredCashierPrinters(initial);
+          }
+        } else {
+          setConfiguredPrintersState(saved);
+        }
+      }
+    }).catch(() => {});
+  }, [isOpen]);
+
+  const toggleConfiguredPrinter = (printerName: string) => {
+    const isSelected = configuredPrinters.includes(printerName);
+    const updated = isSelected
+      ? configuredPrinters.filter((p) => p !== printerName)
+      : [...configuredPrinters, printerName];
+    setConfiguredPrintersState(updated);
+    setConfiguredCashierPrinters(updated);
+  };
 
   // وسم body + حقن @page مخصص لطابعة 80mm أثناء فتح الفاتورة
   React.useEffect(() => {
@@ -324,7 +370,6 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
     pageStyle.textContent = `
       @media print {
         @page { size: 72mm auto !important; margin: 0 !important; }
-        /* توحيد حجم خط الملاحظات حتى في مسار window.print الأخير (طباعة المعاينة مباشرة) */
         .receipt-notes-preview { font-size: 10pt !important; line-height: 1.45 !important; }
       }
     `;
@@ -340,108 +385,161 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
   const handlePrint = async () => {
     if (isPrinting) return;
     setIsPrinting(true);
+    setShowPrinterSettings(false);
 
     try {
-      // 1) بناء فاتورة مستقلة تماماً — CSS مدمج بداخلها بدون أي اعتماد على ستايلات التطبيق
       const bodyHTML = buildReceiptBodyHTML(order, products, shortageMap);
 
-      // 2) قياس الارتفاع الفعلي بعد تحميل الخطوط واستقرار الرندر (القياس الخاطئ هو سبب القطع)
-      const measureFrame = document.createElement('iframe');
-      measureFrame.style.position = 'fixed';
-      measureFrame.style.top = '-99999px';
-      measureFrame.style.left = '-99999px';
-      measureFrame.style.width = '72mm';
-      measureFrame.style.height = '4000px';
-      measureFrame.style.border = 'none';
-      measureFrame.style.visibility = 'hidden';
-      document.body.appendChild(measureFrame);
+      // ===== Desktop (Electron): طباعة صامتة إلى جميع طابعات الكاشير المخصصة بدون Windows Dialog =====
+      if (isElectron && (window as any).electronAPI?.silentPrint) {
+        // 1. جلب الطابعات المخصصة لهذا الجهاز
+        const targetPrinters = getConfiguredCashierPrinters();
 
-      let heightPx = 0;
-      try {
-        const measureWin = measureFrame.contentWindow;
-        const measureDoc = measureWin?.document;
-        if (!measureWin || !measureDoc) throw new Error('measure-frame-unavailable');
+        // فحص الطابعات المتاحة فعلياً على ويندوز
+        let sysPrinters: CashierPrinterInfo[] = availablePrinters;
+        if (sysPrinters.length === 0) {
+          try {
+            const pRes = await (window as any).electronAPI.getPrinters();
+            if (pRes?.ok && Array.isArray(pRes.printers)) {
+              sysPrinters = pRes.printers;
+              setAvailablePrinters(sysPrinters);
+            }
+          } catch {}
+        }
 
-        measureDoc.open();
-        measureDoc.write(wrapReceiptDocument(bodyHTML, null));
-        measureDoc.close();
+        const sysPrinterNames = new Set(sysPrinters.map((p) => p.name));
 
-        // ننتظر تحميل الخطوط (Cairo) ثم هامش استقرار بسيط قبل القياس
-        try { await measureWin.document.fonts.ready; } catch { /* تجاهل */ }
-        await new Promise((r) => setTimeout(r, 250));
+        // إذا لم تكن هناك أي طابعة كاشير مخصصة للجهاز
+        if (targetPrinters.length === 0) {
+          showToast('لم يتم تحديد أي طابعة كاشير مخصصة لهذا الجهاز. يرجى اختيار طابعات الكاشير من إعدادات الطابعة.', 'error');
+          setIsPrinting(false);
+          return;
+        }
 
-        const receiptEl = measureDoc.getElementById('receipt');
-        const receiptHeight = receiptEl ? receiptEl.getBoundingClientRect().height : 0;
-        // لا نستخدم scrollHeight للـ body/document هنا: ارتفاع iframe نفسه 4000px
-        // فيُحسب كأنه جزء من الفاتورة وينتج عنه صفحات فارغة متعددة.
-        heightPx = receiptHeight;
-      } finally {
-        measureFrame.remove();
+        // فحص الطابعات المخصصة: المتاحة وغير المتاحة
+        const availableTargets = targetPrinters.filter((p) => sysPrinterNames.has(p));
+        const missingTargets = targetPrinters.filter((p) => !sysPrinterNames.has(p));
+
+        // إذا كانت جميع طابعات الكاشير المخصصة غير متاحة
+        if (availableTargets.length === 0) {
+          showToast(
+            `جميع طابعات الكاشير المخصصة غير متاحة (${targetPrinters.join('، ')}). لن يتم إرسال الفاتورة لأي طابعة أخرى.`,
+            'error'
+          );
+          setIsPrinting(false);
+          return;
+        }
+
+        // إذا كانت طابعة متاحة وأخرى غير متاحة: نظهر تنبيهاً واضحاً
+        if (missingTargets.length > 0) {
+          showToast(
+            `تنبيه: إحدى طابعات الكاشير المخصصة غير متصلة (${missingTargets.join('، ')}). سيتم إرسال الفاتورة إلى الطابعات المتاحة فقط.`,
+            'info'
+          );
+        }
+
+        const fullHtml = wrapReceiptDocument(bodyHTML, null);
+        let printedCount = 0;
+        const failedPrinters: string[] = [];
+
+        // طباعة نسخة على كل طابعة كاشير مخصصة ومتاحة بالتوازي
+        await Promise.all(
+          availableTargets.map(async (printerName) => {
+            try {
+              const res = await (window as any).electronAPI.silentPrint(fullHtml, printerName);
+              if (res?.ok) {
+                printedCount++;
+              } else {
+                console.warn(`[Receipt] Silent print to ${printerName} failed:`, res?.reason);
+                failedPrinters.push(printerName);
+              }
+            } catch (err: any) {
+              console.error(`[Receipt] Error printing to ${printerName}:`, err);
+              failedPrinters.push(printerName);
+            }
+          })
+        );
+
+        if (printedCount > 0) {
+          setPrintInfo(`تمت الطباعة الصامتة على ${printedCount} طابعة كاشير`);
+          if (failedPrinters.length > 0) {
+            showToast(`تعذرت الطباعة على: ${failedPrinters.join('، ')}`, 'error');
+          } else {
+            showToast(`تمت طباعة الفاتورة بنجاح على طابعات الكاشير (${printedCount})`);
+          }
+        } else {
+          showToast(`تعذرت الطباعة على طابعات الكاشير المحددة. لن يتم الإرسال لأي طابعة غير مخصصة.`, 'error');
+        }
+
+        return;
       }
 
-      if (!heightPx || heightPx <= 0) heightPx = 300;
+      // ===== Browser (Non-Electron): طباعة عبر iframe =====
+      await _printViaIframe(bodyHTML);
 
-      // تحويل البكسل إلى ملم (96px = 25.4mm). الحد الأدنى أكبر من عرض 72mm
-      // حتى لا يفسر تعريف الطابعة الفواتير القصيرة كصفحات أفقية.
-      // 4mm أمان محسوب يحمي آخر سطر من القص بسبب تقريب الطابعة والخطوط.
-      const PX_PER_MM = 96 / 25.4;
-      const heightMm = Math.min(1500, Math.max(75, Math.ceil(heightPx / PX_PER_MM) + 4));
-
-      // تشخيص: تسجيل القياس الفعلي
-      setPrintInfo(`iframe · ${heightMm}mm`);
-      console.log(`[Receipt v2] heightPx=${heightPx.toFixed(1)} → page=${heightMm}mm`);
-
-      // 3) الطباعة عبر iframe معزول — حجم الصفحة @page مطابق تماماً لحجم الفاتورة
-      const oldFrame = document.getElementById('receipt-print-frame');
-      if (oldFrame) oldFrame.remove();
-
-      const printFrame = document.createElement('iframe');
-      printFrame.id = 'receipt-print-frame';
-      printFrame.setAttribute('title', 'فاتورة كافيه الفيشاوي');
-      printFrame.style.position = 'fixed';
-      printFrame.style.top = '0px';
-      printFrame.style.left = '0px';
-      printFrame.style.width = '72mm';
-      printFrame.style.height = `${Math.ceil(heightPx + 60)}px`;
-      printFrame.style.border = 'none';
-      printFrame.style.zIndex = '-99999';
-      printFrame.style.opacity = '0.01';
-      printFrame.style.pointerEvents = 'none';
-      document.body.appendChild(printFrame);
-
-      const printWin = printFrame.contentWindow;
-      const printDoc = printWin?.document;
-      if (!printWin || !printDoc) throw new Error('print-frame-unavailable');
-
-      printDoc.open();
-      printDoc.write(wrapReceiptDocument(bodyHTML, heightMm));
-      printDoc.close();
-
-      try { await printWin.document.fonts.ready; } catch { /* تجاهل */ }
-      await new Promise((r) => setTimeout(r, 300));
-
-      try {
-        printWin.focus();
-        printWin.print();
-      } catch {
-        setPrintInfo(`main-window · ${heightMm}mm`);
-        await printViaMainWindow(bodyHTML, heightMm);
-      }
-
-      // تنظيف مؤجل بعد انتهاء حوار الطباعة
-      setTimeout(() => printFrame.remove(), 60000);
-    } catch {
-      // آخر حلقة أمان: طباعة من النافذة الرئيسية بمقاس افتراضي
-      setPrintInfo('fallback · 200mm');
-      try {
-        await printViaMainWindow(buildReceiptBodyHTML(order, products, shortageMap), 200);
-      } catch {
-        window.print();
-      }
+    } catch (err) {
+      console.error('[Receipt] Print error:', err);
+      showToast('حدث خطأ أثناء إرسال الفاتورة للطباعة', 'error');
     } finally {
-      setTimeout(() => setIsPrinting(false), 2000);
+      setTimeout(() => setIsPrinting(false), 1500);
     }
   };
+
+
+  /** طباعة عبر iframe معزول (Browser + Electron fallback) */
+  const _printViaIframe = async (bodyHTML: string) => {
+    const measureFrame = document.createElement('iframe');
+    measureFrame.style.cssText = 'position:fixed;top:-99999px;left:-99999px;width:72mm;height:4000px;border:none;visibility:hidden;';
+    document.body.appendChild(measureFrame);
+
+    let heightPx = 0;
+    try {
+      const measureWin = measureFrame.contentWindow;
+      const measureDoc = measureWin?.document;
+      if (!measureWin || !measureDoc) throw new Error('measure-frame-unavailable');
+      measureDoc.open();
+      measureDoc.write(wrapReceiptDocument(bodyHTML, null));
+      measureDoc.close();
+      try { await measureWin.document.fonts.ready; } catch { /* ignore */ }
+      await new Promise((r) => setTimeout(r, 250));
+      const receiptEl = measureDoc.getElementById('receipt');
+      heightPx = receiptEl ? receiptEl.getBoundingClientRect().height : 0;
+    } finally {
+      measureFrame.remove();
+    }
+
+    if (!heightPx || heightPx <= 0) heightPx = 300;
+    const PX_PER_MM = 96 / 25.4;
+    const heightMm = Math.min(1500, Math.max(75, Math.ceil(heightPx / PX_PER_MM) + 4));
+    setPrintInfo(`iframe · ${heightMm}mm`);
+
+    const oldFrame = document.getElementById('receipt-print-frame');
+    if (oldFrame) oldFrame.remove();
+    const printFrame = document.createElement('iframe');
+    printFrame.id = 'receipt-print-frame';
+    printFrame.setAttribute('title', 'فاتورة كافيه الفيشاوي');
+    printFrame.style.cssText = `position:fixed;top:0;left:0;width:72mm;height:${Math.ceil(heightPx + 60)}px;border:none;z-index:-99999;opacity:0.01;pointer-events:none;`;
+    document.body.appendChild(printFrame);
+
+    const printWin = printFrame.contentWindow;
+    const printDoc = printWin?.document;
+    if (!printWin || !printDoc) throw new Error('print-frame-unavailable');
+    printDoc.open();
+    printDoc.write(wrapReceiptDocument(bodyHTML, heightMm));
+    printDoc.close();
+    try { await printWin.document.fonts.ready; } catch { /* ignore */ }
+    await new Promise((r) => setTimeout(r, 300));
+    try {
+      printWin.focus();
+      printWin.print();
+    } catch {
+      setPrintInfo(`main-window · ${heightMm}mm`);
+      await printViaMainWindow(bodyHTML, heightMm);
+    }
+    setTimeout(() => printFrame.remove(), 60000);
+  };
+
+
 
   // اعتراض Ctrl+P: أي طباعة أثناء فتح الفاتورة تمر تلقائياً عبر نظام الطباعة المستقل v2
   // (حتى لو المستخدم ضغط Ctrl+P أو Print من قائمة المتصفح بدل زرار الطباعة)
@@ -550,7 +648,102 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
               {formatStat(totalItemsCount, 'قطعة')}
             </span>
           </div>
+
+          {/* شريط طابعات الكاشير المخصصة — Desktop فقط */}
+          {isElectron && (
+            <div className="mt-2.5 relative">
+              <button
+                type="button"
+                onClick={() => setShowPrinterSettings((v) => !v)}
+                className="w-full flex items-center justify-between gap-2 bg-white/10 hover:bg-white/20 border border-white/25 rounded-xl px-3 py-1.5 text-[11px] font-bold text-white transition-colors cursor-pointer"
+              >
+                <span className="flex items-center gap-1.5 truncate">
+                  <Printer className="w-3.5 h-3.5 opacity-80 shrink-0" />
+                  <span className="opacity-75 shrink-0">طابعات الكاشير:</span>
+                  <span className="truncate">
+                    {configuredPrinters.length === 0
+                      ? '⚠️ لم تحدد أي طابعة كاشير'
+                      : configuredPrinters.join(' + ')}
+                  </span>
+                </span>
+                <span className="opacity-75 text-[10px] shrink-0 bg-white/15 px-2 py-0.5 rounded-lg hover:bg-white/25">
+                  إعدادات الطابعات ▾
+                </span>
+              </button>
+
+              {/* قائمة طابعات الكاشير المخصصة (Desktop Settings) */}
+              {showPrinterSettings && (
+                <div className="absolute top-full mt-1.5 right-0 left-0 z-50 bg-white border border-gray-200 rounded-2xl shadow-2xl p-3 text-gray-800 space-y-2 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="flex items-center justify-between pb-2 border-b border-gray-100">
+                    <span className="text-[10px] text-gray-400 font-mono">
+                      محدد: {configuredPrinters.length}
+                    </span>
+                    <h4 className="text-xs font-bold text-gray-900 flex items-center gap-1">
+                      <Printer className="w-3.5 h-3.5 text-[#2e5b9f]" />
+                      طابعات الكاشير المخصصة لهذا الجهاز
+                    </h4>
+                  </div>
+
+                  <p className="text-[10px] text-gray-500 leading-tight">
+                    حدد الطابعات المخصصة لطباعة الفواتير. ستطبع الفاتورة عليها تلقائياً وبدون أي Dialog.
+                  </p>
+
+                  <div className="max-h-48 overflow-y-auto space-y-1.5 pr-0.5">
+                    {availablePrinters.length === 0 ? (
+                      <div className="py-4 text-center text-xs text-gray-400">جاري فحص الطابعات المتاحة...</div>
+                    ) : (
+                      availablePrinters.map((p) => {
+                        const isConfigured = configuredPrinters.includes(p.name);
+                        const isOnline = p.status === 0 || p.status === undefined;
+                        return (
+                          <div
+                            key={p.name}
+                            onClick={() => toggleConfiguredPrinter(p.name)}
+                            className={`p-2 rounded-xl border text-xs flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                              isConfigured
+                                ? 'bg-blue-50/70 border-[#2e5b9f] text-[#1e3a8a] font-bold'
+                                : 'bg-gray-50/70 border-gray-200 text-gray-700 hover:bg-gray-100'
+                            }`}
+                          >
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                              isOnline ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {isOnline ? 'متصلة' : 'مشغولة/غير متاحة'}
+                            </span>
+
+                            <div className="flex items-center gap-2 flex-1 justify-end min-w-0">
+                              <span className="truncate text-right">
+                                {p.displayName || p.name}
+                              </span>
+                              <input
+                                type="checkbox"
+                                checked={isConfigured}
+                                onChange={() => {}}
+                                className="w-3.5 h-3.5 text-[#2e5b9f] rounded cursor-pointer pointer-events-none"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  <div className="pt-2 border-t border-gray-100 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => setShowPrinterSettings(false)}
+                      className="w-full py-1.5 bg-[#2e5b9f] hover:bg-[#244b85] text-white text-xs font-bold rounded-xl transition cursor-pointer"
+                    >
+                      حفظ واعتماد الطابعات
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
+
+
 
         {/* ===== جسم المودال ===== */}
         <div className="p-3 pt-2 print:p-0">

@@ -11,7 +11,9 @@ import {
   LayoutDashboard,
   Sparkles,
   RefreshCw,
+  Printer,
 } from 'lucide-react';
+import { CashierPrinterSettingsModal } from '../ui/CashierPrinterSettingsModal';
 
 export const CashierLayout: React.FC = () => {
   const { logout, isAdmin } = useAuth();
@@ -20,6 +22,8 @@ export const CashierLayout: React.FC = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<{ version: string; message: string } | null>(null);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+  const [showPrinterSettings, setShowPrinterSettings] = useState(false);
+  const isElectron = !!(window as any).electronAPI?.isElectron;
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.electronAPI?.onFrontendUpdateReady) {
@@ -248,6 +252,17 @@ export const CashierLayout: React.FC = () => {
           </button>
 
           <div className="hidden lg:flex items-center gap-2">
+            {isElectron && (
+              <button
+                onClick={() => setShowPrinterSettings(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gray-50 hover:bg-gray-100 text-gray-700 font-bold text-xs border border-gray-200 transition cursor-pointer whitespace-nowrap shadow-2xs"
+                title="إعدادات طابعات الكاشير"
+              >
+                <Printer className="w-3.5 h-3.5" />
+                <span>الطابعات</span>
+              </button>
+            )}
+
             {isAdmin && (
               <button
                 onClick={goAdmin}
@@ -343,6 +358,12 @@ export const CashierLayout: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Cashier Printer Settings Modal */}
+      <CashierPrinterSettingsModal
+        isOpen={showPrinterSettings}
+        onClose={() => setShowPrinterSettings(false)}
+      />
     </div>
   );
 };

@@ -37,4 +37,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setAuthToken: (token) => ipcRenderer.invoke('auth:set-token', token),
   cacheUserCredentials: (user, password, token) => ipcRenderer.invoke('auth:cache-user', { user, password, token }),
   verifyOfflineLogin: (email, password) => ipcRenderer.invoke('auth:verify-offline', { email, password }),
+
+  // 🖨️ الطباعة الصامتة — بدون Print Dialog
+  getPrinters: () => ipcRenderer.invoke('print:get-printers'),
+  silentPrint: (html, printerName) => ipcRenderer.invoke('print:silent', { html, printerName }),
 });
+
