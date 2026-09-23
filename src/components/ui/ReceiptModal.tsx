@@ -313,8 +313,6 @@ interface ReceiptModalProps {
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClose, products, shortageMap }) => {
-  if (!isOpen || !order) return null;
-
   const isElectron = !!(window as any).electronAPI?.isElectron;
   const { showToast } = useNotification();
 
@@ -331,6 +329,8 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
   // تحديث قائمة الطابعات المكتشفة من النظام (Desktop فقط)
   React.useEffect(() => {
     if (!isOpen || !isElectron) return;
+    if (typeof (window as any).electronAPI?.getPrinters !== 'function') return;
+
     (window as any).electronAPI.getPrinters().then((res: any) => {
       if (res?.ok && Array.isArray(res.printers)) {
         setAvailablePrinters(res.printers);
@@ -348,7 +348,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
         }
       }
     }).catch(() => {});
-  }, [isOpen]);
+  }, [isOpen, isElectron]);
 
   const toggleConfiguredPrinter = (printerName: string) => {
     const isSelected = configuredPrinters.includes(printerName);
@@ -383,7 +383,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
   }, [isOpen]);
 
   const handlePrint = async () => {
-    if (isPrinting) return;
+    if (!order || isPrinting) return;
     setIsPrinting(true);
     setShowPrinterSettings(false);
 
@@ -555,6 +555,9 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
     return () => window.removeEventListener('keydown', onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, order, products, shortageMap]);
+
+  // ✅ الآن بعد استدعاء جميع الـ Hooks، يمكن الخروج بأمان إذا لم يكن المودال مفتوحاً أو لا يوجد طلب
+  if (!isOpen || !order) return null;
 
   const formattedDate = formatDateTime(order.createdAt);
 

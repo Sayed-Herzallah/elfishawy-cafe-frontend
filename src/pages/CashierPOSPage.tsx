@@ -7,6 +7,7 @@ import { inventoryService } from '../services/opsService';
 import { Product, Category, Order, InventoryItem } from '../types';
 import { useNotification } from '../contexts/NotificationContext';
 import { ReceiptModal } from '../components/ui/ReceiptModal';
+import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { Modal } from '../components/ui/Modal';
 import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -1379,14 +1380,16 @@ export const CashierPOSPage: React.FC = () => {
         )}
       </Modal>
 
-      {/* Direct Receipt Print Modal */}
-      <ReceiptModal
-        order={selectedReceiptOrder}
-        isOpen={!!selectedReceiptOrder}
-        onClose={() => setSelectedReceiptOrder(null)}
-        products={products}
-        shortageMap={recipeDepletedMap}
-      />
+      {/* Direct Receipt Print Modal (معزول داخل ErrorBoundary عشان أي خطأ في المودال ميكسرش صفحة الكاشير إطلاقاً) */}
+      <ErrorBoundary fallback={null}>
+        <ReceiptModal
+          order={selectedReceiptOrder}
+          isOpen={!!selectedReceiptOrder}
+          onClose={() => setSelectedReceiptOrder(null)}
+          products={products}
+          shortageMap={recipeDepletedMap}
+        />
+      </ErrorBoundary>
 
       {/* ✅ تأكيد بدء طلب جديد عندما تحتوي السلة على أصناف */}
       <ConfirmDialog

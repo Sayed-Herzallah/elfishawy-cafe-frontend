@@ -65,12 +65,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               تعذر عرض هذا الجزء من الصفحة. يرجى المحاولة مرة أخرى أو تحديث الصفحة.
             </p>
 
-            {this.state.error && import.meta.env.DEV && (
-              <details className="text-right mb-4 p-3 bg-rose-50 border border-rose-100 rounded-xl text-xs">
-                <summary className="font-bold text-rose-700 cursor-pointer mb-2">تفاصيل الخطأ (للمطورين)</summary>
-                <pre className="text-rose-600 font-mono text-[10px] overflow-auto max-h-32">
-                  {this.state.error.message}
-                  {this.state.errorInfo?.componentStack}
+            {this.state.error && (
+              <details className="text-right mb-4 p-3 bg-rose-50 border border-rose-100 rounded-xl text-xs" open>
+                <summary className="font-bold text-rose-700 cursor-pointer mb-2">تفاصيل الخطأ</summary>
+                <pre className="text-rose-600 font-mono text-[11px] overflow-auto max-h-32 text-left" dir="ltr">
+                  {this.state.error.name}: {this.state.error.message}
+                  {'\n'}
+                  {this.state.errorInfo?.componentStack?.slice(0, 500)}
                 </pre>
               </details>
             )}
