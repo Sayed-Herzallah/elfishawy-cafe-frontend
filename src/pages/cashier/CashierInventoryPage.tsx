@@ -299,19 +299,17 @@ export const CashierInventoryPage: React.FC = () => {
           </p>
         </div>
 
-        {isAdmin && (
-          <Button
-            onClick={() => {
-              setFormErrors({});
-              setIsAddModalOpen(true);
-            }}
-            variant="primary"
-            leftIcon={<Plus className="w-4 h-4 ml-1.5" />}
-            className="bg-[#2e5b9f] hover:bg-[#244b85]"
-          >
-            إضافة صنف مخزون
-          </Button>
-        )}
+        <Button
+          onClick={() => {
+            setFormErrors({});
+            setIsAddModalOpen(true);
+          }}
+          variant="primary"
+          leftIcon={<Plus className="w-4 h-4 ml-1.5" />}
+          className="bg-[#2e5b9f] hover:bg-[#244b85]"
+        >
+          إضافة صنف مخزون
+        </Button>
       </div>
 
       {/* Metric Cards */}

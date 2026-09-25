@@ -32,6 +32,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('sync:progress', handler);
     return () => ipcRenderer.removeListener('sync:progress', handler);
   },
+  onDataUpdated: (callback) => {
+    const handler = (_event, data) => callback(data);
+    ipcRenderer.on('sync:data-updated', handler);
+    return () => ipcRenderer.removeListener('sync:data-updated', handler);
+  },
 
   // Offline Auth caching
   setAuthToken: (token) => ipcRenderer.invoke('auth:set-token', token),

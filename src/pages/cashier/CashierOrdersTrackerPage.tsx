@@ -76,7 +76,13 @@ export const CashierOrdersTrackerPage: React.FC = () => {
       .then((res) => { if (res.success && res.data) setProducts(res.data); })
       .catch(() => { /* الأسماء هتفضل من قاعدة البيانات نفسها */ });
     const interval = setInterval(loadOrders, 12000);
-    return () => clearInterval(interval);
+    const cleanupSync = window.electronAPI?.onDataUpdated?.(() => {
+      loadOrders();
+    });
+    return () => {
+      clearInterval(interval);
+      if (cleanupSync) cleanupSync();
+    };
   }, []);
 
   const handleUpdateStatus = async (orderId: string, newStatus: OrderStatus) => {

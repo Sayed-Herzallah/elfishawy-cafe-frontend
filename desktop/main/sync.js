@@ -234,8 +234,11 @@ export async function processSyncQueue(mainWindow) {
     }
 
     saveDatabase();
-    if (mainWindow) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('sync:progress', { status: 'DONE', count: syncedCount });
+      if (syncedCount > 0) {
+        mainWindow.webContents.send('sync:data-updated', { entity: 'orders' });
+      }
     }
     return { success: true, count: syncedCount };
   } catch (error) {
@@ -246,6 +249,143 @@ export async function processSyncQueue(mainWindow) {
   }
 }
 
+/**
+ * 🔄 سحب التحديثات الجديدة من السيرفر (Web/Server -> Desktop SQLite)
+ * يتم جلب أحدث الفواتير والمخزن وتحديث SQLite محلياً، ثم إخطار نافذة الـ POS
+ * لتحديث الشاشة فوراً دون الحاجة إلى F5 أو إعادة تشغيل التطبيق.
+ */
+let isPulling = false;
+export async function pullServerUpdates(mainWindow) {
+  if (isPulling) return;
+  isPulling = true;
+  try {
+    const token = getAuthToken();
+    if (!token) return;
+    const db = getDb();
+
+    // 1. سحب الفواتير من السيرفر
+    const ordersRes = await fetch(`${apiBaseUrl}/orders`, {
+      method: 'GET',
+      headers: {
+        'authorization': token,
+      },
+      signal: AbortSignal.timeout(10000),
+    }).catch(() => null);
+
+    let hasNewOrders = false;
+    if (ordersRes && ordersRes.ok) {
+      const ordersData = await ordersRes.json();
+      if (ordersData.success && Array.isArray(ordersData.data)) {
+        for (const ord of ordersData.data) {
+          if (!ord || !ord._id) continue;
+          try {
+            // التحقق مما إذا كانت الفاتورة معلقة محلياً
+            const existing = db.exec(`SELECT sync_status FROM orders WHERE _id = ?`, [ord._id]);
+            if (existing.length && existing[0].values.length && existing[0].values[0][0] === 'PENDING_SYNC') {
+              continue;
+            }
+
+            const clientOrderId = ord.clientOrderId || ord.client_order_id || null;
+            if (clientOrderId) {
+              db.run(`DELETE FROM orders WHERE client_order_id = ? AND _id != ?`, [clientOrderId, ord._id]);
+            }
+
+            const itemsJson = JSON.stringify(ord.items || []);
+            const createdAt = ord.createdAt || ord.created_at || new Date().toISOString();
+            const updatedAt = ord.updatedAt || ord.updated_at || createdAt;
+            const orderNumber = ord.orderNumber || ord.order_number || String(ord._id);
+            const tableNumber = ord.tableNumber ?? ord.table_number ?? null;
+            const cashierId = typeof ord.cashierId === 'object' ? (ord.cashierId?._id || '') : (ord.cashierId || '');
+            const dayKey = ord.dayKey || null;
+
+            db.run(`
+              INSERT INTO orders (_id, order_number, day_key, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?, ?)
+              ON CONFLICT(_id) DO UPDATE SET
+                order_number = excluded.order_number,
+                day_key = COALESCE(excluded.day_key, orders.day_key),
+                items = excluded.items,
+                total_amount = excluded.total_amount,
+                status = excluded.status,
+                table_number = excluded.table_number,
+                cashier_id = excluded.cashier_id,
+                notes = excluded.notes,
+                client_order_id = COALESCE(excluded.client_order_id, orders.client_order_id),
+                created_at = COALESCE(orders.created_at, excluded.created_at),
+                updated_at = excluded.updated_at
+              WHERE IFNULL(orders.sync_status, 'SYNCED') != 'PENDING_SYNC'
+            `, [
+              ord._id,
+              orderNumber,
+              dayKey,
+              itemsJson,
+              Number(ord.totalAmount ?? ord.total_amount) || 0,
+              ord.status || 'completed',
+              tableNumber,
+              cashierId,
+              ord.notes || '',
+              clientOrderId,
+              createdAt,
+              updatedAt,
+            ]);
+            hasNewOrders = true;
+          } catch (ordErr) {
+            // تجاهل أي خطأ فردي في صف معين
+          }
+        }
+      }
+    }
+
+    // 2. سحب المخزون المحدث من السيرفر (لتحديث أرصدة الخامات بدقة في SQLite)
+    const invRes = await fetch(`${apiBaseUrl}/inventory`, {
+      method: 'GET',
+      headers: {
+        'authorization': token,
+      },
+      signal: AbortSignal.timeout(8000),
+    }).catch(() => null);
+
+    let hasNewInventory = false;
+    if (invRes && invRes.ok) {
+      const invData = await invRes.json();
+      if (invData.success && Array.isArray(invData.data)) {
+        for (const item of invData.data) {
+          if (!item || !item._id) continue;
+          db.run(`
+            INSERT OR REPLACE INTO inventory (_id, name, quantity, unit, min_limit, cost_price, last_restock_total_cost, last_restocked, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            item._id,
+            item.name,
+            Number(item.quantity) || 0,
+            item.unit || 'KG',
+            Number(item.minLimit) || 5,
+            Number(item.costPrice) || 0,
+            Number(item.lastRestockTotalCost) || 0,
+            item.lastRestocked || '',
+            item.updatedAt || new Date().toISOString(),
+          ]);
+          hasNewInventory = true;
+        }
+      }
+    }
+
+    if (hasNewOrders || hasNewInventory) {
+      saveDatabase();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:data-updated', {
+          orders: hasNewOrders,
+          inventory: hasNewInventory,
+        });
+      }
+    }
+  } catch (pullErr) {
+    console.warn('[Sync] Pull updates warning:', pullErr.message);
+  } finally {
+    isPulling = false;
+  }
+}
+
 export function startBackgroundSync(mainWindow, intervalMs = 15000) {
   if (syncIntervalTimer) clearInterval(syncIntervalTimer);
 
@@ -253,7 +393,10 @@ export function startBackgroundSync(mainWindow, intervalMs = 15000) {
     try {
       const res = await fetch(`${apiBaseUrl}/`, { method: 'GET' }).catch(() => null);
       if (res && res.ok) {
+        // 1. رفع العمليات المعلقة المحلية
         await processSyncQueue(mainWindow);
+        // 2. سحب أي فواتير أو تغييرات جديدة من المنصة
+        await pullServerUpdates(mainWindow);
       }
     } catch {
       // Offline, continue waiting

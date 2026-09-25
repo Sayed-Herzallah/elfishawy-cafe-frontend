@@ -318,6 +318,7 @@ export function setupIpcHandlers(mainWindow) {
       // نقرأ أكبر order_number لنفس اليوم التجاري فقط من SQLite.
       // كل يوم تجاري يبدأ الترقيم من 1 من جديد — لا علاقة بأرقام أمس،
       // ونفس تعريف اليوم المستخدم في السيرفر (Africa/Cairo).
+      // تجاهل أي أرقام شاذة قديمة (>= 2000) لضمان عدم حدوث قفزات ترقيم مثل #5395.
       let tempOrderNumber = '1';
       let businessDayKey = getBusinessDayKey(new Date());
       try {
@@ -325,7 +326,8 @@ export function setupIpcHandlers(mainWindow) {
           `SELECT MAX(CAST(order_number AS INTEGER)) AS last_num
            FROM orders
            WHERE order_number GLOB '[0-9]*'
-             AND CAST(order_number AS INTEGER) < 1000000
+             AND CAST(order_number AS INTEGER) > 0
+             AND CAST(order_number AS INTEGER) < 2000
              AND (day_key = ? OR (day_key IS NULL AND created_at >= ?))`,
           [businessDayKey, getBusinessDayStartIso(businessDayKey)]
         );

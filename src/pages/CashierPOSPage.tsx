@@ -259,7 +259,20 @@ export const CashierPOSPage: React.FC = () => {
       }
     }, 15000);
 
-    return () => clearInterval(interval);
+    // ⚡ التحديث التلقائي الفوري عند اكتمال أي مزامنة أو سحب فواتير جديدة من السيرفر (Desktop)
+    const cleanupDataSync = window.electronAPI?.onDataUpdated?.((_data) => {
+      orderService.getOrders().then((res) => {
+        if (res.success && res.data) applyOrders(res.data);
+      }).catch(() => {});
+      productService.listProducts().then((res) => {
+        if (res.success && res.data) applyProducts(res.data);
+      }).catch(() => {});
+    });
+
+    return () => {
+      clearInterval(interval);
+      if (cleanupDataSync) cleanupDataSync();
+    };
   }, []);
 
   useEffect(() => {
@@ -441,13 +454,14 @@ export const CashierPOSPage: React.FC = () => {
     // ─── رقم تسلسلي مؤقت = آخر رقم فاتورة اليوم + 1 ─────────────────
     // نفلتر فواتير اليوم التجاري فقط (بتوقيت القاهرة — نفس تعريف السيرفر)
     // حتى يبدأ الترقيم من 1 في كل يوم جديد على كل المنصات.
+    // يتم استبعاد أي أرقام شاذة قديمة (>= 2000) لمنع قفز الترقيم لرقم كبير مثل #5395.
     const todayKey = getBusinessDayKey();
     const todayOrders = allOrders.filter((o) =>
       orderBusinessDayKey((o as any).dayKey ?? o.createdAt) === todayKey
     );
     const lastKnownNumber = todayOrders.reduce((max, o) => {
       const n = parseInt(String(o.orderNumber ?? '').replace(/\D/g, ''), 10);
-      return isNaN(n) ? max : Math.max(max, n);
+      return isNaN(n) || n >= 2000 ? max : Math.max(max, n);
     }, 0);
     const tempOrderNumber = String(lastKnownNumber > 0 ? lastKnownNumber + 1 : 1);
 
