@@ -103,7 +103,9 @@ export const orderService = {
       payload.clientOrderId ||
       `off_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-    const { clientOrderId: _omit, ...serverBody } = payload as any;
+    // Important: ignore any client-provided orderNumber so the server remains the
+    // single source of truth for the final invoice number.
+    const { clientOrderId: _omitClient, orderNumber: _omitOrderNumber, ...serverBody } = payload as any;
 
     /** timeout 8 ثواني — كافٍ لـ Vercel cold start بدون تعطيل الـ UI (الـ UI أصبح optimistic) */
     const CREATE_ORDER_TIMEOUT_MS = 8000;
@@ -190,12 +192,15 @@ export const inventoryService = {
     costPrice?: number;
     totalCost?: number;
   }): Promise<ApiResponse<InventoryItem>> => {
+    const clientInventoryId = `inv_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const payload = { ...data, clientInventoryId };
+
     // أوفلاين: ننشئ الصنف محلياً فوراً ويُزامَن تلقائياً عند عودة الاتصال —
     // والسيرفر يمنع التكرار بنفس clientInventoryId لو أُعيد الإرسال.
     if (offlineStore.isDesktop()) {
       const isOnline = await offlineStore.isOnline();
       if (!isOnline) {
-        const offlineRes = await offlineStore.createOfflineInventoryItem(data);
+        const offlineRes = await offlineStore.createOfflineInventoryItem(payload);
         if (offlineRes.success && offlineRes.data) {
           return {
             success: true,
@@ -209,12 +214,12 @@ export const inventoryService = {
     try {
       return await ApiClient.request<InventoryItem>('/inventory', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
     } catch (networkErr) {
       // فشل الشبكة أثناء الإرسال: ننشئ الصنف محلياً بدل فقدان البيانات
       if (offlineStore.isDesktop()) {
-        const offlineRes = await offlineStore.createOfflineInventoryItem(data);
+        const offlineRes = await offlineStore.createOfflineInventoryItem(payload);
         if (offlineRes.success && offlineRes.data) {
           return {
             success: true,
@@ -228,10 +233,13 @@ export const inventoryService = {
   },
 
   restockItem: async (id: string, quantity: number, costPrice?: number, totalCost?: number): Promise<ApiResponse<InventoryItem>> => {
+    const clientRestockId = `restock_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const payload = { quantity, costPrice, totalCost, clientRestockId };
+
     if (offlineStore.isDesktop()) {
       const isOnline = await offlineStore.isOnline();
       if (!isOnline) {
-        await offlineStore.restockOfflineInventory({ id, quantity, costPrice, totalCost });
+        await offlineStore.restockOfflineInventory({ id, ...payload });
         return {
           success: true,
           message: 'تم توريد الكمية محلياً وسيتم المزامنة عند عودة الاتصال',
@@ -242,11 +250,11 @@ export const inventoryService = {
     try {
       return await ApiClient.request<InventoryItem>(`/inventory/${id}/restock`, {
         method: 'PATCH',
-        body: JSON.stringify({ quantity, costPrice, totalCost }),
+        body: JSON.stringify(payload),
       });
     } catch (networkErr) {
       if (offlineStore.isDesktop()) {
-        await offlineStore.restockOfflineInventory({ id, quantity, costPrice, totalCost });
+        await offlineStore.restockOfflineInventory({ id, ...payload });
         return {
           success: true,
           message: 'تم توريد الكمية محلياً وسيتم المزامنة عند عودة الاتصال',
