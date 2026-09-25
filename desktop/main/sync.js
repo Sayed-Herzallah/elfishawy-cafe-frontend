@@ -128,13 +128,14 @@ export async function processSyncQueue(mainWindow) {
               tableNumber: payload.tableNumber,
               notes: payload.notes || '',
               clientOrderId: clientOpId,
+              orderNumber: payload.orderNumber ? Number(payload.orderNumber) : undefined,
               // F4: وقت الإنشاء الأصلي للفاتورة الأوفلاين — السيرفر يخزنه كـ createdAt
               // مع تجاهل أي تاريخ مستقبلي (حماية من التلاعب)
               clientCreatedAt: payload.createdAt,
             }),
           });
 
-          const data = await orderResponse.json();
+          const data = await orderResponse.json().catch(() => ({}));
           if (orderResponse.ok && data.success) {
             success = true;
             serverResult = data.data;
@@ -158,7 +159,9 @@ export async function processSyncQueue(mainWindow) {
               }
             }
           } else {
-            throw new Error(data.message || `Server returned ${orderResponse.status} for order`);
+            const err = new Error(data.message || `Server returned ${orderResponse.status} for order`);
+            err.statusCode = orderResponse.status;
+            throw err;
           }
         } 
         // 2. EXPENSES SYNC
@@ -182,7 +185,7 @@ export async function processSyncQueue(mainWindow) {
             }),
           });
 
-          const data = await expenseResponse.json();
+          const data = await expenseResponse.json().catch(() => ({}));
           if (expenseResponse.ok && data.success) {
             success = true;
             serverResult = data.data;
@@ -191,7 +194,9 @@ export async function processSyncQueue(mainWindow) {
               [serverResult._id, clientOpId]
             );
           } else {
-            throw new Error(data.message || `Server returned ${expenseResponse.status} for expense`);
+            const err = new Error(data.message || `Server returned ${expenseResponse.status} for expense`);
+            err.statusCode = expenseResponse.status;
+            throw err;
           }
         }
         // 3. INVENTORY RESTOCK SYNC
@@ -209,11 +214,13 @@ export async function processSyncQueue(mainWindow) {
             }),
           });
 
-          const data = await restockResponse.json();
+          const data = await restockResponse.json().catch(() => ({}));
           if (restockResponse.ok && data.success) {
             success = true;
           } else {
-            throw new Error(data.message || `Server returned ${restockResponse.status} for restock`);
+            const err = new Error(data.message || `Server returned ${restockResponse.status} for restock`);
+            err.statusCode = restockResponse.status;
+            throw err;
           }
         }
 
@@ -226,10 +233,23 @@ export async function processSyncQueue(mainWindow) {
         }
       } catch (err) {
         console.error(`Error syncing operation ${clientOpId}:`, err.message);
+        const isAuthError = err.statusCode === 401 || err.message?.includes('401') || err.message?.includes('Unauthorized');
+        const isNetworkError = err.name === 'TypeError' || err.message?.includes('fetch failed') || err.message?.includes('NetworkError') || err.message?.includes('ENOTFOUND') || err.message?.includes('ECONNREFUSED');
+
+        // أخطاء الشبكة والتوثيق تظل PENDING ولا يتم تعليمها كـ FAILED
+        const newStatus = (isAuthError || isNetworkError) ? 'PENDING' : 'FAILED';
         db.run(
-          `UPDATE sync_queue SET status = 'FAILED', attempts = ?, last_error = ? WHERE id = ?`,
-          [attempts + 1, err.message, id]
+          `UPDATE sync_queue SET status = ?, attempts = ?, last_error = ? WHERE id = ?`,
+          [newStatus, isAuthError ? attempts : attempts + 1, err.message, id]
         );
+
+        // إذا كان خطأ توثيق 401، نوقف محاولة مزامنة باقي الصفوف حالياً حتى يتوفر توكن صالح
+        if (isAuthError) {
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('sync:auth-required');
+          }
+          break;
+        }
       }
     }
 

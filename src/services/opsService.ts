@@ -80,6 +80,7 @@ export const orderService = {
     tableNumber: number;
     notes?: string;
     clientOrderId?: string;  // ← يُمرَّر من handleCheckoutAndPrint للتطابق لاحقاً
+    orderNumber?: number;
   }): Promise<ApiResponse<Order>> => {
     // If on Desktop, check if online before calling server
     if (offlineStore.isDesktop()) {

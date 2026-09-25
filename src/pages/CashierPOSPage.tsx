@@ -454,14 +454,13 @@ export const CashierPOSPage: React.FC = () => {
     // ─── رقم تسلسلي مؤقت = آخر رقم فاتورة اليوم + 1 ─────────────────
     // نفلتر فواتير اليوم التجاري فقط (بتوقيت القاهرة — نفس تعريف السيرفر)
     // حتى يبدأ الترقيم من 1 في كل يوم جديد على كل المنصات.
-    // يتم استبعاد أي أرقام شاذة قديمة (>= 2000) لمنع قفز الترقيم لرقم كبير مثل #5395.
     const todayKey = getBusinessDayKey();
     const todayOrders = allOrders.filter((o) =>
       orderBusinessDayKey((o as any).dayKey ?? o.createdAt) === todayKey
     );
     const lastKnownNumber = todayOrders.reduce((max, o) => {
       const n = parseInt(String(o.orderNumber ?? '').replace(/\D/g, ''), 10);
-      return isNaN(n) || n >= 2000 ? max : Math.max(max, n);
+      return isNaN(n) ? max : Math.max(max, n);
     }, 0);
     const tempOrderNumber = String(lastKnownNumber > 0 ? lastKnownNumber + 1 : 1);
 
@@ -501,13 +500,13 @@ export const CashierPOSPage: React.FC = () => {
     setIsSubmitting(false);  // ← يُطلق الزر فوراً بعد عرض الـ UI
 
     // ─── إرسال للسيرفر في الخلفية — بدون await ──────────────────────
-    // نمرر نفس clientOrderId اللي بنيت بيه الفاتورة المؤقتة
-    // عشان لما السيرفر يرد نقدر نستبدل الفاتورة المؤقتة بالحقيقية صح
+    // نمرر نفس clientOrderId ورقم الفاتورة المؤقت وسعر البيع الفعلي
     const serverPayload = {
-      items: cartSnapshot.map((i) => ({ product: i.product._id, quantity: i.quantity })),
+      items: cartSnapshot.map((i) => ({ product: i.product._id, quantity: i.quantity, price: i.price })),
       tableNumber: parsedTableNumber,
       notes: payloadNotes,
-      clientOrderId,  // ← نفس الـ ID المستخدم في الفاتورة المؤقتة
+      clientOrderId,
+      orderNumber: Number(tempOrderNumber),
     };
 
     orderService.createOrder(serverPayload)
