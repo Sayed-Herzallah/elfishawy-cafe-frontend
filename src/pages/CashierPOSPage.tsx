@@ -459,7 +459,9 @@ export const CashierPOSPage: React.FC = () => {
       orderBusinessDayKey((o as any).dayKey ?? o.createdAt) === todayKey
     );
     const lastKnownNumber = todayOrders.reduce((max, o) => {
-      const n = parseInt(String(o.orderNumber ?? '').replace(/\D/g, ''), 10);
+      const raw = String(o.orderNumber ?? '').trim();
+      if (!/^\d{1,5}$/.test(raw)) return max;
+      const n = parseInt(raw, 10);
       return isNaN(n) ? max : Math.max(max, n);
     }, 0);
     const tempOrderNumber = String(lastKnownNumber > 0 ? lastKnownNumber + 1 : 1);

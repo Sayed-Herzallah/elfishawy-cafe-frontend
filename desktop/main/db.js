@@ -228,6 +228,11 @@ function runMigrations(db) {
   // ترقيم الفواتير اليومي الموحّد: مفتاح اليوم التجاري بتوقيت القاهرة
   try { db.run(`ALTER TABLE orders ADD COLUMN day_key TEXT;`); } catch {}
 
+  // تنظيف أي أرقام فواتير قديمة تالفة أو غير متوافقة (أطول من 5 أرقام أو تحتوي حروف من Mongo _id)
+  try {
+    db.run(`UPDATE orders SET order_number = NULL WHERE order_number GLOB '*[^0-9]*' OR LENGTH(order_number) > 5;`);
+  } catch {}
+
   // Seed default offline cashier if no local users exist
   try {
     const userCountRes = db.exec(`SELECT COUNT(*) FROM local_users`);

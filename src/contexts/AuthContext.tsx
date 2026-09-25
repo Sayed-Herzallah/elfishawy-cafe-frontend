@@ -44,6 +44,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return;
     }
 
+    if (typeof window !== 'undefined' && window.electronAPI?.setAuthToken) {
+      window.electronAPI.setAuthToken(token).catch(() => {});
+    }
+
     // If we have a cached user, show it immediately so user never gets logged out on network drops
     if (cachedUser) {
       setUser(cachedUser);

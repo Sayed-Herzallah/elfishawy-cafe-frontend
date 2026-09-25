@@ -160,10 +160,10 @@ const mapOrderRow = (raw, db) => {
 
 const upsertSyncedOrder = (db, ord) => {
   if (!ord || !ord._id) return;
-  const itemsJson = JSON.stringify(slimOrderItems(ord.items || [], db));
   const createdAt = ord.createdAt || ord.created_at || new Date().toISOString();
   const updatedAt = ord.updatedAt || ord.updated_at || createdAt;
-  const orderNumber = ord.orderNumber || ord.order_number || String(ord._id);
+  const rawNum = String(ord.orderNumber || ord.order_number || '').trim();
+  const orderNumber = /^\d{1,5}$/.test(rawNum) ? rawNum : null;
   const tableNumber = ord.tableNumber ?? ord.table_number ?? null;
   const cashierId = typeof ord.cashierId === 'object' ? (ord.cashierId?._id || '') : (ord.cashierId || '');
   const clientOrderId = ord.clientOrderId || ord.client_order_id || null;
@@ -324,7 +324,8 @@ export function setupIpcHandlers(mainWindow) {
         const lastNumRes = db.exec(
           `SELECT MAX(CAST(order_number AS INTEGER)) AS last_num
            FROM orders
-           WHERE order_number GLOB '[0-9]*'
+           WHERE order_number NOT GLOB '*[^0-9]*'
+             AND LENGTH(order_number) <= 5
              AND CAST(order_number AS INTEGER) > 0
              AND (day_key = ? OR (day_key IS NULL AND created_at >= ?))`,
           [businessDayKey, getBusinessDayStartIso(businessDayKey)]

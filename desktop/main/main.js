@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initDatabase } from './db.js';
 import { setupIpcHandlers } from './ipc.js';
-import { startBackgroundSync } from './sync.js';
+import { startBackgroundSync, processSyncQueue, pullServerUpdates } from './sync.js';
 import { frontendUpdater } from './frontendUpdater.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -109,8 +109,12 @@ async function createWindow() {
               }).catch(() => null);
               const isNowOnline = Boolean(res && res.ok);
               if (isNowOnline && !lastOnlineState) {
-                console.log('[Network] Internet returned! Triggering instant frontend update check...');
+                console.log('[Network] Internet returned! Triggering instant sync and update check...');
                 runUpdateCheck();
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                  processSyncQueue(mainWindow).catch(() => {});
+                  pullServerUpdates(mainWindow).catch(() => {});
+                }
               }
               lastOnlineState = isNowOnline;
             } catch {

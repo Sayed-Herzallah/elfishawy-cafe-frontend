@@ -37,6 +37,9 @@ export class ApiClient {
     localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, refreshToken);
     // جلسة جديدة: اسمح بإشعار انتهاء الجلسة مرة أخرى لو حصلت لاحقاً
     ApiClient.lastUnauthorizedAt = 0;
+    if (typeof window !== 'undefined' && window.electronAPI?.setAuthToken) {
+      window.electronAPI.setAuthToken(accessToken).catch(() => {});
+    }
   }
 
   public static clearTokens() {
@@ -47,6 +50,9 @@ export class ApiClient {
     localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
     localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN);
     localStorage.removeItem(STORAGE_KEYS.ACTIVE_USER);
+    if (typeof window !== 'undefined' && window.electronAPI?.setAuthToken) {
+      window.electronAPI.setAuthToken('').catch(() => {});
+    }
   }
 
   public static async request<T = any>(

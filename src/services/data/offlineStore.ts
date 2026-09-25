@@ -266,3 +266,18 @@ export const offlineStore = {
     return { success: true };
   },
 };
+
+// 🌐 عندما يعود الاتصال بالإنترنت في المتصفح / Renderer:
+// نمرر التوكن للديسكتوب ونطلب معالجة طابور المزامنة فوراً دون انتظار الدورة المجدولة
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    const token = localStorage.getItem('ef_access_token');
+    if (token && window.electronAPI?.setAuthToken) {
+      window.electronAPI.setAuthToken(token).then(() => {
+        window.electronAPI?.triggerSync?.().catch(() => {});
+      }).catch(() => {});
+    } else if (window.electronAPI?.triggerSync) {
+      window.electronAPI.triggerSync().catch(() => {});
+    }
+  });
+}

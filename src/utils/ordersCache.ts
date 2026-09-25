@@ -187,8 +187,10 @@ const valueForColumn = (order: any, column: string): any => {
   switch (column) {
     case '_id':
       return order._id;
-    case 'order_number':
-      return order.orderNumber || order._id;
+    case 'order_number': {
+      const numStr = String(order.orderNumber || order.order_number || '').trim();
+      return /^\d{1,5}$/.test(numStr) ? numStr : null;
+    }
     case 'items':
       return JSON.stringify(order.items || []);
     case 'total_amount':

@@ -13,15 +13,21 @@ export function configureSync({ serverUrl, token }) {
 }
 
 export function getAuthToken() {
-  if (authToken) return authToken;
+  if (authToken && authToken !== 'offline_default_cashier_token' && authToken.split('.').length === 3) {
+    return authToken;
+  }
   try {
     const db = getDb();
-    const res = db.exec(`SELECT session_token FROM local_users WHERE session_token IS NOT NULL AND session_token != '' ORDER BY cached_at DESC LIMIT 1`);
+    const res = db.exec(`SELECT session_token FROM local_users WHERE session_token IS NOT NULL AND session_token != '' ORDER BY cached_at DESC`);
     if (res.length && res[0].values.length) {
-      const stored = res[0].values[0][0];
-      // Decrypt token if it was encrypted via safeStorage
-      authToken = decryptSensitiveString(stored);
-      return authToken;
+      for (const row of res[0].values) {
+        const stored = row[0];
+        const decrypted = decryptSensitiveString(stored);
+        if (decrypted && decrypted !== 'offline_default_cashier_token' && decrypted.split('.').length === 3) {
+          authToken = decrypted;
+          return authToken;
+        }
+      }
     }
   } catch {}
   return '';
@@ -111,6 +117,7 @@ export async function processSyncQueue(mainWindow) {
 
         // 1. ORDERS SYNC
         if (entityType === 'order') {
+          const rawItems = Array.isArray(payload.items) ? payload.items : [];
           const orderResponse = await fetch(`${apiBaseUrl}/orders`, {
             method: 'POST',
             headers: {
@@ -118,19 +125,15 @@ export async function processSyncQueue(mainWindow) {
               'authorization': token || '',
             },
             body: JSON.stringify({
-              items: payload.items.map((it) => ({
-                product: it.product,
-                quantity: it.quantity,
-                // F5: سعر البيع الفعلي وقت إنشاء الفاتورة أوفلاين —
-                // تغيير سعر المنتج الحالي على السيرفر لا يغيّر فاتورة قديمة
-                price: it.price,
+              items: rawItems.map((it) => ({
+                product: typeof it.product === 'object' ? (it.product?._id || it.product?.id || '') : String(it.product || ''),
+                quantity: Number(it.quantity) || 1,
+                price: Number(it.price) || 0,
               })),
               tableNumber: payload.tableNumber,
               notes: payload.notes || '',
               clientOrderId: clientOpId,
-              orderNumber: payload.orderNumber ? Number(payload.orderNumber) : undefined,
-              // F4: وقت الإنشاء الأصلي للفاتورة الأوفلاين — السيرفر يخزنه كـ createdAt
-              // مع تجاهل أي تاريخ مستقبلي (حماية من التلاعب)
+              orderNumber: payload.orderNumber && /^\d{1,5}$/.test(String(payload.orderNumber)) ? Number(payload.orderNumber) : undefined,
               clientCreatedAt: payload.createdAt,
             }),
           });
@@ -143,7 +146,6 @@ export async function processSyncQueue(mainWindow) {
             // Reconcile SQLite order with real Mongo _id and sequence orderNumber safely
             if (serverResult && serverResult.orderNumber) {
               const nowIso = new Date().toISOString();
-              // إذا كان السجل بنفس الـ _id موجود مسبقاً (جاء من fetch سابق)، نحذف السطر المؤقت ونحدث المعتمد
               const existingCheck = db.exec(`SELECT _id FROM orders WHERE _id = ?`, [serverResult._id]);
               if (existingCheck.length && existingCheck[0].values.length) {
                 db.run(`DELETE FROM orders WHERE client_order_id = ? AND _id != ?`, [clientOpId, serverResult._id]);
@@ -166,6 +168,10 @@ export async function processSyncQueue(mainWindow) {
         } 
         // 2. EXPENSES SYNC
         else if (entityType === 'expense') {
+          const linkedId = typeof payload.inventoryItemLinked === 'object'
+            ? (payload.inventoryItemLinked?._id || payload.inventoryItemLinked?.id)
+            : payload.inventoryItemLinked;
+
           const expenseResponse = await fetch(`${apiBaseUrl}/expenses`, {
             method: 'POST',
             headers: {
@@ -174,12 +180,12 @@ export async function processSyncQueue(mainWindow) {
             },
             body: JSON.stringify({
               description: payload.description,
-              amount: payload.amount,
+              amount: Number(payload.amount) || 0,
               category: payload.category || 'inventory',
-              inventoryItemLinked: payload.inventoryItemLinked,
-              inventoryQuantityAdded: payload.inventoryQuantityAdded,
-              totalCost: payload.totalCost,
-              unitCost: payload.unitCost,
+              inventoryItemLinked: linkedId || undefined,
+              inventoryQuantityAdded: payload.inventoryQuantityAdded ? Number(payload.inventoryQuantityAdded) : undefined,
+              totalCost: payload.totalCost !== undefined ? Number(payload.totalCost) : Number(payload.amount),
+              unitCost: payload.unitCost !== undefined ? Number(payload.unitCost) : undefined,
               date: payload.date || new Date().toISOString(),
               clientExpenseId: clientOpId,
             }),
@@ -201,16 +207,17 @@ export async function processSyncQueue(mainWindow) {
         }
         // 3. INVENTORY RESTOCK SYNC
         else if (entityType === 'inventory_restock') {
-          const restockResponse = await fetch(`${apiBaseUrl}/inventory/${payload.id}/restock`, {
+          const restockItemId = payload.id || payload._id || payload.inventoryId;
+          const restockResponse = await fetch(`${apiBaseUrl}/inventory/${restockItemId}/restock`, {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
               'authorization': token || '',
             },
             body: JSON.stringify({
-              quantity: payload.quantity,
-              totalCost: payload.totalCost,
-              costPrice: payload.costPrice,
+              quantity: Number(payload.quantity) || 0,
+              totalCost: payload.totalCost !== undefined ? Number(payload.totalCost) : undefined,
+              costPrice: payload.costPrice !== undefined ? Number(payload.costPrice) : undefined,
             }),
           });
 
@@ -313,7 +320,8 @@ export async function pullServerUpdates(mainWindow) {
             const itemsJson = JSON.stringify(ord.items || []);
             const createdAt = ord.createdAt || ord.created_at || new Date().toISOString();
             const updatedAt = ord.updatedAt || ord.updated_at || createdAt;
-            const orderNumber = ord.orderNumber || ord.order_number || String(ord._id);
+            const rawNum = String(ord.orderNumber || ord.order_number || '').trim();
+            const orderNumber = /^\d{1,5}$/.test(rawNum) ? rawNum : null;
             const tableNumber = ord.tableNumber ?? ord.table_number ?? null;
             const cashierId = typeof ord.cashierId === 'object' ? (ord.cashierId?._id || '') : (ord.cashierId || '');
             const dayKey = ord.dayKey || null;
