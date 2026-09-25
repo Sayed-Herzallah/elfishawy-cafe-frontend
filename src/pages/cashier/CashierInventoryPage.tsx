@@ -642,9 +642,9 @@ export const CashierInventoryPage: React.FC = () => {
         )}
       </div>
 
-      {/* Modal: Add New Inventory Item — للأدمن فقط (صلاحية الـ Backend) */}
+      {/* Modal: Add New Inventory Item */}
       <Modal
-        isOpen={isAddModalOpen && isAdmin}
+        isOpen={isAddModalOpen}
         onClose={() => setIsAddModalOpen(false)}
         title="إضافة صنف مخزون جديد"
         maxWidth="md"
