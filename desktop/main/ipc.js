@@ -1,7 +1,7 @@
 // desktop/main/ipc.js
 import { ipcMain, BrowserWindow } from 'electron';
 import { getDb, saveDatabase, getMasterKey } from './db.js';
-import { processSyncQueue, configureSync } from './sync.js';
+import { processSyncQueue, configureSync, pullServerUpdates } from './sync.js';
 import { frontendUpdater } from './frontendUpdater.js';
 import { encryptSensitiveString, decryptSensitiveString, computeOpHash } from './security.js';
 import crypto from 'crypto';
@@ -65,6 +65,55 @@ const getBusinessDayStartIso = (dayKey) => {
   const noonGuess = new Date(Date.UTC(y, (m || 1) - 1, d || 1, 12, 0, 0));
   const offsetMin = cairoOffsetMinutes(noonGuess);
   return new Date(Date.UTC(y, (m || 1) - 1, d || 1, 0, 0, 0) - offsetMin * 60000).toISOString();
+};
+
+/**
+ * الرقم المؤقت (Provisional) للفواتير المُنشأة أوفلاين.
+ * ------------------------------------------------------------------
+ * - عدّاد محلي لكل يوم تجاري يبدأ من 1 (1, 2, 3, ...) ولا يتأثر إطلاقاً
+ *   بأرقام الفواتير النهائية القادمة من السيرفر (ومهما اختلفت أجهزة أخرى)
+ *   → لا "زيادة غلط" في الأرقام عند انقطاع الإنترنت.
+ * - هذا الرقم للعرض/الطباعة فقط (فاتورة مؤقتة)، ويستبدله السيرفر بالرقم
+ *   النهائي التسلسلي بعد المزامنة.
+ * - يبدأ العدّاد من أعلى رقم مؤقت مسجَّل فعلاً لنفس اليوم (حماية بعد أي ترقية/استرجاع).
+ */
+const allocateProvisionalNumber = (db, businessDayKey) => {
+  const counterId = `provisional_${businessDayKey}`;
+  try {
+    let maxProvisional = 0;
+    try {
+      const maxRes = db.exec(
+        `SELECT MAX(CAST(provisional_number AS INTEGER)) AS max_num
+         FROM orders
+         WHERE provisional_number NOT GLOB '*[^0-9]*'
+           AND LENGTH(provisional_number) <= 6
+           AND CAST(provisional_number AS INTEGER) > 0
+           AND (day_key = ? OR (day_key IS NULL AND created_at >= ?))`,
+        [businessDayKey, getBusinessDayStartIso(businessDayKey)]
+      );
+      maxProvisional =
+        maxRes.length && maxRes[0].values.length
+          ? Number(maxRes[0].values[0][0]) || 0
+          : 0;
+    } catch {
+      maxProvisional = 0;
+    }
+
+    // بذرة العدّاد = أعلى رقم مؤقت موجود فعلاً (لا ينقص أبداً)
+    db.run(
+      `INSERT INTO local_counters (_id, seq) VALUES (?, ?)
+       ON CONFLICT(_id) DO UPDATE SET seq = MAX(local_counters.seq, excluded.seq)`,
+      [counterId, maxProvisional]
+    );
+    db.run(`UPDATE local_counters SET seq = seq + 1 WHERE _id = ?`, [counterId]);
+
+    const res = db.exec(`SELECT seq FROM local_counters WHERE _id = ?`, [counterId]);
+    const seq = res.length && res[0].values.length ? Number(res[0].values[0][0]) || 1 : 1;
+    return String(seq > 0 ? seq : 1);
+  } catch {
+    // fallback نادر جداً: أعلى رقم مؤقت + 1
+    return String((maxProvisional || 0) + 1);
+  }
 };
 
 // Conversion system mirroring backend utils/recipe/unitConverter.js
@@ -145,6 +194,8 @@ const mapOrderRow = (raw, db) => {
   return {
     _id: raw._id,
     orderNumber: raw.order_number || raw.orderNumber || '',
+    provisionalNumber: raw.provisional_number || raw.provisionalNumber || '',
+    dayKey: raw.day_key || raw.dayKey || null,
     items: slimOrderItems(raw.items, db),
     totalAmount: Number(raw.total_amount ?? raw.totalAmount) || 0,
     status: raw.status || 'completed',
@@ -163,10 +214,11 @@ const upsertSyncedOrder = (db, ord) => {
   const createdAt = ord.createdAt || ord.created_at || new Date().toISOString();
   const updatedAt = ord.updatedAt || ord.updated_at || createdAt;
   const rawNum = String(ord.orderNumber || ord.order_number || '').trim();
-  const orderNumber = /^\d{1,5}$/.test(rawNum) ? rawNum : null;
+  const orderNumber = /^\d{1,6}$/.test(rawNum) ? rawNum : null;
   const tableNumber = ord.tableNumber ?? ord.table_number ?? null;
   const cashierId = typeof ord.cashierId === 'object' ? (ord.cashierId?._id || '') : (ord.cashierId || '');
   const clientOrderId = ord.clientOrderId || ord.client_order_id || null;
+  const dayKey = ord.dayKey || ord.day_key || null;
 
   try {
     const existing = db.exec(`SELECT sync_status FROM orders WHERE _id = ?`, [ord._id]);
@@ -184,11 +236,14 @@ const upsertSyncedOrder = (db, ord) => {
   }
 
   try {
+    // فواتير السيرفر المزامَنة تحمل الرقم النهائي في order_number،
+    // والرقم المؤقت المحلي (لو وُجد لنفس الصف) يُحفظ للتتبع فقط.
     db.run(`
-    INSERT INTO orders (_id, order_number, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?, ?)
+    INSERT INTO orders (_id, order_number, day_key, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?, ?)
     ON CONFLICT(_id) DO UPDATE SET
-      order_number = excluded.order_number,
+      order_number = COALESCE(excluded.order_number, orders.order_number),
+      day_key = COALESCE(excluded.day_key, orders.day_key),
       items = excluded.items,
       total_amount = excluded.total_amount,
       status = excluded.status,
@@ -202,6 +257,7 @@ const upsertSyncedOrder = (db, ord) => {
   `, [
     ord._id,
     orderNumber,
+    dayKey,
     itemsJson,
     Number(ord.totalAmount ?? ord.total_amount) || 0,
     ord.status || 'completed',
@@ -214,11 +270,12 @@ const upsertSyncedOrder = (db, ord) => {
   ]);
   } catch (upsertErr) {
     db.run(`
-      INSERT OR REPLACE INTO orders (_id, order_number, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
+      INSERT OR REPLACE INTO orders (_id, order_number, day_key, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?, ?)
     `, [
       ord._id,
       orderNumber,
+      dayKey,
       itemsJson,
       Number(ord.totalAmount ?? ord.total_amount) || 0,
       ord.status || 'completed',
@@ -315,29 +372,11 @@ export function setupIpcHandlers(mainWindow) {
       const clientOrderId = orderData.clientOrderId || `off_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
       // ─── رقم فاتورة مؤقت تسلسلي يومي (اليوم التجاري بتوقيت القاهرة) ──
-      // نقرأ أكبر order_number لنفس اليوم التجاري فقط من SQLite.
-      // كل يوم تجاري يبدأ الترقيم من 1 من جديد — لا علاقة بأرقام أمس،
-      // ونفس تعريف اليوم المستخدم في السيرفر (Africa/Cairo).
-      let tempOrderNumber = '1';
-      let businessDayKey = getBusinessDayKey(new Date());
-      try {
-        const lastNumRes = db.exec(
-          `SELECT MAX(CAST(order_number AS INTEGER)) AS last_num
-           FROM orders
-           WHERE order_number NOT GLOB '*[^0-9]*'
-             AND LENGTH(order_number) <= 5
-             AND CAST(order_number AS INTEGER) > 0
-             AND (day_key = ? OR (day_key IS NULL AND created_at >= ?))`,
-          [businessDayKey, getBusinessDayStartIso(businessDayKey)]
-        );
-        const lastNum =
-          lastNumRes.length && lastNumRes[0].values.length
-            ? Number(lastNumRes[0].values[0][0]) || 0
-            : 0;
-        tempOrderNumber = String(lastNum > 0 ? lastNum + 1 : 1);
-      } catch {
-        tempOrderNumber = '1';
-      }
+      // عدّاد محلي مستقل يبدأ من 1 لكل يوم تجاري جديد — لا علاقة له إطلاقاً
+      // بأرقام السيرفر النهائية → لا "زيادة غلط" عند انقطاع الإنترنت.
+      // الرقم النهائي يُصدره السيرفر فقط بعد المزامنة.
+      const businessDayKey = getBusinessDayKey(new Date());
+      const tempOrderNumber = allocateProvisionalNumber(db, businessDayKey);
 
       const now = new Date().toISOString();
 
@@ -359,9 +398,11 @@ export function setupIpcHandlers(mainWindow) {
       }
 
       // Save order to SQLite
+      // order_number يظل فارغاً حتى يمنحه السيرفر الرقم النهائي بعد المزامنة.
+      // الرقم المؤقت للعرض/الطباعة فقط في provisional_number.
       db.run(`
-        INSERT INTO orders (_id, order_number, day_key, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_SYNC', ?, ?, ?)
+        INSERT INTO orders (_id, order_number, provisional_number, day_key, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
+        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, 'PENDING_SYNC', ?, ?, ?)
       `, [
         clientOrderId,
         tempOrderNumber,
@@ -427,7 +468,7 @@ export function setupIpcHandlers(mainWindow) {
         action: 'CREATE',
         payload: {
           ...orderData,
-          orderNumber: Number(tempOrderNumber),
+          // لا نرسل أي رقم للسيرفر: الرقم النهائي يُصدره السيرفر فقط من العداد الذري.
           createdAt: now,
         },
         createdAt: now,
@@ -443,7 +484,8 @@ export function setupIpcHandlers(mainWindow) {
         data: {
           _id: clientOrderId,
           clientOrderId,
-          orderNumber: tempOrderNumber,
+          orderNumber: '',
+          provisionalNumber: tempOrderNumber,
           items: processedItems,
           totalAmount,
           status: 'completed',
@@ -592,12 +634,17 @@ export function setupIpcHandlers(mainWindow) {
   ipcMain.handle('offline:restock-inventory', async (_event, restockData) => {
     try {
       const db = getDb();
-      const clientOpId = `off_rstk_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+      const clientOpId = restockData.clientRestockId || `off_rstk_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
       const now = new Date().toISOString();
 
       const qtyNum = Number(restockData.quantity) || 0;
       const totalCost = Number(restockData.totalCost) || 0;
       const costPrice = Number(restockData.costPrice) || (qtyNum > 0 ? Number((totalCost / qtyNum).toFixed(2)) : 0);
+
+      const targetId = String(restockData.id || restockData._id || restockData.inventoryId || '');
+      if (!targetId) {
+        return { success: false, message: 'Missing inventory item id' };
+      }
 
       db.run(`
         UPDATE inventory 
@@ -607,14 +654,16 @@ export function setupIpcHandlers(mainWindow) {
             last_restocked = ?,
             updated_at = ?
         WHERE _id = ?
-      `, [qtyNum, costPrice, costPrice, totalCost, now, now, restockData.id]);
+      `, [qtyNum, costPrice, costPrice, totalCost, now, now, targetId]);
 
       // Add to sync queue with cryptographic hash-chaining
+      // clientRestockId يضمن Idempotency على السيرفر — نفس التوريد لو اتبعت مرتين
+      // (انقطاع نت أثناء الرد) لا يرفع الرصيد مرتين.
       enqueueSecureOperation(db, {
         clientOpId,
         entityType: 'inventory_restock',
         action: 'UPDATE',
-        payload: restockData,
+        payload: { ...restockData, id: targetId, clientRestockId: clientOpId },
         createdAt: now,
       });
 
@@ -623,9 +672,81 @@ export function setupIpcHandlers(mainWindow) {
       // Trigger background sync attempt
       setTimeout(() => processSyncQueue(mainWindow), 100);
 
-      return { success: true };
+      return { success: true, clientRestockId: clientOpId };
     } catch (err) {
       console.error('offline:restock-inventory error:', err);
+      return { success: false, message: err.message };
+    }
+  });
+
+  // ===================== 4. OFFLINE INVENTORY CREATE (صنف جديد أوفلاين) =====================
+  ipcMain.handle('offline:create-inventory-item', async (_event, itemData) => {
+    try {
+      const db = getDb();
+      const clientInventoryId = itemData.clientInventoryId || `off_inv_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+      const now = new Date().toISOString();
+
+      const qtyNum = Number(itemData.quantity) || 0;
+      const minLimit = itemData.minLimit !== undefined ? Number(itemData.minLimit) : 5;
+      const costPrice = Number(itemData.costPrice) || 0;
+      const totalCost = itemData.totalCost !== undefined ? Number(itemData.totalCost) : Number((costPrice * qtyNum).toFixed(2));
+
+      db.run(`
+        INSERT INTO inventory (_id, name, quantity, unit, min_limit, cost_price, last_restock_total_cost, last_restocked, updated_at, sync_status, client_inventory_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_SYNC', ?)
+      `, [
+        clientInventoryId,
+        String(itemData.name || '').trim(),
+        qtyNum,
+        String(itemData.unit || 'KG'),
+        minLimit,
+        costPrice,
+        totalCost,
+        now,
+        now,
+        clientInventoryId,
+      ]);
+
+      // يُرفع للسيرفر تلقائياً عند عودة النت (POST /inventory) — والسيرفر يمنع التكرار
+      // بنفس clientInventoryId حتى لو اتبعت العملية مرتين.
+      enqueueSecureOperation(db, {
+        clientOpId: clientInventoryId,
+        entityType: 'inventory_create',
+        action: 'CREATE',
+        payload: {
+          name: String(itemData.name || '').trim(),
+          quantity: qtyNum,
+          unit: String(itemData.unit || 'KG'),
+          minLimit,
+          costPrice,
+          totalCost,
+          clientInventoryId,
+        },
+        createdAt: now,
+      });
+
+      saveDatabase();
+
+      setTimeout(() => processSyncQueue(mainWindow), 100);
+
+      return {
+        success: true,
+        data: {
+          _id: clientInventoryId,
+          clientInventoryId,
+          name: String(itemData.name || '').trim(),
+          quantity: qtyNum,
+          unit: String(itemData.unit || 'KG'),
+          minLimit,
+          costPrice,
+          lastRestockTotalCost: totalCost,
+          lastRestocked: now,
+          syncStatus: 'PENDING_SYNC',
+          isOffline: true,
+        },
+      };
+    } catch (err) {
+      console.error('offline:create-inventory-item error:', err);
       return { success: false, message: err.message };
     }
   });
@@ -740,7 +861,15 @@ export function setupIpcHandlers(mainWindow) {
 
   // Sync controls
   ipcMain.handle('sync:trigger', async () => {
-    return await processSyncQueue(mainWindow);
+    const result = await processSyncQueue(mainWindow);
+    // عودة الاتصال = رفع + سحب معاً بدون أي تدخل يدوي:
+    // بعد رفع العمليات المحلية (فواتير/مصروفات/مخزون) نسحب أحدث بيانات السيرفر فوراً.
+    try {
+      await pullServerUpdates(mainWindow);
+    } catch {
+      /* فشل السحب لا يُفشل المزامنة */
+    }
+    return result;
   });
 
   ipcMain.handle('sync:get-queue', async () => {

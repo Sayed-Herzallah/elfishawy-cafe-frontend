@@ -89,6 +89,13 @@ export interface OrderItem {
 export interface Order {
   _id: string;
   orderNumber: string;
+  /** الرقم المؤقت للفواتير الأوفلاين المعلقة — يتحول للرقم النهائي (orderNumber) بعد المزامنة */
+  provisionalNumber?: string;
+  /** حالة المزامنة في الديسكتوب: 'PENDING_SYNC' = مؤقتة لم تُزامن بعد */
+  syncStatus?: string;
+  /** مفتاح اليوم التجاري بتوقيت القاهرة «YYYY-MM-DD» */
+  dayKey?: string;
+  clientOrderId?: string;
   items: OrderItem[];
   totalAmount: number;
   status: OrderStatus;

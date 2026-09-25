@@ -81,6 +81,11 @@ export const normalizeOrder = (raw: any, lookup?: ProductLookup): Order => {
       raw?.order_number ||
       ''
   );
+  const provisionalNumber = String(
+    raw?.provisionalNumber ||
+      raw?.provisional_number ||
+      ''
+  );
   const tableRaw = raw?.tableNumber ?? raw?.table_number;
   const tableNumber =
     tableRaw === null || tableRaw === undefined || tableRaw === ''
@@ -91,6 +96,9 @@ export const normalizeOrder = (raw: any, lookup?: ProductLookup): Order => {
     ...raw,
     _id: String(raw?._id || raw?.clientOrderId || raw?.client_order_id || ''),
     orderNumber,
+    provisionalNumber: provisionalNumber || undefined,
+    dayKey: raw?.dayKey || raw?.day_key || undefined,
+    syncStatus: raw?.syncStatus || raw?.sync_status || undefined,
     items: hydrateItems(parseItems(raw?.items), lookup),
     totalAmount: Number(raw?.totalAmount ?? raw?.total_amount) || 0,
     status: raw?.status || 'completed',
@@ -113,6 +121,13 @@ export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] =
   const isPending = (o: any): boolean =>
     String(o?.syncStatus || o?.sync_status || '').toUpperCase() === 'PENDING_SYNC';
 
+  /** هل تملك الفاتورة رقماً نهائياً من السيرفر (وليس رقماً مؤقتاً أو فارغاً)؟ */
+  const hasFinalNumber = (o: any): boolean => {
+    const raw = String(o?.orderNumber ?? o?.order_number ?? '').trim();
+    if (!raw || raw.startsWith('off_') || raw.startsWith('tmp_')) return false;
+    return /^\d{1,6}$/.test(raw.replace(/^OFF-/i, '').trim());
+  };
+
   const take = (list: any[]) => {
     for (const o of list) {
       if (!o || typeof o !== 'object') continue;
@@ -132,7 +147,13 @@ export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] =
               // احتفظ بنسخة السيرفر الحالية
             } else {
               // دمج الحقول مع الحفاظ على نسخة أحدث
-              byKey.set(existingKey, { ...existing, ...o });
+              const merged = { ...existing, ...o };
+              // لا نسمح لصف بدون رقم نهائي أن يمحو رقماً نهائياً موجوداً لنفس الفاتورة
+              if (!hasFinalNumber(o) && hasFinalNumber(existing)) {
+                merged.orderNumber = existing.orderNumber;
+                merged.syncStatus = existing.syncStatus;
+              }
+              byKey.set(existingKey, merged);
             }
           }
           if (id) byId.set(id, existingKey);
@@ -177,7 +198,9 @@ export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] =
 
 /**
  * رقم الفاتورة المعروض للكاشير.
- * - رقم الفاتورة الرسمي القادم من السيرفر أو المحلي التسلسلي (مثال "1", "2", "20").
+ * - الرقم النهائي الرسمي من السيرفر (مثال "1", "2", "20") — أولوية دائماً.
+ * - فواتير أوفلاين معلقة (بدون رقم نهائي بعد) تعرض الرقم المؤقت بعلامة
+ *   «مؤقت» حتى لا تُخلط مع الأرقام النهائية — ثم تتحول للرقم النهائي بعد المزامنة.
  * - لا يستخدم Mongo _id كرقم فاتورة إطلاقاً.
  * - لا يستخدم slice(-4) أو slice(-6).
  */
@@ -187,7 +210,7 @@ export const displayOrderNumber = (order: any): string => {
     const cleaned = raw.replace(/^OFF-/i, '').trim();
     // بيانات قديمة: clientOrderId مخزّن خطأً كـ order_number — نتجاهله
     if (cleaned.startsWith('off_')) {
-      // no orderNumber available, fall through to tableNumber fallback
+      // no orderNumber available, fall through to provisional fallback
     } else if (cleaned && !cleaned.startsWith('tmp_')) {
       // إذا كان الرقم تسلسلياً نقياً نرجعه بالكامل دون اقتطاع
       return cleaned;
@@ -196,6 +219,14 @@ export const displayOrderNumber = (order: any): string => {
       const numOnly = cleaned.replace(/\D/g, '');
       if (numOnly) return numOnly;
     }
+  }
+
+  // لا رقم نهائي بعد (فاتورة معلقة أوفلاين) → الرقم المؤقت بعلامة واضحة
+  const provisional = String(
+    order?.provisionalNumber ?? order?.provisional_number ?? ''
+  ).trim();
+  if (/^\d{1,6}$/.test(provisional)) {
+    return `مؤقت ${provisional}`;
   }
 
   // إذا لم يتوفر orderNumber إطلاقاً، نستخدم رقم الطاولة كمرجع واضح بدل تشويه الأرقام بـ Mongo _id

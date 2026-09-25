@@ -121,6 +121,14 @@ export const CashierExpensesPage: React.FC = () => {
     loadData();
   }, []);
 
+  // 🔄 تحديث تلقائي فوري عند اكتمال المزامنة أو سحب مصروفات جديدة من السيرفر (Desktop)
+  useEffect(() => {
+    const cleanup = window.electronAPI?.onDataUpdated?.(() => {
+      loadData();
+    });
+    return () => { cleanup?.(); };
+  }, []);
+
   const handleUnitCostOrQtyChange = (field: 'unitCost' | 'quantity', val: string) => {
     setFormData((prev) => {
       const updated = { ...prev, [field]: val };

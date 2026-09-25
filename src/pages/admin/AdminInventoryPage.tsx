@@ -146,6 +146,14 @@ export const AdminInventoryPage: React.FC = () => {
     loadInventory();
   }, []);
 
+  // 🔄 تحديث تلقائي فوري عند اكتمال أي مزامنة/سحب بيانات من السيرفر (Desktop) — بدون F5
+  useEffect(() => {
+    const cleanup = window.electronAPI?.onDataUpdated?.(() => {
+      loadInventory();
+    });
+    return () => { cleanup?.(); };
+  }, []);
+
   // 🔄 مزامنة أرصدة المنتجات مع المخزن عند فتح الصفحة —
   // رصيد المنتج بيترجع يتحسب من وصفته (الخام المتاح) لو حصل تضارب،
   // زي منتج وصل صفر بينما الخام لسه فيه رصيد يكفي أكواب جديدة.

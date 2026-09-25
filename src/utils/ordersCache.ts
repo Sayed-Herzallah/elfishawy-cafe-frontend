@@ -25,6 +25,7 @@ export const ORDERS_SQL_CHUNK_SIZE = 60;
 const WRITABLE_ORDER_COLUMNS = [
   '_id',
   'order_number',
+  'provisional_number',
   'items',
   'total_amount',
   'status',
@@ -61,9 +62,13 @@ const slimItems = (items: unknown): any[] => {
 export const slimOrderForCache = (order: any): any => {
   const normalized: any = normalizeOrder(order);
   const raw = (order || {}) as any;
+  const provRaw = String(
+    raw.provisionalNumber ?? raw.provisional_number ?? normalized.provisionalNumber ?? ''
+  ).trim();
   return {
     _id: normalized._id,
     orderNumber: normalized.orderNumber,
+    provisionalNumber: /^\d{1,6}$/.test(provRaw) ? provRaw : undefined,
     items: slimItems(normalized.items),
     totalAmount: normalized.totalAmount,
     status: normalized.status,
@@ -189,7 +194,11 @@ const valueForColumn = (order: any, column: string): any => {
       return order._id;
     case 'order_number': {
       const numStr = String(order.orderNumber || order.order_number || '').trim();
-      return /^\d{1,5}$/.test(numStr) ? numStr : null;
+      return /^\d{1,6}$/.test(numStr) ? numStr : null;
+    }
+    case 'provisional_number': {
+      const provStr = String(order.provisionalNumber || order.provisional_number || '').trim();
+      return /^\d{1,6}$/.test(provStr) ? provStr : null;
     }
     case 'items':
       return JSON.stringify(order.items || []);
@@ -246,6 +255,14 @@ export const buildOrdersUpsertQuery = (tableColumns: string[], rows: any[]): Ord
       }
       if (column === 'client_order_id') {
         return 'client_order_id = COALESCE(excluded.client_order_id, orders.client_order_id)';
+      }
+      if (column === 'provisional_number') {
+        // لا نمسح رقماً مؤقتاً محفوظاً محلياً بقيمة فارغة قادمة من السيرفر
+        return 'provisional_number = COALESCE(excluded.provisional_number, orders.provisional_number)';
+      }
+      if (column === 'order_number') {
+        // الرقم النهائي لا يُمحى أبداً بقيمة فارغة أثناء الدمج
+        return 'order_number = COALESCE(excluded.order_number, orders.order_number)';
       }
       return `${column} = excluded.${column}`;
     });

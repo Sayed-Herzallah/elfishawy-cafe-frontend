@@ -182,7 +182,7 @@ export const inventoryService = {
     }
   },
 
-  createItem: (data: {
+  createItem: async (data: {
     name: string;
     quantity?: number;
     unit: string;
@@ -190,10 +190,41 @@ export const inventoryService = {
     costPrice?: number;
     totalCost?: number;
   }): Promise<ApiResponse<InventoryItem>> => {
-    return ApiClient.request<InventoryItem>('/inventory', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    // أوفلاين: ننشئ الصنف محلياً فوراً ويُزامَن تلقائياً عند عودة الاتصال —
+    // والسيرفر يمنع التكرار بنفس clientInventoryId لو أُعيد الإرسال.
+    if (offlineStore.isDesktop()) {
+      const isOnline = await offlineStore.isOnline();
+      if (!isOnline) {
+        const offlineRes = await offlineStore.createOfflineInventoryItem(data);
+        if (offlineRes.success && offlineRes.data) {
+          return {
+            success: true,
+            message: 'تم إنشاء الصنف محلياً بنجاح (وضع غير متصل)',
+            data: offlineRes.data as InventoryItem,
+          };
+        }
+      }
+    }
+
+    try {
+      return await ApiClient.request<InventoryItem>('/inventory', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    } catch (networkErr) {
+      // فشل الشبكة أثناء الإرسال: ننشئ الصنف محلياً بدل فقدان البيانات
+      if (offlineStore.isDesktop()) {
+        const offlineRes = await offlineStore.createOfflineInventoryItem(data);
+        if (offlineRes.success && offlineRes.data) {
+          return {
+            success: true,
+            message: 'تم إنشاء الصنف محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت',
+            data: offlineRes.data as InventoryItem,
+          };
+        }
+      }
+      throw networkErr;
+    }
   },
 
   restockItem: async (id: string, quantity: number, costPrice?: number, totalCost?: number): Promise<ApiResponse<InventoryItem>> => {

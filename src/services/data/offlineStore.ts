@@ -258,6 +258,14 @@ export const offlineStore = {
     throw new Error('Offline restock is only available in Desktop mode');
   },
 
+  // 3.b OFFLINE INVENTORY CREATE (صنف مخزون جديد أُنشئ أوفلاين)
+  async createOfflineInventoryItem(payload: any): Promise<any> {
+    if (isElectron() && window.electronAPI?.createOfflineInventoryItem) {
+      return await window.electronAPI.createOfflineInventoryItem(payload);
+    }
+    throw new Error('Offline inventory creation is only available in Desktop mode');
+  },
+
   // SYNC
   async triggerSync(): Promise<any> {
     if (isElectron() && window.electronAPI?.triggerSync) {

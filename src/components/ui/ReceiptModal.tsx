@@ -211,6 +211,9 @@ const buildReceiptBodyHTML = (
         <span>رقم الفاتورة: <strong>${escapeHtmlText(displayOrderNumber(order))}</strong></span>
         <span>طاولة: <strong>${escapeHtmlText(String(order.tableNumber ?? '—'))}</strong></span>
       </div>
+      ${(order as any)?.syncStatus === 'PENDING_SYNC' || (order as any)?.sync_status === 'PENDING_SYNC'
+        ? `<div class="r-dt-row"><span>⏳ فاتورة مؤقتة — الرقم النهائي بعد المزامنة</span></div>`
+        : ''}
       <div class="r-dt-row">
         <span>التاريخ: <strong>${formatDate(order.createdAt)}</strong></span>
         <span>الوقت: <strong>${formatTime(order.createdAt)}</strong></span>
@@ -630,6 +633,11 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
               <p className="text-xl font-black font-arabic-heading leading-tight truncate">
                 فاتورة #{displayOrderNumber(order)}
               </p>
+              {(order as any)?.syncStatus === 'PENDING_SYNC' || (order as any)?.sync_status === 'PENDING_SYNC' ? (
+                <p className="mt-1 inline-flex items-center gap-1 text-[11px] font-bold text-amber-200 bg-amber-500/20 border border-amber-300/40 rounded-full px-2.5 py-0.5">
+                  ⏳ فاتورة مؤقتة — ستتحول للرقم النهائي بعد المزامنة
+                </p>
+              ) : null}
             </div>
           </div>
 

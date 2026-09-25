@@ -22,6 +22,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   createOfflineExpense: (expenseData) => ipcRenderer.invoke('offline:create-expense', expenseData),
   getOfflineExpenses: () => ipcRenderer.invoke('offline:get-expenses'),
   restockOfflineInventory: (data) => ipcRenderer.invoke('offline:restock-inventory', data),
+  createOfflineInventoryItem: (itemData) => ipcRenderer.invoke('offline:create-inventory-item', itemData),
 
   // Sync actions
   getSyncQueue: () => ipcRenderer.invoke('sync:get-queue'),

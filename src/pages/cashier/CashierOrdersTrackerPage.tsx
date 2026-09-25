@@ -135,9 +135,10 @@ export const CashierOrdersTrackerPage: React.FC = () => {
       if (!q) return matchesStatus;
 
       if (searchMode === 'orderNumber') {
-        // Specific search for order number
+        // Specific search for order number (يشمل الرقم المؤقت للفواتير المعلقة)
         const cleanQ = q.replace('#', '');
-        return matchesStatus && String(order.orderNumber || '').toLowerCase().includes(cleanQ);
+        const numText = String(order.orderNumber || (order as any).provisionalNumber || '');
+        return matchesStatus && numText.toLowerCase().includes(cleanQ);
       }
 
       if (searchMode === 'table') {
@@ -158,7 +159,8 @@ export const CashierOrdersTrackerPage: React.FC = () => {
 
       // 'all' mode: matches any of the above
       const cleanQ = q.replace('#', '');
-      const matchesOrderNum = String(order.orderNumber || '').toLowerCase().includes(cleanQ);
+      const numText = String(order.orderNumber || (order as any).provisionalNumber || '');
+      const matchesOrderNum = numText.toLowerCase().includes(cleanQ);
       const matchesTable = order.tableNumber && String(order.tableNumber).includes(cleanQ);
       const matchesProd = (order.items || []).some((it) => {
         const name = getProductName(it);
@@ -447,7 +449,7 @@ export const CashierOrdersTrackerPage: React.FC = () => {
                         تسلسل #{sequentialIndex}
                       </span>
                       <span className="text-xs font-bold font-mono text-gray-900 bg-gray-100 px-2 py-0.5 rounded-lg">
-                        فاتورة #{order.orderNumber}
+                        فاتورة #{displayOrderNumber(order)}
                       </span>
                     </div>
 
@@ -568,7 +570,7 @@ export const CashierOrdersTrackerPage: React.FC = () => {
                       #{sequentialIndex}
                     </td>
                     <td className="py-3.5 px-3 font-mono font-bold text-gray-900">
-                      #{order.orderNumber}
+                      #{displayOrderNumber(order)}
                     </td>
                     <td className="py-3.5 px-3 font-mono text-gray-500 text-[11px]">
                       {formatTime(order.createdAt)}

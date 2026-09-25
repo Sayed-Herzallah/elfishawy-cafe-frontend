@@ -172,12 +172,15 @@ function runMigrations(db) {
       last_restock_total_cost REAL DEFAULT 0,
       last_restocked TEXT,
       last_restocked_by TEXT,
+      sync_status TEXT DEFAULT 'SYNCED',
+      client_inventory_id TEXT UNIQUE,
       updated_at TEXT
     );
 
     CREATE TABLE IF NOT EXISTS orders (
       _id TEXT PRIMARY KEY,
       order_number TEXT,
+      provisional_number TEXT,
       day_key TEXT,
       items TEXT NOT NULL,
       total_amount REAL NOT NULL,
@@ -189,6 +192,13 @@ function runMigrations(db) {
       client_order_id TEXT UNIQUE,
       created_at TEXT,
       updated_at TEXT
+    );
+
+    -- عدادات محلية للتسلسل المؤقت (أوفلاين) — لكل يوم تجاري عدّاد مستقل يبدأ من 1.
+    -- لا علاقة لهذه العدادات بأرقام الفواتير النهائية الصادرة من السيرفر.
+    CREATE TABLE IF NOT EXISTS local_counters (
+      _id TEXT PRIMARY KEY,
+      seq INTEGER DEFAULT 0
     );
 
     CREATE TABLE IF NOT EXISTS expenses (
@@ -227,10 +237,32 @@ function runMigrations(db) {
   try { db.run(`ALTER TABLE sync_queue ADD COLUMN op_hash TEXT;`); } catch {}
   // ترقيم الفواتير اليومي الموحّد: مفتاح اليوم التجاري بتوقيت القاهرة
   try { db.run(`ALTER TABLE orders ADD COLUMN day_key TEXT;`); } catch {}
+  // تتبع مزامنة المخزون الأوفلاين: حالة المزامنة + معرّف العميل للأصناف الجديدة
+  try { db.run(`ALTER TABLE inventory ADD COLUMN sync_status TEXT DEFAULT 'SYNCED';`); } catch {}
+  try { db.run(`ALTER TABLE inventory ADD COLUMN client_inventory_id TEXT;`); } catch {}
+  // الرقم المؤقت (أوفلاين) — منفصل تماماً عن الرقم النهائي القادم من السيرفر
+  try { db.run(`ALTER TABLE orders ADD COLUMN provisional_number TEXT;`); } catch {}
+  try { db.run(`CREATE TABLE IF NOT EXISTS local_counters (_id TEXT PRIMARY KEY, seq INTEGER DEFAULT 0);`); } catch {}
+
+  // ترحيل بيانات الإصدارات الأقدم: الفواتير المعلقة (PENDING_SYNC) كان رقمها المخزَّن
+  // في order_number رقم مؤقت محلي وليس رقماً نهائياً → ننقله لعمود provisional_number
+  // ونُخلي order_number (الذي صار مخصصاً لأرقام السيرفر النهائية فقط).
+  try {
+    db.run(`UPDATE orders SET provisional_number = order_number
+            WHERE IFNULL(sync_status, 'SYNCED') = 'PENDING_SYNC'
+              AND (provisional_number IS NULL OR provisional_number = '')
+              AND order_number IS NOT NULL
+              AND order_number GLOB '[0-9]*'
+              AND order_number NOT GLOB '*[^0-9]*'`);
+    db.run(`UPDATE orders SET order_number = NULL
+            WHERE IFNULL(sync_status, 'SYNCED') = 'PENDING_SYNC'`);
+  } catch {}
 
   // تنظيف أي أرقام فواتير قديمة تالفة أو غير متوافقة (أطول من 5 أرقام أو تحتوي حروف من Mongo _id)
+  // الرقم النهائي (order_number) أرقام فقط؛ الرقم المؤقت في عمود منفصل ولا يتأثر.
   try {
-    db.run(`UPDATE orders SET order_number = NULL WHERE order_number GLOB '*[^0-9]*' OR LENGTH(order_number) > 5;`);
+    db.run(`UPDATE orders SET order_number = NULL WHERE order_number GLOB '*[^0-9]*' OR LENGTH(order_number) > 6;`);
+    db.run(`UPDATE orders SET provisional_number = NULL WHERE provisional_number GLOB '*[^0-9]*' OR LENGTH(provisional_number) > 6;`);
   } catch {}
 
   // Seed default offline cashier if no local users exist

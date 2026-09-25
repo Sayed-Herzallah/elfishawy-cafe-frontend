@@ -75,6 +75,18 @@ export const CashierInventoryPage: React.FC = () => {
         }
       })
       .catch(() => { /* تجاهل — عرض المورد تحسيني */ });
+
+    // 🔄 إعادة تحميل قيود الشراء عند اكتمال أي مزامنة/سحب (Desktop) — بدون F5
+    const cleanup = window.electronAPI?.onDataUpdated?.(() => {
+      expenseService.listExpenses()
+        .then((res) => {
+          if (res.success && res.data) {
+            setPurchaseLogs(res.data.filter((e) => e.category === 'inventory'));
+          }
+        })
+        .catch(() => { /* تجاهل */ });
+    });
+    return () => { cleanup?.(); };
   }, []);
 
   /** استخراج اسم المورد من وصف قيد الشراء بصيغة [مورد: ...] — زي صفحة المشتريات */

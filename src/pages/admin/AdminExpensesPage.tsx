@@ -150,6 +150,14 @@ export const AdminExpensesPage: React.FC = () => {
     syncAllProductsStock().catch(() => {});
   }, []);
 
+  // 🔄 تحديث تلقائي فوري عند اكتمال مزامنة الطابور أو سحب مصروفات جديدة (Desktop)
+  useEffect(() => {
+    const cleanup = window.electronAPI?.onDataUpdated?.(() => {
+      loadData();
+    });
+    return () => { cleanup?.(); };
+  }, []);
+
   useEffect(() => {
     setCurrentPage(1);
   }, [categoryFilter, dateFilter, searchQuery, dateFrom, dateTo]);

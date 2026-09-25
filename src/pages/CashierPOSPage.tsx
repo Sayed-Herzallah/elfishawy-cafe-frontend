@@ -451,20 +451,16 @@ export const CashierPOSPage: React.FC = () => {
     const ts = Date.now();
     const clientOrderId = `off_${ts}_${Math.random().toString(36).slice(2, 7)}`;
 
-    // ─── رقم تسلسلي مؤقت = آخر رقم فاتورة اليوم + 1 ─────────────────
-    // نفلتر فواتير اليوم التجاري فقط (بتوقيت القاهرة — نفس تعريف السيرفر)
-    // حتى يبدأ الترقيم من 1 في كل يوم جديد على كل المنصات.
+    // ─── معاينة الرقم المؤقت (تسلسل محلي مستقل يبدأ من 1 كل يوم تجاري) ───
+    // الرقم النهائي للفاتورة يُصدره السيرفر فقط. هذا الرقم المؤقت لعرض الفاتورة
+    // فوراً (أوفلاين أو أونلاين) ثم يُستبدل بالرقم النهائي فور وصول رد السيرفر/الديسكتوب.
     const todayKey = getBusinessDayKey();
-    const todayOrders = allOrders.filter((o) =>
-      orderBusinessDayKey((o as any).dayKey ?? o.createdAt) === todayKey
-    );
-    const lastKnownNumber = todayOrders.reduce((max, o) => {
-      const raw = String(o.orderNumber ?? '').trim();
-      if (!/^\d{1,5}$/.test(raw)) return max;
-      const n = parseInt(raw, 10);
-      return isNaN(n) ? max : Math.max(max, n);
-    }, 0);
-    const tempOrderNumber = String(lastKnownNumber > 0 ? lastKnownNumber + 1 : 1);
+    const pendingTodayCount = allOrders.filter(
+      (o) =>
+        orderBusinessDayKey((o as any).dayKey ?? o.createdAt) === todayKey &&
+        String((o as any).syncStatus || '').toUpperCase() === 'PENDING_SYNC'
+    ).length;
+    const provisionalOrderNumber = String(pendingTodayCount + 1);
 
     const now = new Date().toISOString();
     const lookup = buildProductLookup(products);
@@ -472,7 +468,8 @@ export const CashierPOSPage: React.FC = () => {
     const optimisticRaw = {
       _id: clientOrderId,
       clientOrderId,
-      orderNumber: tempOrderNumber,
+      orderNumber: '',
+      provisionalNumber: provisionalOrderNumber,
       items: cartSnapshot,
       totalAmount: orderTotal,
       status: 'completed' as const,
@@ -502,13 +499,13 @@ export const CashierPOSPage: React.FC = () => {
     setIsSubmitting(false);  // ← يُطلق الزر فوراً بعد عرض الـ UI
 
     // ─── إرسال للسيرفر في الخلفية — بدون await ──────────────────────
-    // نمرر نفس clientOrderId ورقم الفاتورة المؤقت وسعر البيع الفعلي
+    // نمرر نفس clientOrderId وسعر البيع الفعلي.
+    // ملاحظة: لا نرسل أي رقم — الرقم النهائي يُصدره السيرفر فقط من العداد الذري.
     const serverPayload = {
       items: cartSnapshot.map((i) => ({ product: i.product._id, quantity: i.quantity, price: i.price })),
       tableNumber: parsedTableNumber,
       notes: payloadNotes,
       clientOrderId,
-      orderNumber: Number(tempOrderNumber),
     };
 
     orderService.createOrder(serverPayload)
@@ -580,7 +577,11 @@ export const CashierPOSPage: React.FC = () => {
 
       if (todaySearchMode === 'orderNumber') {
         const cleanQ = q.replace('#', '');
-        return String(ord.orderNumber || '').toLowerCase().includes(cleanQ);
+        // يشمل البحث الأرقام النهائية والمؤقتة (بعد إزالة علامة «مؤقت» للعرض فقط)
+        const numText =
+          String(ord.orderNumber || '') ||
+          `مؤقت ${String((ord as any).provisionalNumber || '')}`.trim();
+        return numText.toLowerCase().includes(cleanQ);
       }
 
       if (todaySearchMode === 'table') {
@@ -598,7 +599,10 @@ export const CashierPOSPage: React.FC = () => {
 
       // 'all' mode
       const cleanQ = q.replace('#', '');
-      const matchesId = String(ord.orderNumber || '').toLowerCase().includes(cleanQ) || String(ord._id || '').toLowerCase().includes(cleanQ);
+      const numText =
+        String(ord.orderNumber || '') ||
+        `مؤقت ${String((ord as any).provisionalNumber || '')}`.trim();
+      const matchesId = numText.toLowerCase().includes(cleanQ) || String(ord._id || '').toLowerCase().includes(cleanQ);
       const matchesTable = ord.tableNumber ? String(ord.tableNumber).includes(cleanQ) : false;
       const matchesDrink = items.some((it) => {
         const pName = resolveOrderItemName(it, products);

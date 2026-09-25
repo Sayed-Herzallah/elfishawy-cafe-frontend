@@ -30,6 +30,7 @@ import {
 } from '../../hooks/useStatisticsComparison';
 import { usePersistentState, readSessionCache, writeSessionCache, isSessionCacheUsable } from '../../hooks/usePersistentState';
 import { getBusinessDayKey, orderBusinessDayKey, shiftDayKey } from '../../utils/businessDay';
+import { displayOrderNumber } from '../../utils/orderDisplay';
 import {
   TrendingUp,
   TrendingDown,
@@ -1241,7 +1242,7 @@ export const AdminDashboardPage: React.FC = () => {
                 {filteredOrders.slice(0, 6).map((order) => (
                   <tr key={order._id} className="hover:bg-[#faf8f5]/80 transition">
                     <td className="py-3 px-3 font-mono font-bold text-gray-900">
-                      #{order.orderNumber}
+                      #{displayOrderNumber(order)}
                     </td>
                     <td className="py-3 px-3">
                       <div className="flex flex-col">
