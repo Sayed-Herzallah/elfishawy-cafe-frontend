@@ -6,6 +6,58 @@ import { saveOrdersSnapshot, readOrdersSnapshot } from '../utils/ordersCache';
 
 const ORDERS_FETCH_TIMEOUT_MS = 8000;
 
+const isPendingSync = (row: any): boolean =>
+  String(row?.syncStatus || row?.sync_status || '').toUpperCase() === 'PENDING_SYNC';
+
+/** دمج قائمة السيرفر مع صفوف محلية معلقة فقط (تجنّب تكرار الفواتير المُزامَنة) */
+const mergeServerWithLocalPending = <T extends { _id?: string; clientOrderId?: string; client_order_id?: string }>(
+  serverRows: T[],
+  localRows: T[]
+): T[] => {
+  const pending = (localRows || []).filter(isPendingSync);
+  if (pending.length === 0) return serverRows;
+  return mergeOrderLists(serverRows, pending) as T[];
+};
+
+const mergeInventoryLists = (serverRows: InventoryItem[] = [], localRows: any[] = []): InventoryItem[] => {
+  const byKey = new Map<string, InventoryItem>();
+  const keyOf = (item: any) =>
+    String(item?.clientInventoryId || item?.client_inventory_id || item?._id || '');
+
+  for (const row of serverRows) {
+    const key = keyOf(row);
+    if (key) byKey.set(key, row);
+  }
+  for (const row of localRows) {
+    if (!isPendingSync(row)) continue;
+    const key = keyOf(row);
+    if (!key) continue;
+    if (!byKey.has(key)) byKey.set(key, row as InventoryItem);
+  }
+  return Array.from(byKey.values());
+};
+
+const mergeExpenseLists = (serverRows: Expense[] = [], localRows: any[] = []): Expense[] => {
+  const byKey = new Map<string, Expense>();
+  const keyOf = (row: any) =>
+    String(row?.clientExpenseId || row?.client_expense_id || row?._id || '');
+
+  for (const row of serverRows) {
+    const key = keyOf(row);
+    if (key) byKey.set(key, row);
+  }
+  for (const row of localRows) {
+    if (!isPendingSync(row)) continue;
+    const key = keyOf(row);
+    if (!key) continue;
+    if (!byKey.has(key)) byKey.set(key, row as Expense);
+  }
+  return Array.from(byKey.values()).sort(
+    (a, b) =>
+      new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime()
+  );
+};
+
 export const orderService = {
   getOrders: async (params?: { status?: string; searchDate?: string; cashierId?: string }): Promise<ApiResponse<Order[]>> => {
     const query = new URLSearchParams();
@@ -29,10 +81,10 @@ export const orderService = {
         }
         if (offlineStore.isDesktop()) {
           await offlineStore.cacheOrders(res.data);
-          const localOrders = await offlineStore.getAllCachedOrders();
+          const localOrders = await offlineStore.getOfflineOrders();
           return {
             ...res,
-            data: mergeOrderLists(res.data, localOrders || []),
+            data: mergeServerWithLocalPending(res.data, localOrders || []),
           };
         }
         return res;
@@ -169,6 +221,13 @@ export const inventoryService = {
       const res = await ApiClient.request<InventoryItem[]>(`/inventory${qs ? `?${qs}` : ''}`, { method: 'GET' });
       if (res.success && Array.isArray(res.data) && !qs) {
         offlineStore.cacheEntities('inventory', res.data);
+        if (offlineStore.isDesktop()) {
+          const localItems = await offlineStore.getCachedInventory();
+          return {
+            ...res,
+            data: mergeInventoryLists(res.data, localItems),
+          };
+        }
       }
       return res;
     } catch (err) {
@@ -285,6 +344,13 @@ export const expenseService = {
       const res = await ApiClient.request<Expense[]>(`/expenses${qs ? `?${qs}` : ''}`, { method: 'GET' });
       if (res.success && Array.isArray(res.data) && offlineStore.isDesktop()) {
         offlineStore.cacheEntities('expenses', res.data);
+        if (!qs) {
+          const localExpenses = await offlineStore.getOfflineExpenses();
+          return {
+            ...res,
+            data: mergeExpenseLists(res.data, localExpenses),
+          };
+        }
       }
       return res;
     } catch (err) {

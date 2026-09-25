@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useNotification } from '../../contexts/NotificationContext';
 import { analyticsService, orderService, inventoryService, expenseService } from '../../services/opsService';
+import { offlineStore } from '../../services/data/offlineStore';
 import { productService } from '../../services/catalogService';
 import { KPIStats, ChartsData, Order, InventoryItem, Expense, Product } from '../../types';
 import { ReceiptModal } from '../../components/ui/ReceiptModal';
@@ -109,6 +110,12 @@ export const AdminDashboardPage: React.FC = () => {
       const periodParams = getPeriodParams();
       const periodKeyUsed = currentPeriodKey;
       let statsPeriodUsed: string | null = null;
+
+      const desktopOnline = offlineStore.isDesktop() ? await offlineStore.isOnline() : true;
+      if (!desktopOnline) {
+        setStatsPeriod(null);
+      }
+
       const statsPromise = analyticsService.getStats(periodParams).then((res) => {
         if (res.success && res.data) {
           setStats(res.data);
@@ -178,6 +185,9 @@ export const AdminDashboardPage: React.FC = () => {
       // F7: عدم ابتلاع فشل تحديث الإحصائيات بصمت — toast واحد حتى ينجح التحديث من جديد
       const statsFailed = statsRes.status === 'rejected' || !statsRes.value?.success;
       const chartsFailed = chartsRes.status === 'rejected' || !chartsRes.value?.success;
+      if (statsFailed) {
+        setStatsPeriod(null);
+      }
       if ((statsFailed || chartsFailed) && !kpisFailStreakRef.current) {
         kpisFailStreakRef.current = true;
         showToast('تعذّر تحديث الإحصائيات من الخادم — يتم عرض آخر بيانات متاحة', 'info');

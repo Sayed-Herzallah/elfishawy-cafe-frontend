@@ -265,6 +265,31 @@ function runMigrations(db) {
     db.run(`UPDATE orders SET provisional_number = NULL WHERE provisional_number GLOB '*[^0-9]*' OR LENGTH(provisional_number) > 6;`);
   } catch {}
 
+  // إصلاح صفوف فواتير أوفلاين تالفة (INSERT قديم كان يضع PENDING_SYNC في عمود notes
+  // ويضع clientOrderId في sync_status) — نستعيد الهوية الصحيحة clientOrderId = _id
+  try {
+    db.run(`
+      UPDATE orders SET
+        notes = CASE WHEN notes = 'PENDING_SYNC' THEN '' ELSE notes END,
+        sync_status = 'PENDING_SYNC',
+        client_order_id = _id,
+        order_number = NULL
+      WHERE _id GLOB 'off_*'
+        AND IFNULL(sync_status, '') != 'SYNCED'
+        AND (
+          sync_status GLOB 'off_*'
+          OR notes = 'PENDING_SYNC'
+          OR IFNULL(sync_status, '') = ''
+        )
+    `);
+    db.run(`
+      UPDATE orders SET client_order_id = _id
+      WHERE _id GLOB 'off_*'
+        AND IFNULL(sync_status, '') = 'PENDING_SYNC'
+        AND (client_order_id IS NULL OR client_order_id = '' OR client_order_id GLOB '20*')
+    `);
+  } catch {}
+
   // Seed default offline cashier if no local users exist
   try {
     const userCountRes = db.exec(`SELECT COUNT(*) FROM local_users`);

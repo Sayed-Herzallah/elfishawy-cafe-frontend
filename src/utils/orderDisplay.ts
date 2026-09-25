@@ -205,6 +205,24 @@ export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] =
  * - لا يستخدم slice(-4) أو slice(-6).
  */
 export const displayOrderNumber = (order: any): string => {
+  const syncStatus = String(order?.syncStatus ?? order?.sync_status ?? '').toUpperCase();
+  const isPending = syncStatus === 'PENDING_SYNC';
+
+  // فاتورة لم تُزامن بعد: الرقم المؤقت فقط — لا نعرض order_number حتى لو بقي من بيانات قديمة
+  if (isPending) {
+    const provisional = String(
+      order?.provisionalNumber ?? order?.provisional_number ?? ''
+    ).trim();
+    if (/^\d{1,6}$/.test(provisional)) {
+      return `مؤقت ${provisional}`;
+    }
+    const tableNumber = order?.tableNumber ?? order?.table_number;
+    if (tableNumber !== undefined && tableNumber !== null && String(tableNumber).trim() !== '') {
+      return `ط${String(tableNumber).trim()}`;
+    }
+    return '—';
+  }
+
   const raw = String(order?.orderNumber ?? order?.order_number ?? '').trim();
   if (raw) {
     const cleaned = raw.replace(/^OFF-/i, '').trim();

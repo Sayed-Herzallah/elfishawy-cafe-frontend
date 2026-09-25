@@ -169,6 +169,8 @@ export const offlineStore = {
         costPrice: r.cost_price,
         lastRestockTotalCost: r.last_restock_total_cost,
         lastRestocked: r.last_restocked,
+        syncStatus: r.sync_status || 'SYNCED',
+        clientInventoryId: r.client_inventory_id || undefined,
       }));
     } catch {
       return [];
@@ -244,10 +246,45 @@ export const offlineStore = {
   },
 
   async getOfflineExpenses(): Promise<any[]> {
-    if (isElectron() && window.electronAPI?.getOfflineExpenses) {
-      return await window.electronAPI.getOfflineExpenses();
+    if (!isElectron()) return [];
+
+    let rows: any[] = [];
+    if (window.electronAPI?.getOfflineExpenses) {
+      try {
+        const result = await window.electronAPI.getOfflineExpenses();
+        if (Array.isArray(result)) rows = result;
+      } catch (e) {
+        console.warn('Failed to read offline expenses via IPC:', e);
+      }
     }
-    return [];
+
+    if (rows.length === 0 && window.electronAPI?.query) {
+      try {
+        const result = await window.electronAPI.query(
+          `SELECT * FROM expenses ORDER BY date DESC, created_at DESC`
+        );
+        if (Array.isArray(result)) {
+          rows = result.map((raw: any) => ({
+            _id: raw._id,
+            description: raw.description || '',
+            amount: Number(raw.amount) || 0,
+            category: raw.category || 'other',
+            inventoryItemLinked: raw.inventory_item_linked || undefined,
+            inventoryQuantityAdded: Number(raw.inventory_quantity_added) || undefined,
+            unitCost: Number(raw.unit_cost) || undefined,
+            date: raw.date || raw.created_at || new Date().toISOString(),
+            addedBy: raw.added_by || '',
+            syncStatus: raw.sync_status || 'SYNCED',
+            clientExpenseId: raw.client_expense_id,
+            createdAt: raw.created_at || raw.date || new Date().toISOString(),
+          }));
+        }
+      } catch (e) {
+        console.warn('Failed to read local expenses table:', e);
+      }
+    }
+
+    return rows;
   },
 
   // 3. OFFLINE INVENTORY RESTOCK

@@ -219,6 +219,7 @@ const upsertSyncedOrder = (db, ord) => {
   const cashierId = typeof ord.cashierId === 'object' ? (ord.cashierId?._id || '') : (ord.cashierId || '');
   const clientOrderId = ord.clientOrderId || ord.client_order_id || null;
   const dayKey = ord.dayKey || ord.day_key || null;
+  const itemsJson = JSON.stringify(ord.items || []);
 
   try {
     const existing = db.exec(`SELECT sync_status FROM orders WHERE _id = ?`, [ord._id]);
@@ -271,7 +272,7 @@ const upsertSyncedOrder = (db, ord) => {
   } catch (upsertErr) {
     db.run(`
       INSERT OR REPLACE INTO orders (_id, order_number, day_key, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?, ?)
     `, [
       ord._id,
       orderNumber,
@@ -402,7 +403,7 @@ export function setupIpcHandlers(mainWindow) {
       // الرقم المؤقت للعرض/الطباعة فقط في provisional_number.
       db.run(`
         INSERT INTO orders (_id, order_number, provisional_number, day_key, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
-        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, 'PENDING_SYNC', ?, ?, ?)
+        VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_SYNC', ?, ?, ?)
       `, [
         clientOrderId,
         tempOrderNumber,
@@ -783,9 +784,30 @@ export function setupIpcHandlers(mainWindow) {
         }
       } else if (entityType === 'inventory') {
         for (const inv of records) {
+          if (!inv || !inv._id) continue;
+          const localClientId = inv.clientInventoryId || inv.client_inventory_id || '';
+          const pendingItem = db.exec(
+            `SELECT 1 FROM inventory
+             WHERE IFNULL(sync_status, 'SYNCED') = 'PENDING_SYNC'
+               AND (_id = ? OR (client_inventory_id IS NOT NULL AND client_inventory_id != '' AND client_inventory_id = ?))
+             LIMIT 1`,
+            [inv._id, localClientId]
+          );
+          if (pendingItem.length && pendingItem[0].values.length) continue;
+
           db.run(`
-            INSERT OR REPLACE INTO inventory (_id, name, quantity, unit, min_limit, cost_price, last_restock_total_cost, last_restocked, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO inventory (_id, name, quantity, unit, min_limit, cost_price, last_restock_total_cost, last_restocked, updated_at, sync_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED')
+            ON CONFLICT(_id) DO UPDATE SET
+              name = excluded.name,
+              quantity = excluded.quantity,
+              unit = excluded.unit,
+              min_limit = excluded.min_limit,
+              cost_price = excluded.cost_price,
+              last_restock_total_cost = excluded.last_restock_total_cost,
+              last_restocked = excluded.last_restocked,
+              updated_at = excluded.updated_at
+            WHERE IFNULL(inventory.sync_status, 'SYNCED') != 'PENDING_SYNC'
           `, [
             inv._id,
             inv.name,
