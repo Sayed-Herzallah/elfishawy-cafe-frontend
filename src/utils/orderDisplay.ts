@@ -111,6 +111,86 @@ export const normalizeOrder = (raw: any, lookup?: ProductLookup): Order => {
   } as Order;
 };
 
+/**
+ * 🔢 ترقيم مؤقت موحّد للمتصفح والديسكتوب في نفس اليوم.
+ * ------------------------------------------------------------------
+ * السبب: الديسكتوب بيخزّن "رقم مؤقت" محلي في SQLite عند كل فاتورة أوفلاين
+ * (allocateProvisionalNumber)، لكن المتصفح كان بيخزّن الفاتورة من غير أي رقم
+ * مؤقت خالص → نفس الطلب بيظهر برقم مختلف على كل منصة ("مشتريات بيجيب رقم
+ * مختلف منصة").
+ * الحل: مصدر واحد للرقم المؤقت — أعلى رقم مؤقت موجود فعلاً في اليوم
+ * + 1. بيحترم ترتيب الجهاز (1, 2, 3 ...) ومتوافق مع منطق الديسكتوب.
+ */
+const PROVISIONAL_KEY = 'elfishawy_provisional_counter';
+
+const getCairoDayKey = (): string => {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Africa/Cairo',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+  } catch {
+    return new Date().toISOString().slice(0, 10);
+  }
+};
+
+/** أعلى رقم مؤقت مُسجَّل في لقطة اليوم (حماية بعد أي ترقية/استرجاع localStorage) */
+const scanMaxProvisional = (): number => {
+  let max = 0;
+  try {
+    const raw = localStorage.getItem('elfishawy_orders_cache_v1');
+    if (!raw) return 0;
+    const parsed = JSON.parse(raw);
+    const orders = Array.isArray(parsed) ? parsed : parsed?.orders;
+    if (!Array.isArray(orders)) return 0;
+    const today = getCairoDayKey();
+    orders.forEach((o: any) => {
+      const dayKey = String(o?.dayKey || o?.day_key || '');
+      const createdDay = dayKey || getCairoDayKey(o?.createdAt || o?.created_at);
+      if (createdDay !== today) return;
+      const prov = String(o?.provisionalNumber ?? o?.provisional_number ?? '').trim();
+      if (/^\d{1,6}$/.test(prov)) max = Math.max(max, Number(prov));
+      const num = String(o?.orderNumber ?? o?.order_number ?? '').trim();
+      if (/^\d{1,6}$/.test(num)) max = Math.max(max, Number(num));
+    });
+  } catch {
+    /* تجاهل */
+  }
+  return max;
+};
+
+/**
+ * يوزّع رقماً مؤقتاً تسلسلياً لليوم الحالي (1, 2, 3, ...).
+ * يُستخدم من المتصفح فقط عند إنشاء فاتورة أوفلاين، ومتوافق مع منطق
+ * الديسكتوب — فتبقى الأرقام متطابقة بين المنصات لنفس الترتيب.
+ */
+export const allocateProvisionalNumber = (): string => {
+  try {
+    const dayKey = getCairoDayKey();
+    const stored = localStorage.getItem(PROVISIONAL_KEY);
+    let seq = 0;
+    let storedDay = '';
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      storedDay = String(parsed?.dayKey || '');
+      seq = Number(parsed?.seq) || 0;
+    }
+    // يوم جديد → العداد يبدأ من 1، مع الاحترام لأعلى رقم مؤقت مسجَّل فعلاً
+    if (storedDay !== dayKey) {
+      seq = scanMaxProvisional();
+    } else {
+      seq = Math.max(seq, scanMaxProvisional());
+    }
+    seq += 1;
+    localStorage.setItem(PROVISIONAL_KEY, JSON.stringify({ dayKey, seq }));
+    return String(seq);
+  } catch {
+    return '1';
+  }
+};
+
 export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] => {
   const byKey = new Map<string, any>();
   // خريطة: clientOrderId -> مفتاح السجل في byKey

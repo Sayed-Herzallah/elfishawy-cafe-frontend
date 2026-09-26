@@ -11,7 +11,7 @@ import { ErrorBoundary } from '../components/ui/ErrorBoundary';
 import { Modal } from '../components/ui/Modal';
 import { LoadingSkeleton } from '../components/ui/LoadingSkeleton';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
-import { formatPrice, formatNumber, formatTime, EMPTY_LABEL, isToday, isWithinLast24Hours } from '../utils/formatters';
+import { formatPrice, formatNumber, formatTime, EMPTY_LABEL, isToday } from '../utils/formatters';
 import { toBase } from '../utils/stockSync';
 import { productStockState } from '../utils/stockStatus';
 import { playAlertSound } from '../utils/soundFeedback';
@@ -22,6 +22,7 @@ import {
   resolveOrderItemName,
   displayOrderNumber,
   mergeOrderLists,
+  allocateProvisionalNumber,
 } from '../utils/orderDisplay';
 import { readOrdersSnapshot, saveOrdersSnapshot } from '../utils/ordersCache';
 import { offlineStore } from '../services/data/offlineStore';
@@ -108,9 +109,13 @@ export const CashierPOSPage: React.FC = () => {
     );
   const applyOrders = (data: Order[]) => {
     const lookup = buildProductLookup(productsRef.current);
+    // ⚠️ سبب "عدد فواتير غير مطابق": الفلتر كان isWithinLast24Hours (آخر 24 ساعة)
+    // بينما العنوان بيقول "فواتير اليوم" → أي فاتورة من أمس بالليل كانت بتتحسب
+    // النهاردة فيظهر عدد أكبر من الحقيقة ويختلف بين المنصات.
+    // الحل: فلترة بيوم Cairo التجاري (نفس تعريف السيرفر والترقيم) + إزالة التكرار.
     const recentOrders = mergeOrderLists(data || [], [])
       .map((o) => normalizeOrder(o, lookup))
-      .filter((o) => isWithinLast24Hours(o.createdAt) && o.status !== 'cancelled')
+      .filter((o) => isToday(o.dayKey || o.createdAt) && o.status !== 'cancelled')
       .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     setAllOrders(recentOrders);
     setRecentOrders(recentOrders.slice(0, 4));
@@ -465,10 +470,15 @@ export const CashierPOSPage: React.FC = () => {
         clientOrderId,
       };
 
+      // 🔢 رقم مؤقت موحّد مع الديسكتوب — بدل ما يبقى المتصفح بلا رقم خالص
+      // فتبقى نفس الفاتورة بالرقم نفسه على كل منصة.
+      const provisionalNumber = offlineStore.isDesktop() ? '' : allocateProvisionalNumber();
+
       let optimisticRaw: Record<string, unknown> = {
         _id: clientOrderId,
         clientOrderId,
         orderNumber: '',
+        provisionalNumber,
         items: cartSnapshot,
         totalAmount: orderTotal,
         status: 'completed',

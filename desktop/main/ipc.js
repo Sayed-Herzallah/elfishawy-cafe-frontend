@@ -703,7 +703,20 @@ export function setupIpcHandlers(mainWindow) {
         return { success: false, message: 'Missing inventory item id' };
       }
 
-      db.run(`
+      // ⚠️ سبب "المخزن مش بيضيف": لو الـ UPDATE ما لقاش صف بالـ _id ده،
+      // SQLite بيعمل "صفر تغييرات" من غير أي خطأ → الكاشير شايف رسالة نجاح
+      // بس الرصيد ما اتزادش. ده بيحصل لما الصنف يكون اتعمل بعد آخر مزامنة
+      // فمش موجود في SQLite المحلي.
+      const existingRes = db.exec(`SELECT _id FROM inventory WHERE _id = ? LIMIT 1`, [targetId]);
+      if (!existingRes.length || !existingRes[0].values.length) {
+        console.warn(`[restock] inventory item ${targetId} not found in local SQLite`);
+        return {
+          success: false,
+          message: 'الصنف غير موجود في المخزن المحلي — حدّث البيانات مرة واحدة وهو متصل بالإنترنت',
+        };
+      }
+
+      const updateRes = db.run(`
         UPDATE inventory 
         SET quantity = quantity + ?, 
             cost_price = CASE WHEN ? > 0 THEN ? ELSE cost_price END,
@@ -712,6 +725,14 @@ export function setupIpcHandlers(mainWindow) {
             updated_at = ?
         WHERE _id = ?
       `, [qtyNum, costPrice, costPrice, totalCost, now, now, targetId]);
+
+      // تحقق إضافي: SQLite ما بيرجعش عدد الصفوف المتأثرة بسهولة في كل الإصدارات،
+      // فبنقرأ الرصيد بعد التحديث للتأكد إن الكمية اتزادت فعلاً.
+      const afterRes = db.exec(`SELECT quantity FROM inventory WHERE _id = ? LIMIT 1`, [targetId]);
+      const qtyAfter = Number(afterRes?.[0]?.values?.[0]?.[0]);
+      if (!Number.isFinite(qtyAfter) || qtyAfter <= 0) {
+        return { success: false, message: 'فشل تحديث رصيد الصنف في المخزن المحلي' };
+      }
 
       // Add to sync queue with cryptographic hash-chaining
       // clientRestockId يضمن Idempotency على السيرفر — نفس التوريد لو اتبعت مرتين

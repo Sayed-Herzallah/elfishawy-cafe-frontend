@@ -108,6 +108,12 @@ export const formatDateTime = (dateInput: string | Date | undefined | null): str
  */
 export const isToday = (dateInput: string | Date | undefined | null): boolean => {
   if (!dateInput) return false;
+  // dayKey (بالصيغة "YYYY-MM-DD" بتوقيت القاهرة) بيتقبل زي ما هو
+  // من غير ما يتحوّل لتاريخ — غير كده Date("2026-09-26") بيتقري وقت UTC
+  // فيحسب الفاتورة على اليوم التجاري الخطأ.
+  if (typeof dateInput === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+    return dateInput === getBusinessDayKey(new Date());
+  }
   const d = new Date(dateInput);
   if (isNaN(d.getTime())) return false;
   return getBusinessDayKey(d) === getBusinessDayKey(new Date());

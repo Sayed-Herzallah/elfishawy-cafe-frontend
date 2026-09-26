@@ -441,13 +441,33 @@ export const inventoryService = {
   },
 
   restockItem: async (id: string, quantity: number, costPrice?: number, totalCost?: number): Promise<ApiResponse<InventoryItem>> => {
+    // 🩺 تشخيص: لو الـ IPC رجّع success:false (مثلاً الصنف مش موجود محلياً)
+    // كان الكود بيتجاهل النتيجة وبيقول "تم التوريد بنجاح" والفعل الرصيد يزيدش.
+    // دلوقتي: لو فشل التوريد المحلي نتحقق من السيرفر قبل ما نعلن الفشل.
+    const restockLocal = async (): Promise<boolean> => {
+      try {
+        const res = await offlineStore.restockOfflineInventory({ id, quantity, costPrice, totalCost });
+        return Boolean(res?.success);
+      } catch {
+        return false;
+      }
+    };
+
     if (offlineStore.isDesktop()) {
       const isOnline = await offlineStore.isOnline();
       if (!isOnline) {
-        await offlineStore.restockOfflineInventory({ id, quantity, costPrice, totalCost });
+        const ok = await restockLocal();
+        if (ok) {
+          return {
+            success: true,
+            message: 'تم توريد الكمية محلياً وسيتم المزامنة عند عودة الاتصال',
+          };
+        }
+        // فشل التوريد المحلي — نرجّع رسالة واضحة بدل نجاح وهمي
         return {
-          success: true,
-          message: 'تم توريد الكمية محلياً وسيتم المزامنة عند عودة الاتصال',
+          success: false,
+          message:
+            'تعذّر إضافة الكمية للمخزن المحلي. تأكد أن الصنف متاح في المخزن المحلي ثم أعد المحاولة.',
         };
       }
     }
@@ -459,11 +479,13 @@ export const inventoryService = {
       });
     } catch (networkErr) {
       if (offlineStore.isDesktop()) {
-        await offlineStore.restockOfflineInventory({ id, quantity, costPrice, totalCost });
-        return {
-          success: true,
-          message: 'تم توريد الكمية محلياً وسيتم المزامنة عند عودة الاتصال',
-        };
+        const ok = await restockLocal();
+        if (ok) {
+          return {
+            success: true,
+            message: 'تم توريد الكمية محلياً وسيتم المزامنة عند عودة الاتصال',
+          };
+        }
       }
       throw networkErr;
     }
