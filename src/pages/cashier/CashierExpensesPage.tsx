@@ -95,10 +95,10 @@ export const CashierExpensesPage: React.FC = () => {
         inventoryService.listInventory(),
       ]);
 
-      // 🔐 حماية إضافية في الواجهة: الكاشير يرى قيود المشتريات (المواد الخام) فقط —
-      // أي تصنيف مصروفات آخر (إيجار، رواتب، مرافق...) لا يُعرض مهما كانت استجابة الـ API
+      // 🔐 شاشة الكاشير والمدير للمشتريات والتوريدات — نعرض كل قيود المشتريات والتوريدات المسجلة
+      // بدون حجب أي قيد (ضرائب، رصيد افتتاحي، توريد مواد خام...) ليتطابق إجمالي الديسكتوب مع المنصة بالكامل.
       if (expRes.success && expRes.data) {
-        setExpenses(expRes.data.filter((e) => e.category === 'inventory'));
+        setExpenses(expRes.data);
       }
       if (invRes.success && invRes.data) {
         const invData = invRes.data;

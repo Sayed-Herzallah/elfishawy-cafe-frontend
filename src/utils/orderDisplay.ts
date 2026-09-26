@@ -194,79 +194,70 @@ export const allocateProvisionalNumber = (): string => {
 
 export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] => {
   const byKey = new Map<string, any>();
-  // خريطة: clientOrderId -> مفتاح السجل في byKey
-  const byCid = new Map<string, string>();
-  // خريطة: _id -> مفتاح السجل في byKey
-  const byId = new Map<string, string>();
+  const cidToKey = new Map<string, string>();
+  const idToKey = new Map<string, string>();
 
   const isPending = (o: any): boolean =>
     String(o?.syncStatus || o?.sync_status || '').toUpperCase() === 'PENDING_SYNC';
 
-  /** هل تملك الفاتورة رقماً نهائياً من السيرفر (وليس رقماً مؤقتاً أو فارغاً)؟ */
   const hasFinalNumber = (o: any): boolean => {
     const raw = String(o?.orderNumber ?? o?.order_number ?? '').trim();
     if (!raw || raw.startsWith('off_') || raw.startsWith('tmp_')) return false;
     return /^\d{1,6}$/.test(raw.replace(/^OFF-/i, '').trim());
   };
 
-  const take = (list: any[]) => {
-    for (const o of list) {
-      if (!o || typeof o !== 'object') continue;
-      const cid = String(o.clientOrderId || o.client_order_id || '').trim();
-      const id = String(o._id || '').trim();
+  const processOrder = (o: any) => {
+    if (!o || typeof o !== 'object') return;
+    const cid = String(o.clientOrderId || o.client_order_id || '').trim();
+    const id = String(o._id || '').trim();
 
-      // ── 1. الهوية الأساسية الأولى: clientOrderId / client_order_id ──────────
-      if (cid) {
-        if (byCid.has(cid)) {
-          const existingKey = byCid.get(cid)!;
-          const existing = byKey.get(existingKey);
-          if (existing) {
-            // تفضيل نسخة السيرفر المعتمدة (التي ليست PENDING_SYNC أو التي تملك _id سيرفر ورقم رسمي)
-            if (isPending(existing) && !isPending(o)) {
-              byKey.set(existingKey, { ...existing, ...o });
-            } else if (!isPending(existing) && isPending(o)) {
-              // احتفظ بنسخة السيرفر الحالية
-            } else {
-              // دمج الحقول مع الحفاظ على نسخة أحدث
-              const merged = { ...existing, ...o };
-              // لا نسمح لصف بدون رقم نهائي أن يمحو رقماً نهائياً موجوداً لنفس الفاتورة
-              if (!hasFinalNumber(o) && hasFinalNumber(existing)) {
-                merged.orderNumber = existing.orderNumber;
-                merged.syncStatus = existing.syncStatus;
-              }
-              byKey.set(existingKey, merged);
-            }
-          }
-          if (id) byId.set(id, existingKey);
-          continue;
-        }
-      }
-
-      // ── 2. Fallback: الاعتماد على _id فقط عند عدم وجود clientOrderId ──────────
-      if (id && byId.has(id)) {
-        const existingKey = byId.get(id)!;
-        const existing = byKey.get(existingKey);
-        if (existing) {
-          if (isPending(existing) && !isPending(o)) {
-            byKey.set(existingKey, { ...existing, ...o });
-          }
-        }
-        if (cid) byCid.set(cid, existingKey);
-        continue;
-      }
-
-      // ── 3. إضافة سجل جديد ──────────────────────────────────────────────────
-      const key = cid || id;
-      if (!key) continue;
-
-      byKey.set(key, o);
-      if (cid) byCid.set(cid, key);
-      if (id) byId.set(id, key);
+    // العثور على المفتاح الموجود سواء عبر clientOrderId أو عبر _id
+    let existingKey: string | undefined = undefined;
+    if (cid && cidToKey.has(cid)) {
+      existingKey = cidToKey.get(cid);
+    } else if (id && idToKey.has(id)) {
+      existingKey = idToKey.get(id);
     }
+
+    if (existingKey && byKey.has(existingKey)) {
+      const existing = byKey.get(existingKey);
+
+      // دمج دقيق: تفضيل البيانات المؤكدة من السيرفر مدموجة مع الرقم والخصائص المحلية
+      let merged: any;
+      if (isPending(existing) && !isPending(o)) {
+        merged = { ...existing, ...o };
+      } else if (!isPending(existing) && isPending(o)) {
+        merged = { ...o, ...existing };
+      } else {
+        merged = { ...existing, ...o };
+      }
+
+      if (!hasFinalNumber(o) && hasFinalNumber(existing)) {
+        merged.orderNumber = existing.orderNumber;
+        merged.syncStatus = existing.syncStatus;
+      }
+      if (!merged.provisionalNumber && existing.provisionalNumber) {
+        merged.provisionalNumber = existing.provisionalNumber;
+      }
+
+      byKey.set(existingKey, merged);
+      if (cid) cidToKey.set(cid, existingKey);
+      if (id) idToKey.set(id, existingKey);
+      return;
+    }
+
+    // سجل جديد
+    const newKey = cid || id;
+    if (!newKey) return;
+
+    byKey.set(newKey, { ...o });
+    if (cid) cidToKey.set(cid, newKey);
+    if (id) idToKey.set(id, newKey);
   };
 
-  take(primary);
-  take(extra);
+  // معالجة كلتا القائمتين مع الضمان بعدم التكرار
+  for (const item of primary) processOrder(item);
+  for (const item of extra) processOrder(item);
 
   return Array.from(byKey.values()).sort((a, b) => {
     const ta = new Date(a.createdAt || a.created_at || 0).getTime();

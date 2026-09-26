@@ -12,8 +12,10 @@ import {
 
 const ORDERS_FETCH_TIMEOUT_MS = 8000;
 
-const isPendingSync = (row: any): boolean =>
-  String(row?.syncStatus || row?.sync_status || '').toUpperCase() === 'PENDING_SYNC';
+const isPendingSync = (row: any): boolean => {
+  const status = String(row?.syncStatus || row?.sync_status || '').toUpperCase();
+  return status === 'PENDING_SYNC' || status === 'PENDING';
+};
 
 /** دمج قائمة السيرفر مع صفوف محلية معلقة فقط (تجنّب تكرار الفواتير المُزامَنة) */
 const mergeServerWithLocalPending = <T extends { _id?: string; clientOrderId?: string; client_order_id?: string }>(
@@ -35,12 +37,14 @@ const mergeInventoryLists = (serverRows: InventoryItem[] = [], localRows: any[] 
     if (key) byKey.set(key, row);
   }
   for (const row of localRows) {
-    if (!isPendingSync(row)) continue;
     const key = keyOf(row);
     if (!key) continue;
-    if (!byKey.has(key)) byKey.set(key, row as InventoryItem);
+    // إضافة العناصر المحلية الجديدة (PENDING_SYNC أو عناصر SQLite) إن لم تكن أضيفت
+    if (!byKey.has(key)) {
+      byKey.set(key, row as InventoryItem);
+    }
   }
-  return Array.from(byKey.values());
+  return Array.from(byKey.values()).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
 };
 
 const mergeExpenseLists = (serverRows: Expense[] = [], localRows: any[] = []): Expense[] => {
@@ -53,10 +57,11 @@ const mergeExpenseLists = (serverRows: Expense[] = [], localRows: any[] = []): E
     if (key) byKey.set(key, row);
   }
   for (const row of localRows) {
-    if (!isPendingSync(row)) continue;
     const key = keyOf(row);
     if (!key) continue;
-    if (!byKey.has(key)) byKey.set(key, row as Expense);
+    if (!byKey.has(key)) {
+      byKey.set(key, row as Expense);
+    }
   }
   return Array.from(byKey.values()).sort(
     (a, b) =>
