@@ -7,6 +7,7 @@ import {
   findServerExpenseByClientId,
   findServerInventoryByClientId,
   findServerOrderByClientId,
+  isTimeoutLikeError,
 } from './orderReconcile';
 
 const ORDERS_FETCH_TIMEOUT_MS = 8000;
@@ -61,6 +62,45 @@ const mergeExpenseLists = (serverRows: Expense[] = [], localRows: any[] = []): E
     (a, b) =>
       new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime()
   );
+};
+
+/**
+ * حفظ فاتورة كـ "قيد المزامنة" محلياً في المتصفح (لقطة localStorage).
+ * تُستخدم بعد timeout: الطلب راح السيرفر بس الرد مبيوصلش، فبنخزّنه بنفس الـ
+ * clientOrderId بدل ما نرمي الخطأ ونخلّي الكاشير يبيع تاني → فاتورتين لنفس الطلب.
+ * الفاتورة تظهر للعرض كـ PENDING_SYNC (رقم مؤقت) لحد ما تتأكد من السيرفر.
+ */
+const saveOrderAsLocallyPending = async (
+  serverBody: Record<string, unknown>,
+  clientOrderId: string
+): Promise<Order | null> => {
+  try {
+    const now = new Date().toISOString();
+    const items = Array.isArray(serverBody.items) ? serverBody.items : [];
+    const totalAmount = items.reduce((sum: number, it: any) => {
+      return sum + (Number(it?.price) || 0) * (Number(it?.quantity) || 0);
+    }, 0);
+
+    const pending = {
+      _id: clientOrderId,
+      clientOrderId,
+      orderNumber: '',
+      items,
+      totalAmount,
+      status: 'completed',
+      tableNumber: serverBody.tableNumber,
+      notes: serverBody.notes || '',
+      syncStatus: 'PENDING_SYNC',
+      createdAt: now,
+      updatedAt: now,
+    } as unknown as Order;
+
+    saveOrdersSnapshot([pending]);
+    return pending;
+  } catch {
+    /* التخزين تحسيني — لو فشل نرجع null فيتصرف الـ caller زي ما كان */
+    return null;
+  }
 };
 
 export const orderService = {
@@ -189,7 +229,7 @@ export const orderService = {
         return finishLocalPending('تم حفظ الطلب محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت');
       }
 
-      const CREATE_ORDER_TIMEOUT_MS = 8000;
+      const CREATE_ORDER_TIMEOUT_MS = 20000;
       try {
         const res = await ApiClient.request<Order>('/orders', {
           method: 'POST',
@@ -219,7 +259,11 @@ export const orderService = {
       }
     }
 
-    const CREATE_ORDER_TIMEOUT_MS = 8000;
+    // ⏱️ مهلة الإرسال: 20 ثانية (كانت 8).
+    // السبب: السيرفر بيحتاج وقت لخصم المخزون والوصفات قبل ما يرد. Timeout قصير
+    // كان بيخلّي الواجهة ترمي خطأ والعميل ماعرفش إن الفاتورة اتعملت → الكاشير
+    // بيعيد البيع → فاتورتين. دلوقتي: مهلة أطول + التحقق والمطابقة قبل الخطأ.
+    const CREATE_ORDER_TIMEOUT_MS = 20000;
     try {
       const res = await ApiClient.request<Order>('/orders', {
         method: 'POST',
@@ -239,6 +283,20 @@ export const orderService = {
           message: 'تم تأكيد الطلب على السيرفر بعد التحقق',
           data: reconciled,
         };
+      }
+      // ⚠️ لو الـ timeout حصل وما لقيتناشش: نعتبرها "غير مؤكدة" مش "فاشلة".
+      // رمي الخطأ هنا كان بيخلّي الكاشير يبيع تاني → فاتورتين لنفس الطلب.
+      // بنخزّنها كـ pending بنفس الـ clientOrderId فيبقى الترقيم والتزامن آمن،
+      // والمزامنة الجاية هترجع الفاتورة نفسها (idempotent) مش نسخة تانية.
+      if (isTimeoutLikeError(networkErr)) {
+        const pending = await saveOrderAsLocallyPending(serverBody, clientOrderId);
+        if (pending) {
+          return {
+            success: true,
+            message: 'تم حفظ الفاتورة محلياً وسيتم تأكيدها على السيرفر عند ثبات الاتصال',
+            data: pending,
+          };
+        }
       }
       throw networkErr;
     }

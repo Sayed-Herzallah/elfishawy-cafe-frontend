@@ -88,6 +88,12 @@ export const CashierPOSPage: React.FC = () => {
   const productsRef = useRef<Product[]>([]);
   productsRef.current = products;
 
+  // 🔒 قفل الإرسال (ref مش state): الـ state بيتحدّث بعد الـ render بس، فالكاشير
+  // كان يقدر يضغط "تأكيد الطلب" مرتين بسرعة → الفحص isSubmitting يعدّي مرتين
+  // → فاتورتين حقيقيتين على السيرفر بـ clientOrderId مختلفين.
+  // الـ ref بيتحدّث فوراً وبيمنع أي ضغطة تانية قبل ما الـ state يتحدّث.
+  const submittingRef = useRef<boolean>(false);
+
   const applyProducts = (data: Product[]) =>
     setProducts(
       data.map((p) => {
@@ -427,7 +433,9 @@ export const CashierPOSPage: React.FC = () => {
       }
       setTableNumberError('');
 
-      if (isSubmitting) return;
+      // القفل يمنع التكرار الحقيقي (فاتورتين على السيرفر) — مش مجرد تعطيل زر
+      if (submittingRef.current) return;
+      submittingRef.current = true;
       setIsSubmitting(true);
 
       const shortagesForThisOrder = new Set<string>();
@@ -477,12 +485,14 @@ export const CashierPOSPage: React.FC = () => {
           const localRes = await offlineStore.createOfflineOrder(serverPayload);
           if (!localRes.success || !localRes.data) {
             showError(new Error(localRes.message || 'تعذّر حفظ الفاتورة محلياً'));
+            submittingRef.current = false;
             setIsSubmitting(false);
             return;
           }
           optimisticRaw = localRes.data;
         } catch (err) {
           showError(err);
+          submittingRef.current = false;
           setIsSubmitting(false);
           return;
         }
@@ -504,6 +514,9 @@ export const CashierPOSPage: React.FC = () => {
 
       showToast('تم تأكيد الطلب وحفظ الفاتورة بنجاح!');
       handleClearCart();
+      // القفل يُفك هنا فقط: الفاتورة اتسجّلت محلياً والطلب رايح للسيرفر في الخلفية،
+      // فالسلة اتفرّضت — أي ضغطة جديدة هي طلب جديد مش تكرار.
+      submittingRef.current = false;
       setIsSubmitting(false);
 
       orderService
