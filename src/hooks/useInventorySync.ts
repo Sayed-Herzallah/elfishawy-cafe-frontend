@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { inventoryService } from '../services/opsService';
+import { offlineStore } from '../services/data/offlineStore';
 import { InventoryItem } from '../types';
 import { useNotification } from '../contexts/NotificationContext';
 import { isStockLow, isStockOut } from '../utils/stockStatus';
@@ -75,7 +76,27 @@ export const useInventorySync = (pollInterval = 30000) => {
 
       }
     } catch (err) {
+      // ✅ السيرفر مش متاح — نجيب البيانات من الكاش المحلي مباشرة بدون استدعاء متكرر
       console.error('Inventory sync error:', err);
+      const applyItems = (items: InventoryItem[]) => {
+        const lowStock = items.filter(item => isStockLow(item.quantity, item.minLimit));
+        const outOfStock = items.filter(item => isStockOut(item.quantity));
+        setState(prev => ({ ...prev, items, lowStockItems: lowStock, outOfStockItems: outOfStock, isLoading: false }));
+      };
+      try {
+        if (offlineStore.isDesktop()) {
+          // ديسكتوب: نقرأ مباشرة من SQLite (يشمل الأصناف المضافة أوفلاين)
+          const cached = await offlineStore.getCachedInventory();
+          if (cached && cached.length > 0) { applyItems(cached as InventoryItem[]); return; }
+        } else {
+          // متصفح: نقرأ من localStorage كاش
+          const raw = localStorage.getItem('ef_inventory_cache');
+          if (raw) {
+            const parsed: InventoryItem[] = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) { applyItems(parsed); return; }
+          }
+        }
+      } catch { /* تجاهل */ }
       setState(prev => ({ ...prev, isLoading: false }));
     }
   }, [showToast]);

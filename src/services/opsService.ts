@@ -336,6 +336,10 @@ export const inventoryService = {
     try {
       const res = await ApiClient.request<InventoryItem[]>(`/inventory${qs ? `?${qs}` : ''}`, { method: 'GET' });
       if (res.success && Array.isArray(res.data) && !qs) {
+        // ✅ كاش المتصفح: حفظ القائمة في localStorage لاستخدامها أوفلاين
+        if (!offlineStore.isDesktop()) {
+          try { localStorage.setItem('ef_inventory_cache', JSON.stringify(res.data)); } catch { /* تجاهل */ }
+        }
         // ✅ await: نضمن حفظ بيانات السيرفر في SQLite قبل أي انقطاع للشبكة
         await offlineStore.cacheEntities('inventory', res.data);
         if (offlineStore.isDesktop()) {
@@ -366,15 +370,27 @@ export const inventoryService = {
       return res;
     } catch (err) {
       if (offlineStore.isDesktop()) {
-        // أوفلاين: نرجع كل ما في SQLite (SYNCED من السيرفر + PENDING_SYNC جديدة)
+        // أوفلاين ديسكتوب: نرجع كل ما في SQLite (SYNCED من السيرفر + PENDING_SYNC جديدة)
         const cached = await offlineStore.getCachedInventory();
         if (cached && cached.length > 0) {
           return { success: true, message: 'Loaded from local offline database', data: cached };
         }
+      } else {
+        // ✅ أوفلاين متصفح: نقرأ من localStorage كاش
+        try {
+          const raw = localStorage.getItem('ef_inventory_cache');
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              return { success: true, message: 'Loaded from browser local cache', data: parsed as InventoryItem[] };
+            }
+          }
+        } catch { /* تجاهل */ }
       }
       throw err;
     }
   },
+
 
   createItem: async (data: {
     name: string;
@@ -543,42 +559,61 @@ export const expenseService = {
 
     try {
       const res = await ApiClient.request<Expense[]>(`/expenses${qs ? `?${qs}` : ''}`, { method: 'GET' });
-      if (res.success && Array.isArray(res.data) && offlineStore.isDesktop()) {
-        // ✅ await: يضمن حفظ كل فواتير السيرفر في SQLite قبل أي انقطاع للشبكة
-        await offlineStore.cacheEntities('expenses', res.data);
-        if (!qs) {
-          // السيرفر هو المصدر الوحيد عند الاتصال — نضيف فقط القيود المعلقة محلياً
-          // التي لم تصل للسيرفر بعد (PENDING_SYNC ومش موجودة في بيانات السيرفر)
-          const localExpenses = await offlineStore.getOfflineExpenses();
-          const serverIds = new Set([
-            ...res.data.map((e: any) => String(e._id || '')),
-            ...res.data.map((e: any) => String(e.clientExpenseId || '')),
-          ]);
-          const pendingOnly = localExpenses.filter((le: any) => {
-            const cid = String(le.clientExpenseId || le.client_expense_id || '');
-            const lid = String(le._id || '');
-            return (
-              String(le.syncStatus || le.sync_status || '').toUpperCase() === 'PENDING_SYNC' &&
-              !serverIds.has(cid) &&
-              !serverIds.has(lid)
-            );
-          });
-          const merged = [...res.data, ...pendingOnly];
-          return { ...res, data: merged };
+      if (res.success && Array.isArray(res.data)) {
+        // ✅ كاش المتصفح: حفظ القائمة في localStorage لاستخدامها أوفلاين
+        if (!qs && !offlineStore.isDesktop()) {
+          try { localStorage.setItem('ef_expenses_cache', JSON.stringify(res.data)); } catch { /* تجاهل */ }
+        }
+        if (offlineStore.isDesktop()) {
+          // ✅ await: يضمن حفظ كل فواتير السيرفر في SQLite قبل أي انقطاع للشبكة
+          await offlineStore.cacheEntities('expenses', res.data);
+          if (!qs) {
+            const localExpenses = await offlineStore.getOfflineExpenses();
+            const serverIds = new Set([
+              ...res.data.map((e: any) => String(e._id || '')),
+              ...res.data.map((e: any) => String(e.clientExpenseId || '')),
+            ]);
+            // ✅ فقط السجلات الفعلاً PENDING (لم تتزامن بعد) تُضاف
+            const pendingOnly = localExpenses.filter((le: any) => {
+              const cid = String(le.clientExpenseId || le.client_expense_id || '');
+              const lid = String(le._id || '');
+              return (
+                String(le.syncStatus || le.sync_status || '').toUpperCase() === 'PENDING_SYNC' &&
+                !serverIds.has(cid) &&
+                !serverIds.has(lid)
+              );
+            });
+            // ✅ mergeExpenseLists بدل spread خام — يمنع ظهور نفس القيد مرتين
+            const merged = mergeExpenseLists(res.data, pendingOnly);
+            return { ...res, data: merged };
+          }
         }
       }
       return res;
     } catch (err) {
       if (offlineStore.isDesktop()) {
-        // أوفلاين: نرجع كل ما في SQLite (فواتير السيرفر المُخزَّنة + الأوفلاين المعلقة)
         const localExpenses = await offlineStore.getOfflineExpenses();
         if (localExpenses && localExpenses.length > 0) {
           return { success: true, message: 'Loaded from local offline database', data: localExpenses };
         }
       }
+      // ✅ المتصفح أوفلاين: كاش localStorage كطبقة أخيرة
+      if (!offlineStore.isDesktop()) {
+        try {
+          const cached = localStorage.getItem('ef_expenses_cache');
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              return { success: true, message: 'Loaded from browser local cache', data: parsed as Expense[] };
+            }
+          }
+        } catch { /* تجاهل */ }
+      }
       throw err;
     }
   },
+
+
 
   createExpense: async (data: {
     description: string;

@@ -157,7 +157,10 @@ export const CashierInventoryPage: React.FC = () => {
       });
 
       if (res.success) {
-        const isOfflineResult = Boolean((res.data as any)?.isOffline);
+        const isOfflineResult = Boolean((res.data as any)?.isOffline) ||
+          Boolean((res.data as any)?.syncStatus === 'PENDING_SYNC') ||
+          Boolean((res.data as any)?.sync_status === 'PENDING_SYNC');
+
         if (isOfflineResult) {
           showToast('✅ تمت إضافة الصنف محلياً — سيتزامن مع قاعدة البيانات عند عودة الإنترنت', 'info');
         } else {
@@ -165,16 +168,19 @@ export const CashierInventoryPage: React.FC = () => {
         }
         setIsAddModalOpen(false);
         setFormData({ name: '', quantity: '10', unit: 'KG', minLimit: '5', totalCost: '' });
+        // ✅ دائماً نحدّث القائمة — refetch تشمل الأوفلاين من SQLite
         refetch();
       } else {
         showToast(res.message || 'تعذّرت إضافة الصنف — حاول مرة أخرى', 'error');
       }
     } catch (err: any) {
       const msg = String(err?.message || '');
+      // ✅ وضع أوفلاين في الديسكتوب: الخطأ بيجي من IPC أو شبكة — نعرض رسالة ونعيد الفرز من SQLite
       if (msg.includes('محلياً') || msg.toLowerCase().includes('local') || msg.toLowerCase().includes('offline')) {
         showToast('✅ تمت إضافة الصنف محلياً — سيتزامن مع قاعدة البيانات عند عودة الإنترنت', 'info');
         setIsAddModalOpen(false);
         setFormData({ name: '', quantity: '10', unit: 'KG', minLimit: '5', totalCost: '' });
+        // ✅ refetch بعد الأوفلاين يجيب القائمة من SQLite (تشمل الصنف الجديد)
         refetch();
       } else {
         showError(err);
@@ -183,6 +189,7 @@ export const CashierInventoryPage: React.FC = () => {
       setIsSubmitting(false);
     }
   };
+
 
   // Handle Purchase & Restock via Backend Expense Service
   const handleOpenPurchaseModal = (item: InventoryItem) => {

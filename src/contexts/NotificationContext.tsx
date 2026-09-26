@@ -18,17 +18,23 @@ const NotificationContext = createContext<NotificationContextValue | undefined>(
 
 export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // تتبّع أوقات آخر ظهور لكل رسالة لمنع التكرار السريع فقط (ثانيتان)
+  const recentKeys = React.useRef<Map<string, number>>(new Map());
 
   const showToast = useCallback((message: string, type: ToastType = 'success') => {
-    // Prevent duplicate identical toasts within 3 seconds
+    const key = `${type}::${message}`;
+    const now = Date.now();
+    const lastShown = recentKeys.current.get(key) || 0;
+    // منع التكرار السريع: نفس الرسالة في أقل من ثانيتين تُتجاهل
+    if (now - lastShown < 2000) return;
+    recentKeys.current.set(key, now);
+
     setToasts((prev) => {
-      const duplicate = prev.find((t) => t.message === message && t.type === type);
-      if (duplicate) return prev;
       const id = Math.random().toString(36).substring(2, 9);
       const newToasts = [...prev, { id, message, type }];
       setTimeout(() => {
         setToasts((current) => current.filter((t) => t.id !== id));
-      }, 3500);
+      }, 4000);
       return newToasts;
     });
   }, []);
