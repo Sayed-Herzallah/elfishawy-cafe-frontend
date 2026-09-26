@@ -58,7 +58,7 @@ class FrontendUpdater {
     } catch (e) {
       console.error('[FrontendUpdater] Error reading local meta:', e);
     }
-    return { version: '1.0.0', activatedAt: null };
+    return { version: '1.0.0', tag: 'frontend-v1.0.0', activatedAt: null };
   }
 
   saveLocalMeta(meta) {
@@ -144,13 +144,16 @@ class FrontendUpdater {
       }
 
       const currentMeta = this.getLocalMeta();
-      console.log(`[FrontendUpdater] Local: ${currentMeta.version} (${currentMeta.buildDate}) | Remote: ${remoteManifest.version} (${remoteManifest.buildDate})`);
+      const remoteTag = remoteManifest.tag || `frontend-v${remoteManifest.version}`;
+      const localTag = currentMeta.tag || `frontend-v${currentMeta.version}`;
+      console.log(`[FrontendUpdater] Local: ${currentMeta.version} (${currentMeta.buildDate || 'n/a'}) [${localTag}] | Remote: ${remoteManifest.version} (${remoteManifest.buildDate || 'n/a'}) [${remoteTag}]`);
 
       const versionDiff = this.compareVersions(currentMeta.version, remoteManifest.version);
       const isNewerBuild = remoteManifest.buildDate && currentMeta.buildDate && remoteManifest.buildDate > currentMeta.buildDate;
       const isDifferentBuild = remoteManifest.buildDate && currentMeta.buildDate && remoteManifest.buildDate !== currentMeta.buildDate;
+      const tagChanged = remoteTag && localTag && remoteTag !== localTag;
 
-      const hasNewUpdate = versionDiff > 0 || isNewerBuild || isDifferentBuild;
+      const hasNewUpdate = versionDiff > 0 || isNewerBuild || isDifferentBuild || tagChanged;
 
       if (!hasNewUpdate) {
         console.log('[FrontendUpdater] Local frontend is up to date.');
@@ -285,6 +288,7 @@ class FrontendUpdater {
       // 6. Record metadata
       this.saveLocalMeta({
         version: manifest.version,
+        tag: manifest.tag || `frontend-v${manifest.version}`,
         buildDate: manifest.buildDate || new Date().toISOString(),
         activatedAt: new Date().toISOString(),
       });
@@ -293,7 +297,7 @@ class FrontendUpdater {
     } catch (err) {
       console.error('[FrontendUpdater] Atomic update failed, keeping current frontend intact:', err);
       if (fs.existsSync(this.stagingDir)) {
-        try { fs.rmSync(this.stagingDir, { recursive: true, force: true }); } catch {}
+        try { fs.rmSync(this.stagingDir, { recursive: true, force: true }); } catch { }
       }
       return false;
     }

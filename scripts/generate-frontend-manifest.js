@@ -13,6 +13,7 @@ const pkgPath = path.join(rootDir, 'package.json');
 
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 const version = pkg.version || '1.0.0';
+const tag = `frontend-v${version}`;
 
 function getAllFiles(dir, baseDir = dir) {
   let files = [];
@@ -40,6 +41,7 @@ const fileList = getAllFiles(distDir);
 
 const manifest = {
   version,
+  tag,
   buildDate: new Date().toISOString(),
   files: fileList,
 };
