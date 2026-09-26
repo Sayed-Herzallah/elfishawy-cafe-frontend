@@ -458,8 +458,15 @@ export const CashierPOSPage: React.FC = () => {
       }));
       const orderTotal = cart.reduce((s, i) => s + i.product.price * i.quantity, 0);
 
-      const ts = Date.now();
-      const clientOrderId = `off_${ts}_${Math.random().toString(36).slice(2, 7)}`;
+      // ✅ الـ clientOrderId مبني على محتوى السلة + الدقيقة الحالية (مش الثانية)
+      // لو الكاشير ضغط مرتين بنفس السلة في نفس الدقيقة → نفس الـ ID → لا تكرار
+      const cartHash = cart
+        .map((i) => `${i.product._id}:${i.quantity}`)
+        .sort()
+        .join(',');
+      const minuteSlot = Math.floor(Date.now() / 60000);
+      const hashPart = btoa(encodeURIComponent(cartHash)).replace(/[^a-z0-9]/gi, '').slice(0, 10);
+      const clientOrderId = `off_${minuteSlot}_${hashPart}`;
       const now = new Date().toISOString();
       const lookup = buildProductLookup(products);
 
@@ -470,8 +477,7 @@ export const CashierPOSPage: React.FC = () => {
         clientOrderId,
       };
 
-      // 🔢 رقم مؤقت موحّد مع الديسكتوب — بدل ما يبقى المتصفح بلا رقم خالص
-      // فتبقى نفس الفاتورة بالرقم نفسه على كل منصة.
+      // 🔢 رقم مؤقت للمتصفح فقط — الديسكتوب يأخذ رقمه المؤقت من SQLite بعد createOfflineOrder
       const provisionalNumber = offlineStore.isDesktop() ? '' : allocateProvisionalNumber();
 
       let optimisticRaw: Record<string, unknown> = {
@@ -499,7 +505,13 @@ export const CashierPOSPage: React.FC = () => {
             setIsSubmitting(false);
             return;
           }
-          optimisticRaw = localRes.data;
+          // ✅ نأخذ الرقم المؤقت من SQLite مباشرةً (1, 2, 3...) ليظهر "مؤقت 1" في الإيصال
+          // بدلاً من '' الذي كان يجعله يظهر "—" وهو غير مفيد للكاشير
+          optimisticRaw = {
+            ...localRes.data,
+            // نحافظ على provisionalNumber من SQLite (هو المصدر الوحيد للرقم المؤقت على الديسكتوب)
+            provisionalNumber: localRes.data.provisionalNumber || localRes.data.provisional_number || '',
+          };
         } catch (err) {
           showError(err);
           submittingRef.current = false;
@@ -522,12 +534,11 @@ export const CashierPOSPage: React.FC = () => {
         recordOrderShortages(clientOrderId, clientOrderId, shortagesList);
       }
 
-      showToast('تم تأكيد الطلب وحفظ الفاتورة بنجاح!');
-      handleClearCart();
-      // القفل يُفك هنا فقط: الفاتورة اتسجّلت محلياً والطلب رايح للسيرفر في الخلفية،
-      // فالسلة اتفرّضت — أي ضغطة جديدة هي طلب جديد مش تكرار.
+      // 🔒 فك القفل فوراً بعد حفظ الفاتورة محلياً — قبل أي async لاحق
       submittingRef.current = false;
       setIsSubmitting(false);
+      showToast('تم تأكيد الطلب وحفظ الفاتورة بنجاح!');
+      handleClearCart();
 
       orderService
         .createOrder({ ...serverPayload, localPrepared: offlineStore.isDesktop() })

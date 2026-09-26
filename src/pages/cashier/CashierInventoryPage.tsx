@@ -157,13 +157,28 @@ export const CashierInventoryPage: React.FC = () => {
       });
 
       if (res.success) {
-        showToast('تمت إضافة صنف المخزون بنجاح');
+        const isOfflineResult = Boolean((res.data as any)?.isOffline);
+        if (isOfflineResult) {
+          showToast('✅ تمت إضافة الصنف محلياً — سيتزامن مع قاعدة البيانات عند عودة الإنترنت', 'info');
+        } else {
+          showToast('تمت إضافة صنف المخزون بنجاح');
+        }
         setIsAddModalOpen(false);
         setFormData({ name: '', quantity: '10', unit: 'KG', minLimit: '5', totalCost: '' });
         refetch();
+      } else {
+        showToast(res.message || 'تعذّرت إضافة الصنف — حاول مرة أخرى', 'error');
       }
-    } catch (err) {
-      showError(err);
+    } catch (err: any) {
+      const msg = String(err?.message || '');
+      if (msg.includes('محلياً') || msg.toLowerCase().includes('local') || msg.toLowerCase().includes('offline')) {
+        showToast('✅ تمت إضافة الصنف محلياً — سيتزامن مع قاعدة البيانات عند عودة الإنترنت', 'info');
+        setIsAddModalOpen(false);
+        setFormData({ name: '', quantity: '10', unit: 'KG', minLimit: '5', totalCost: '' });
+        refetch();
+      } else {
+        showError(err);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -275,8 +290,15 @@ export const CashierInventoryPage: React.FC = () => {
           })
           .catch(() => { /* تجاهل — العرض هيتحدث على التحديث التالي */ });
       }
-    } catch (err) {
-      showError(err);
+    } catch (err: any) {
+      const msg = String(err?.message || '');
+      if (msg.includes('محلياً') || msg.toLowerCase().includes('local') || msg.toLowerCase().includes('offline')) {
+        showToast('✅ تم تسجيل الشراء محلياً — سيتزامن مع قاعدة البيانات عند عودة الإنترنت', 'info');
+        setIsPurchaseModalOpen(false);
+        refetch();
+      } else {
+        showError(err);
+      }
     } finally {
       setIsSubmitting(false);
     }

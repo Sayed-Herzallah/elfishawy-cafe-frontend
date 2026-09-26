@@ -284,8 +284,16 @@ export const offlineStore = {
 
     if (rows.length === 0 && window.electronAPI?.query) {
       try {
+        // JOIN مع جدول inventory لإرجاع اسم ووحدة الصنف في كل فاتورة شراء —
+        // بدون الـ JOIN كان inventoryItemLinked يرجع كـ ID نصي فتظهر الكمية "—".
         const result = await window.electronAPI.query(
-          `SELECT * FROM expenses ORDER BY date DESC, created_at DESC`
+          `SELECT e.*,
+                  i.name AS inv_name,
+                  i.unit AS inv_unit,
+                  i._id  AS inv_resolved_id
+           FROM expenses e
+           LEFT JOIN inventory i ON i._id = e.inventory_item_linked
+           ORDER BY e.date DESC, e.created_at DESC`
         );
         if (Array.isArray(result)) {
           rows = result.map((raw: any) => ({
@@ -293,9 +301,14 @@ export const offlineStore = {
             description: raw.description || '',
             amount: Number(raw.amount) || 0,
             category: raw.category || 'other',
-            inventoryItemLinked: raw.inventory_item_linked || undefined,
+            // لو الصنف موجود في المخزون المحلي نرجعه كـ object كامل
+            inventoryItemLinked:
+              raw.inv_resolved_id && raw.inv_name
+                ? { _id: raw.inv_resolved_id, name: raw.inv_name, unit: raw.inv_unit || 'وحدة' }
+                : (raw.inventory_item_linked || undefined),
             inventoryQuantityAdded: Number(raw.inventory_quantity_added) || undefined,
             unitCost: Number(raw.unit_cost) || undefined,
+            purchaseNumber: raw.purchase_number || undefined,
             date: raw.date || raw.created_at || new Date().toISOString(),
             addedBy: raw.added_by || '',
             syncStatus: raw.sync_status || 'SYNCED',

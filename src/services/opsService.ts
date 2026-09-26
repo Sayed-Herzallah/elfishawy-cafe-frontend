@@ -331,7 +331,8 @@ export const inventoryService = {
     try {
       const res = await ApiClient.request<InventoryItem[]>(`/inventory${qs ? `?${qs}` : ''}`, { method: 'GET' });
       if (res.success && Array.isArray(res.data) && !qs) {
-        offlineStore.cacheEntities('inventory', res.data);
+        // ✅ await مهم: نضمن حفظ البيانات في SQLite قبل أي انقطاع للشبكة
+        await offlineStore.cacheEntities('inventory', res.data);
         if (offlineStore.isDesktop()) {
           const localItems = await offlineStore.getCachedInventory();
           return {
@@ -520,8 +521,12 @@ export const expenseService = {
     try {
       const res = await ApiClient.request<Expense[]>(`/expenses${qs ? `?${qs}` : ''}`, { method: 'GET' });
       if (res.success && Array.isArray(res.data) && offlineStore.isDesktop()) {
-        offlineStore.cacheEntities('expenses', res.data);
+        // ✅ await مهم: يضمن حفظ كل فواتير السيرفر في SQLite قبل أي انقطاع للشبكة
+        // بدون await كان السيرفر يرد بـ 13 فاتورة لكن SQLite تحفظ 0 لأن الكتابة
+        // لم تكتمل → لما النت بينقطع تظهر 0 أو 3 فواتير فقط (الأوفلاين فقط).
+        await offlineStore.cacheEntities('expenses', res.data);
         if (!qs) {
+          // نجلب كل الفواتير المحلية (SYNCED المُخزَّنة من السيرفر + PENDING_SYNC الأوفلاين)
           const localExpenses = await offlineStore.getOfflineExpenses();
           return {
             ...res,
@@ -532,6 +537,9 @@ export const expenseService = {
       return res;
     } catch (err) {
       if (offlineStore.isDesktop()) {
+        // أوفلاين: نرجع كل ما في SQLite (فواتير السيرفر المُخزَّنة + الأوفلاين المعلقة)
+        // الـ getOfflineExpenses يرجع الكل (SYNCED + PENDING_SYNC) مع أسماء الأصناف
+        // عبر JOIN مع جدول inventory في SQLite — نفس منطق المخزون والمبيعات.
         const localExpenses = await offlineStore.getOfflineExpenses();
         if (localExpenses && localExpenses.length > 0) {
           return { success: true, message: 'Loaded from local offline database', data: localExpenses };

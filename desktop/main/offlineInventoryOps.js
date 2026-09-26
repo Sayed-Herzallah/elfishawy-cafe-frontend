@@ -217,7 +217,38 @@ export function createOfflineExpense(db, expenseData, enqueue) {
 }
 
 export function listOfflineExpenses(db) {
-    return rows(db, 'SELECT * FROM expenses ORDER BY date DESC, created_at DESC').map(expensePayload);
+    // JOIN مع المخزون لإرجاع اسم ووحدة الصنف المرتبط بكل فاتورة شراء —
+    // بدون الـ JOIN كان الصنف المرتبط يرجع كـ string ID فقط مما يجعل العرض
+    // يظهر "—" في الكمية واسم الصنف حتى وإن كانت البيانات موجودة محلياً.
+    try {
+        const result = db.exec(`
+            SELECT e.*,
+                   i.name   AS inv_name,
+                   i.unit   AS inv_unit,
+                   i._id    AS inv_resolved_id
+            FROM expenses e
+            LEFT JOIN inventory i ON i._id = e.inventory_item_linked
+            ORDER BY e.date DESC, e.created_at DESC
+        `);
+        if (!result.length) return [];
+        return result[0].values.map((values) => {
+            const raw = {};
+            result[0].columns.forEach((col, idx) => { raw[col] = values[idx]; });
+            const exp = expensePayload(raw);
+            // لو الصنف موجود في المخزون المحلي نرجعه كـ object كامل (زي استجابة السيرفر)
+            if (raw.inv_resolved_id && raw.inv_name) {
+                exp.inventoryItemLinked = {
+                    _id: raw.inv_resolved_id,
+                    name: raw.inv_name,
+                    unit: raw.inv_unit || 'وحدة',
+                };
+            }
+            return exp;
+        });
+    } catch {
+        // fallback: استعلام بسيط بدون JOIN لو الـ JOIN فشل لأي سبب
+        return rows(db, 'SELECT * FROM expenses ORDER BY date DESC, created_at DESC').map(expensePayload);
+    }
 }
 
 export function restockOfflineInventory(db, restockData, enqueue) {
