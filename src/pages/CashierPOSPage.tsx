@@ -458,15 +458,13 @@ export const CashierPOSPage: React.FC = () => {
       }));
       const orderTotal = cart.reduce((s, i) => s + i.product.price * i.quantity, 0);
 
-      // ✅ الـ clientOrderId مبني على محتوى السلة + الدقيقة الحالية (مش الثانية)
-      // لو الكاشير ضغط مرتين بنفس السلة في نفس الدقيقة → نفس الـ ID → لا تكرار
-      const cartHash = cart
-        .map((i) => `${i.product._id}:${i.quantity}`)
-        .sort()
-        .join(',');
-      const minuteSlot = Math.floor(Date.now() / 60000);
-      const hashPart = btoa(encodeURIComponent(cartHash)).replace(/[^a-z0-9]/gi, '').slice(0, 10);
-      const clientOrderId = `off_${minuteSlot}_${hashPart}`;
+      // ✅ الـ clientOrderId فريد تماماً لكل محاولة دفع — crypto random مش cart hash
+      // السبب: cart-hash + minute كان يعطي نفس الـ ID لكاشيرين بنفس الطلب في نفس الدقيقة
+      // → السيرفر يرفض الطلب الثاني كـ "already synced" → فاتورة ضائعة!
+      // الـ submittingRef يمنع الضغط المزدوج من نفس الكاشير — وده الحماية الكافية.
+      const ts = Date.now();
+      const rand = Math.random().toString(36).slice(2, 9);
+      const clientOrderId = `off_${ts}_${rand}`;
       const now = new Date().toISOString();
       const lookup = buildProductLookup(products);
 
