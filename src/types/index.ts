@@ -121,6 +121,12 @@ export interface Expense {
   supplierName?: string;
   /** رقم الفاتورة الورقية (لو الـ API بيرجعه منفصل) */
   invoiceNumber?: string;
+  /** رقم الشراء النهائي الصادر من MongoDB */
+  purchaseNumber?: string;
+  /** مفتاح idempotency المحلي/السيرفر لقيد الشراء */
+  clientExpenseId?: string;
+  /** حالة المزامنة المحلية لقيود الشراء في تطبيق Desktop */
+  syncStatus?: string;
   date: string;
   addedBy: string | { _id: string; userName: string; email: string };
   createdAt?: string;

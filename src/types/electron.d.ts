@@ -6,6 +6,7 @@ export interface ElectronAPI {
   query: (sql: string, params?: any[]) => Promise<any[]>;
   execute: (sql: string, params?: any[]) => Promise<{ success: boolean }>;
   createOfflineOrder: (orderData: any) => Promise<{ success: boolean; data?: any; message?: string }>;
+  reconcileSyncedOrder: (clientOrderId: string, serverOrder: any) => Promise<{ success: boolean; message?: string }>;
   getOfflineOrders: () => Promise<any[]>;
   createOfflineExpense: (expenseData: any) => Promise<{ success: boolean; data?: any; message?: string }>;
   getOfflineExpenses: () => Promise<any[]>;

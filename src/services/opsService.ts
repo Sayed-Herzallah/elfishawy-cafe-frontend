@@ -398,7 +398,7 @@ export const inventoryService = {
           body: JSON.stringify({ ...serverBody, clientInventoryId }),
         });
         if (res.success && res.data) {
-          offlineStore.cacheEntities('inventory', [res.data]);
+          await offlineStore.cacheEntities('inventory', [res.data]);
         }
         return res;
       } catch (networkErr) {
@@ -440,13 +440,14 @@ export const inventoryService = {
     }
   },
 
-  restockItem: async (id: string, quantity: number, costPrice?: number, totalCost?: number): Promise<ApiResponse<InventoryItem>> => {
+  restockItem: async (id: string, quantity: number, costPrice?: number, totalCost?: number, operationId?: string): Promise<ApiResponse<InventoryItem>> => {
+    const clientRestockId = operationId || `off_rstk_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
     // 🩺 تشخيص: لو الـ IPC رجّع success:false (مثلاً الصنف مش موجود محلياً)
     // كان الكود بيتجاهل النتيجة وبيقول "تم التوريد بنجاح" والفعل الرصيد يزيدش.
     // دلوقتي: لو فشل التوريد المحلي نتحقق من السيرفر قبل ما نعلن الفشل.
     const restockLocal = async (): Promise<boolean> => {
       try {
-        const res = await offlineStore.restockOfflineInventory({ id, quantity, costPrice, totalCost });
+        const res = await offlineStore.restockOfflineInventory({ id, quantity, costPrice, totalCost, clientRestockId });
         return Boolean(res?.success);
       } catch {
         return false;
@@ -475,7 +476,7 @@ export const inventoryService = {
     try {
       return await ApiClient.request<InventoryItem>(`/inventory/${id}/restock`, {
         method: 'PATCH',
-        body: JSON.stringify({ quantity, costPrice, totalCost }),
+        body: JSON.stringify({ quantity, costPrice, totalCost, clientRestockId }),
       });
     } catch (networkErr) {
       if (offlineStore.isDesktop()) {
@@ -576,7 +577,7 @@ export const expenseService = {
 
     const applyServerExpense = async (serverExpense: Expense, message?: string): Promise<ApiResponse<Expense>> => {
       if (offlineStore.isDesktop()) {
-        offlineStore.cacheEntities('expenses', [serverExpense]);
+        await offlineStore.cacheEntities('expenses', [serverExpense]);
       }
       return {
         success: true,

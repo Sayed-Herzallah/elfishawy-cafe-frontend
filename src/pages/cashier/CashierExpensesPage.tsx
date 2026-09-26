@@ -21,6 +21,7 @@ import {
   FileSpreadsheet,
   SearchX,
   CheckCircle2,
+  Clock,
   Boxes,
   Download,
   User,
@@ -223,6 +224,7 @@ export const CashierExpensesPage: React.FC = () => {
             qtyBefore,
             addQty: purchaseQty,
             unitCost: purchaseUnitCost,
+            clientExpenseId: res.data?.clientExpenseId,
           });
           if (updatedProducts > 0) {
             showToast(`🔄 تم تحديث ${updatedProducts} منتج مرتبط وأصبح متاحاً للبيع`, 'info');
@@ -602,6 +604,7 @@ export const CashierExpensesPage: React.FC = () => {
             {filteredExpenses.map((exp) => {
               const supplier = parseSupplier(exp.description);
               const invoice = parseInvoice(exp.description);
+              const isPendingSync = String(exp.syncStatus || '').toUpperCase() === 'PENDING_SYNC';
               const unitPrice = exp.inventoryQuantityAdded
                 ? Number(exp.amount) / Number(exp.inventoryQuantityAdded)
                 : 0;
@@ -619,13 +622,13 @@ export const CashierExpensesPage: React.FC = () => {
                         </span>
                       )}
                     </div>
-                    <span className="inline-flex items-center gap-1 py-1 px-2.5 bg-blue-50 text-[#2e5b9f] text-[10px] font-bold rounded-lg shrink-0">
-                      <CheckCircle2 className="w-3 h-3" />
-                      <span>تمت الزيادة</span>
+                    <span className={`inline-flex items-center gap-1 py-1 px-2.5 text-[10px] font-bold rounded-lg shrink-0 ${isPendingSync ? 'bg-amber-50 text-amber-800' : 'bg-blue-50 text-[#2e5b9f]'}`}>
+                      {isPendingSync ? <Clock className="w-3 h-3" /> : <CheckCircle2 className="w-3 h-3" />}
+                      <span>{isPendingSync ? 'قيد المزامنة' : 'تمت الزيادة'}</span>
                     </span>
                   </div>
 
-                  {(supplier || invoice) && (
+                  {(supplier || invoice || exp.purchaseNumber) && (
                     <div className="flex flex-wrap items-center gap-1.5">
                       {supplier && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200/60 px-2 py-0.5 rounded-md">
@@ -637,6 +640,12 @@ export const CashierExpensesPage: React.FC = () => {
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded-md">
                           <Hash className="w-3 h-3" />
                           فاتورة #{invoice}
+                        </span>
+                      )}
+                      {exp.purchaseNumber && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-md">
+                          <Hash className="w-3 h-3" />
+                          رقم الشراء {exp.purchaseNumber}
                         </span>
                       )}
                     </div>
@@ -693,6 +702,7 @@ export const CashierExpensesPage: React.FC = () => {
                   {filteredExpenses.map((exp) => {
                     const supplier = parseSupplier(exp.description);
                     const invoice = parseInvoice(exp.description);
+                    const isPendingSync = String(exp.syncStatus || '').toUpperCase() === 'PENDING_SYNC';
                     const unitPrice = exp.inventoryQuantityAdded
                       ? Number(exp.amount) / Number(exp.inventoryQuantityAdded)
                       : 0;
@@ -736,7 +746,7 @@ export const CashierExpensesPage: React.FC = () => {
                       </td>
 
                       <td className="py-3.5 px-3 min-w-[150px]">
-                        {supplier || invoice ? (
+                        {supplier || invoice || exp.purchaseNumber ? (
                           <div className="flex flex-col gap-1 items-start">
                             {supplier && (
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200/60 px-2 py-0.5 rounded-md">
@@ -748,6 +758,12 @@ export const CashierExpensesPage: React.FC = () => {
                               <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200/60 px-2 py-0.5 rounded-md">
                                 <Hash className="w-3 h-3" />
                                 #{invoice}
+                              </span>
+                            )}
+                            {exp.purchaseNumber && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50 border border-blue-200/60 px-2 py-0.5 rounded-md">
+                                <Hash className="w-3 h-3" />
+                                {exp.purchaseNumber}
                               </span>
                             )}
                           </div>
@@ -769,9 +785,9 @@ export const CashierExpensesPage: React.FC = () => {
                       </td>
 
                       <td className="py-3.5 px-3 text-left">
-                        <span className="inline-flex items-center gap-1 py-1 px-2.5 bg-blue-50 text-[#2e5b9f] text-xs font-bold rounded-lg">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>تمت الزيادة</span>
+                        <span className={`inline-flex items-center gap-1 py-1 px-2.5 text-xs font-bold rounded-lg ${isPendingSync ? 'bg-amber-50 text-amber-800' : 'bg-blue-50 text-[#2e5b9f]'}`}>
+                          {isPendingSync ? <Clock className="w-3.5 h-3.5" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                          <span>{isPendingSync ? 'قيد المزامنة' : 'تمت الزيادة'}</span>
                         </span>
                       </td>
                     </tr>

@@ -158,8 +158,10 @@ export async function ensurePurchaseRestockAndSync(params: {
   addQty: number;
   /** سعر تكلفة الوحدة للفاتورة */
   unitCost?: number;
+  /** نفس معرّف قيد الشراء، لمنع fallback من تطبيق الزيادة مرة ثانية */
+  clientExpenseId?: string;
 }): Promise<{ restocked: boolean; updatedProducts: number; newQty: number | null }> {
-  const { itemId, qtyBefore, addQty, unitCost } = params;
+  const { itemId, qtyBefore, addQty, unitCost, clientExpenseId } = params;
   let restocked = false;
   let newQty: number | null = null;
 
@@ -173,7 +175,7 @@ export async function ensurePurchaseRestockAndSync(params: {
 
     if (newQty !== null && qtyBefore !== null && newQty <= qtyBefore) {
       // ⚠️ الـ Backend مازودش الرصيد من قيد الشراء → restock صريح كخطة بديلة
-      const res = await inventoryService.restockItem(itemId, addQty, unitCost);
+      const res = await inventoryService.restockItem(itemId, addQty, unitCost, undefined, clientExpenseId);
       if (res.success) {
         restocked = true;
         newQty = Number(res.data?.quantity ?? newQty + addQty);

@@ -231,6 +231,7 @@ export const AdminExpensesPage: React.FC = () => {
             qtyBefore,
             addQty: purchaseQty,
             unitCost: purchaseUnitCost,
+            clientExpenseId: res.data?.clientExpenseId,
           });
           if (updatedProducts > 0) {
             showToast(`🔄 تم تحديث ${updatedProducts} منتج مرتبط وأصبح متاحاً للبيع`, 'info');
@@ -785,7 +786,7 @@ export const AdminExpensesPage: React.FC = () => {
                   <ExpenseCard
                     key={exp._id}
                     id={exp._id}
-                    status="completed"
+                    status={String(exp.syncStatus || '').toUpperCase() === 'PENDING_SYNC' ? 'syncing' : 'completed'}
                     title={viewMode === 'purchases' ? purchaseTitleFor(exp) : exp.description}
                     subtitle={formatDate(exp.date || exp.createdAt)}
                     onClick={() => setViewingExpense(exp)}
@@ -806,6 +807,7 @@ export const AdminExpensesPage: React.FC = () => {
                       viewMode === 'purchases'
                         ? [
                             ...(exp.inventoryQuantityAdded ? [`تم توريد +${formatNumber(exp.inventoryQuantityAdded)} وحدة`] : []),
+                            ...(exp.purchaseNumber ? [`رقم الشراء ${exp.purchaseNumber}`] : []),
                             ...(purchasePriceInfo.unitPrice.get(exp._id)
                               ? [`سعر الوحدة: ${formatPrice(purchasePriceInfo.unitPrice.get(exp._id) || 0)}`]
                               : []),

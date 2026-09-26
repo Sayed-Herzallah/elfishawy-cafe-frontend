@@ -29,7 +29,7 @@ export function getAuthToken() {
         }
       }
     }
-  } catch {}
+  } catch { }
   return '';
 }
 
@@ -41,7 +41,7 @@ const isMongoObjectId = (value) =>
  * يرجع '' لو الصنف لسه لم يُزامن — وقتها نأجّل العملية المرتبطة به للدورة القادمة
  * بدل ما نبعتها بمعرّف محلي يرفضه السيرفر (400).
  */
-function resolveServerInventoryId(db, localId) {
+export function resolveServerInventoryId(db, localId) {
   if (!localId) return '';
   if (isMongoObjectId(localId)) return localId;
   try {
@@ -54,6 +54,101 @@ function resolveServerInventoryId(db, localId) {
   } catch {
     return '';
   }
+}
+
+export function reconcileInventoryWithServer(db, localId, serverItem) {
+  const serverId = String(serverItem?._id || '');
+  const clientId = String(localId || serverItem?.clientInventoryId || '');
+  if (!clientId || !isMongoObjectId(serverId)) return false;
+
+  const serverRow = db.exec(`SELECT 1 FROM inventory WHERE _id = ? LIMIT 1`, [serverId]);
+  if (serverRow.length && serverRow[0].values.length) {
+    db.run(
+      `DELETE FROM inventory WHERE (_id = ? OR client_inventory_id = ?) AND _id != ?`,
+      [clientId, clientId, serverId]
+    );
+    db.run(
+      `UPDATE inventory SET client_inventory_id = ?, sync_status = 'SYNCED', updated_at = ? WHERE _id = ?`,
+      [clientId, new Date().toISOString(), serverId]
+    );
+  } else {
+    db.run(
+      `UPDATE inventory SET _id = ?, sync_status = 'SYNCED', client_inventory_id = ?, updated_at = ? WHERE _id = ? OR client_inventory_id = ?`,
+      [serverId, clientId, new Date().toISOString(), clientId, clientId]
+    );
+  }
+  return true;
+}
+
+export function reconcileRestockExpenseWithServer(db, clientRestockId, serverExpenseId) {
+  return reconcileExpenseWithServer(db, clientRestockId, serverExpenseId);
+}
+
+export function reconcileExpenseWithServer(db, clientExpenseId, serverExpense) {
+  const clientId = String(clientExpenseId || '');
+  const result = serverExpense && typeof serverExpense === 'object' ? serverExpense : { _id: serverExpense };
+  const serverId = String(result._id || '');
+  const purchaseNumber = result.purchaseNumber || null;
+  if (!clientId || !isMongoObjectId(serverId)) return false;
+
+  const serverRow = db.exec(`SELECT 1 FROM expenses WHERE _id = ? LIMIT 1`, [serverId]);
+  if (serverRow.length && serverRow[0].values.length) {
+    db.run(`DELETE FROM expenses WHERE client_expense_id = ? AND _id != ?`, [clientId, serverId]);
+  }
+  db.run(
+    `UPDATE expenses SET _id = ?, sync_status = 'SYNCED', client_expense_id = ?, purchase_number = COALESCE(?, purchase_number) WHERE client_expense_id = ? OR _id = ? OR _id = ?`,
+    [serverId, clientId, purchaseNumber, clientId, clientId, serverId]
+  );
+  return true;
+}
+
+export function cacheServerExpense(db, exp) {
+  if (!exp?._id) return false;
+  const clientExpenseId = exp.clientExpenseId || exp.client_expense_id || '';
+  const pendingCheck = db.exec(
+    `SELECT 1 FROM expenses
+     WHERE IFNULL(sync_status, 'SYNCED') = 'PENDING_SYNC'
+       AND (client_expense_id = ? OR client_expense_id = ?)
+     LIMIT 1`,
+    [exp._id, clientExpenseId]
+  );
+  if (pendingCheck.length && pendingCheck[0].values.length) return false;
+
+  const linked = typeof exp.inventoryItemLinked === 'object'
+    ? (exp.inventoryItemLinked?._id || exp.inventoryItemLinked?.id || null)
+    : (exp.inventoryItemLinked || null);
+  const addedBy = typeof exp.addedBy === 'object' ? (exp.addedBy?._id || '') : (exp.addedBy || '');
+  const createdAt = exp.createdAt || exp.date || new Date().toISOString();
+  db.run(`
+    INSERT INTO expenses (_id, description, amount, category, inventory_item_linked, inventory_quantity_added, unit_cost, date, added_by, sync_status, client_expense_id, purchase_number, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?, ?)
+    ON CONFLICT DO UPDATE SET
+      description = excluded.description,
+      amount = excluded.amount,
+      category = excluded.category,
+      inventory_item_linked = excluded.inventory_item_linked,
+      inventory_quantity_added = excluded.inventory_quantity_added,
+      unit_cost = excluded.unit_cost,
+      date = excluded.date,
+      added_by = excluded.added_by,
+      purchase_number = excluded.purchase_number,
+      sync_status = 'SYNCED'
+    WHERE IFNULL(expenses.sync_status, 'SYNCED') != 'PENDING_SYNC'
+  `, [
+    exp._id,
+    exp.description || '',
+    Number(exp.amount) || 0,
+    exp.category || 'other',
+    linked,
+    Number(exp.inventoryQuantityAdded) || null,
+    Number(exp.unitCost) || null,
+    exp.date || createdAt,
+    addedBy,
+    clientExpenseId || null,
+    exp.purchaseNumber || exp.purchase_number || null,
+    createdAt,
+  ]);
+  return true;
 }
 
 /** تأجيل عملية طابور المزامنة لانتظار تبعية (مثل صنف مخزون لم يُرفع بعد) — بدون FAILED دائم */
@@ -216,7 +311,7 @@ export async function processSyncQueue(mainWindow) {
             err.statusCode = orderResponse.status;
             throw err;
           }
-        } 
+        }
         // 2. EXPENSES SYNC
         else if (entityType === 'expense') {
           let linkedId = typeof payload.inventoryItemLinked === 'object'
@@ -258,10 +353,9 @@ export async function processSyncQueue(mainWindow) {
           if (expenseResponse.ok && data.success) {
             success = true;
             serverResult = data.data;
-            db.run(
-              `UPDATE expenses SET _id = ?, sync_status = 'SYNCED' WHERE client_expense_id = ?`,
-              [serverResult._id, clientOpId]
-            );
+            if (!reconcileExpenseWithServer(db, clientOpId, serverResult)) {
+              throw new Error('Server returned an invalid expense ID for reconciliation');
+            }
           } else {
             const err = new Error(data.message || `Server returned ${expenseResponse.status} for expense`);
             err.statusCode = expenseResponse.status;
@@ -294,6 +388,12 @@ export async function processSyncQueue(mainWindow) {
 
           const data = await restockResponse.json().catch(() => ({}));
           if (restockResponse.ok && data.success) {
+            if (!reconcileRestockExpenseWithServer(db, clientOpId, {
+              _id: data.expenseId,
+              purchaseNumber: data.purchaseNumber,
+            })) {
+              throw new Error('Server did not return the restock purchase ID for reconciliation');
+            }
             success = true;
           } else {
             const err = new Error(data.message || `Server returned ${restockResponse.status} for restock`);
@@ -326,24 +426,14 @@ export async function processSyncQueue(mainWindow) {
             serverResult = data.data;
             // مطابقة الصف المحلي المؤقت مع _id الحقيقي من السيرفر — نتجنب صنفين مكررين
             const localId = payload.clientInventoryId || clientOpId;
-            const serverRowRes = db.exec(`SELECT 1 FROM inventory WHERE _id = ? LIMIT 1`, [serverResult._id]);
-            const serverRowExists = !!(serverRowRes.length && serverRowRes[0].values.length);
-            if (serverRowExists) {
-              // السحب (pull) أدرج صف السيرفر قبل اكتمال الرفع → نحذف الصف المحلي المؤقت
-              // ثم نثبّت client_inventory_id على صف السيرفر حتى تُترجم عمليات الشراء المرتبطة به.
-              db.run(
-                `DELETE FROM inventory WHERE (_id = ? OR client_inventory_id = ?) AND _id != ?`,
-                [localId, localId, serverResult._id]
-              );
-              db.run(
-                `UPDATE inventory SET client_inventory_id = ?, sync_status = 'SYNCED', updated_at = ? WHERE _id = ?`,
-                [localId, new Date().toISOString(), serverResult._id]
-              );
-            } else {
-              db.run(
-                `UPDATE inventory SET _id = ?, sync_status = 'SYNCED', client_inventory_id = ?, updated_at = ? WHERE _id = ? OR client_inventory_id = ?`,
-                [serverResult._id, localId, new Date().toISOString(), localId, localId]
-              );
+            if (!reconcileInventoryWithServer(db, localId, serverResult)) {
+              throw new Error('Server returned an invalid inventory ID for reconciliation');
+            }
+            if (data.openingExpense) {
+              const openingExpenseId = data.openingExpense.clientExpenseId || `${localId}:opening`;
+              if (!reconcileExpenseWithServer(db, openingExpenseId, data.openingExpense)) {
+                throw new Error('Server returned an invalid opening purchase ID for reconciliation');
+              }
             }
           } else {
             const err = new Error(data.message || `Server returned ${createResponse.status} for inventory create`);
@@ -559,52 +649,7 @@ export async function pullServerUpdates(mainWindow) {
         for (const exp of expData.data) {
           if (!exp || !exp._id) continue;
           try {
-            // لا نلمس صفاً محلياً لم يُزامن بعد (يحفظ مصروفات/توريدات أُنشئت أوفلاين)
-            const pendingCheck = db.exec(
-              `SELECT 1 FROM expenses
-               WHERE IFNULL(sync_status, 'SYNCED') = 'PENDING_SYNC'
-                 AND (client_expense_id = ? OR client_expense_id = ?)
-               LIMIT 1`,
-              [exp._id, exp.clientExpenseId || exp.client_expense_id || '']
-            );
-            if (pendingCheck.length && pendingCheck[0].values.length) continue;
-
-            const linked = typeof exp.inventoryItemLinked === 'object'
-              ? (exp.inventoryItemLinked?._id || exp.inventoryItemLinked?.id || null)
-              : (exp.inventoryItemLinked || null);
-            const addedBy = typeof exp.addedBy === 'object'
-              ? (exp.addedBy?._id || '')
-              : (exp.addedBy || '');
-            const createdAt = exp.createdAt || exp.date || new Date().toISOString();
-
-            db.run(`
-              INSERT INTO expenses (_id, description, amount, category, inventory_item_linked, inventory_quantity_added, unit_cost, date, added_by, sync_status, client_expense_id, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?)
-              ON CONFLICT DO UPDATE SET
-                description = excluded.description,
-                amount = excluded.amount,
-                category = excluded.category,
-                inventory_item_linked = excluded.inventory_item_linked,
-                inventory_quantity_added = excluded.inventory_quantity_added,
-                unit_cost = excluded.unit_cost,
-                date = excluded.date,
-                added_by = excluded.added_by,
-                sync_status = 'SYNCED'
-              WHERE IFNULL(expenses.sync_status, 'SYNCED') != 'PENDING_SYNC'
-            `, [
-              exp._id,
-              exp.description || '',
-              Number(exp.amount) || 0,
-              exp.category || 'other',
-              linked,
-              Number(exp.inventoryQuantityAdded) || null,
-              Number(exp.unitCost) || null,
-              exp.date || createdAt,
-              addedBy,
-              exp.clientExpenseId || exp.client_expense_id || null,
-              createdAt,
-            ]);
-            hasNewExpenses = true;
+            if (cacheServerExpense(db, exp)) hasNewExpenses = true;
           } catch (expErr) {
             // تجاهل أي خطأ فردي في صف واحد (UNIQUE constraint مثلاً) ونكمل الباقي
           }

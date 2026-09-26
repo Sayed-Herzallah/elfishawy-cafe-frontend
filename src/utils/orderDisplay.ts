@@ -78,13 +78,13 @@ export const normalizeOrder = (raw: any, lookup?: ProductLookup): Order => {
     '';
   const orderNumber = String(
     raw?.orderNumber ||
-      raw?.order_number ||
-      ''
+    raw?.order_number ||
+    ''
   );
   const provisionalNumber = String(
     raw?.provisionalNumber ||
-      raw?.provisional_number ||
-      ''
+    raw?.provisional_number ||
+    ''
   );
   const tableRaw = raw?.tableNumber ?? raw?.table_number;
   const tableNumber =
@@ -123,16 +123,17 @@ export const normalizeOrder = (raw: any, lookup?: ProductLookup): Order => {
  */
 const PROVISIONAL_KEY = 'elfishawy_provisional_counter';
 
-const getCairoDayKey = (): string => {
+const getCairoDayKey = (value = new Date()): string => {
   try {
     return new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Africa/Cairo',
       year: 'numeric',
       month: '2-digit',
       day: '2-digit',
-    }).format(new Date());
+    }).format(value instanceof Date ? value : new Date(value));
   } catch {
-    return new Date().toISOString().slice(0, 10);
+    const dateObj = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(dateObj.getTime()) ? new Date().toISOString().slice(0, 10) : dateObj.toISOString().slice(0, 10);
   }
 };
 
@@ -148,7 +149,7 @@ const scanMaxProvisional = (): number => {
     const today = getCairoDayKey();
     orders.forEach((o: any) => {
       const dayKey = String(o?.dayKey || o?.day_key || '');
-      const createdDay = dayKey || getCairoDayKey(o?.createdAt || o?.created_at);
+      const createdDay = dayKey || getCairoDayKey(new Date(String(o?.createdAt || o?.created_at || Date.now())));
       if (createdDay !== today) return;
       const prov = String(o?.provisionalNumber ?? o?.provisional_number ?? '').trim();
       if (/^\d{1,6}$/.test(prov)) max = Math.max(max, Number(prov));
@@ -212,7 +213,7 @@ export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] =
     for (const o of list) {
       if (!o || typeof o !== 'object') continue;
       const cid = String(o.clientOrderId || o.client_order_id || '').trim();
-      const id  = String(o._id || '').trim();
+      const id = String(o._id || '').trim();
 
       // ── 1. الهوية الأساسية الأولى: clientOrderId / client_order_id ──────────
       if (cid) {

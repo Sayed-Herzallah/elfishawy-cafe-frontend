@@ -258,6 +258,7 @@ export const CashierInventoryPage: React.FC = () => {
           qtyBefore,
           addQty: qty,
           unitCost: qty > 0 ? Number((total / qty).toFixed(2)) : undefined,
+          clientExpenseId: expRes.data?.clientExpenseId,
         });
         if (updatedProducts > 0) {
           showToast(`🔄 تم تحديث ${updatedProducts} منتج مرتبط وأصبح متاحاً للبيع`, 'info');

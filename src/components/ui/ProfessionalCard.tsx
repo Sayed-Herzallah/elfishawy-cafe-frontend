@@ -2,7 +2,7 @@ import React, { ReactNode } from 'react';
 import { ChevronLeft, MoreVertical, Eye, Edit2, Trash2, Printer, FileText, Calendar, User, DollarSign, ShoppingBag, Box, AlertCircle, CheckCircle2, XCircle, Clock, ArrowDownToLine } from 'lucide-react';
 
 export type CardVariant = 'default' | 'invoice' | 'order' | 'product' | 'expense' | 'inventory' | 'sale';
-export type CardStatus = 'pending' | 'completed' | 'cancelled' | 'processing' | 'low' | 'out' | 'available' | 'draft';
+export type CardStatus = 'pending' | 'completed' | 'cancelled' | 'processing' | 'syncing' | 'low' | 'out' | 'available' | 'draft';
 
 export interface ActionButton {
   icon: ReactNode;
@@ -56,6 +56,7 @@ const statusStyles: Record<CardStatus, { bg: string; text: string; border: strin
   completed: { bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200', icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
   cancelled: { bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200', icon: <XCircle className="w-3.5 h-3.5" /> },
   processing: { bg: 'bg-blue-50', text: 'text-blue-800', border: 'border-blue-200', icon: <AlertCircle className="w-3.5 h-3.5" /> },
+  syncing: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', icon: <Clock className="w-3.5 h-3.5" /> },
   low: { bg: 'bg-amber-50', text: 'text-amber-800', border: 'border-amber-200', icon: <AlertCircle className="w-3.5 h-3.5" /> },
   out: { bg: 'bg-rose-50', text: 'text-rose-800', border: 'border-rose-200', icon: <XCircle className="w-3.5 h-3.5" /> },
   available: { bg: 'bg-emerald-50', text: 'text-emerald-800', border: 'border-emerald-200', icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
@@ -68,6 +69,7 @@ const statusLabels: Record<CardStatus, string> = {
   completed: 'مكتمل',
   cancelled: 'ملغي',
   processing: 'قيد المعالجة',
+  syncing: 'قيد المزامنة',
   low: 'منخفض',
   out: 'نافد',
   available: 'متوفر',

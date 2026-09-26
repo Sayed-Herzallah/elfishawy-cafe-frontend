@@ -1,9 +1,15 @@
 // desktop/main/ipc.js
 import { ipcMain, BrowserWindow } from 'electron';
 import { getDb, saveDatabase, getMasterKey } from './db.js';
-import { processSyncQueue, configureSync, pullServerUpdates, reconcileOrderWithServer } from './sync.js';
+import { cacheServerExpense, processSyncQueue, configureSync, pullServerUpdates, reconcileOrderWithServer } from './sync.js';
 import { frontendUpdater } from './frontendUpdater.js';
 import { encryptSensitiveString, decryptSensitiveString, computeOpHash } from './security.js';
+import {
+  createOfflineExpense as persistOfflineExpense,
+  createOfflineInventoryItem as persistOfflineInventoryItem,
+  listOfflineExpenses,
+  restockOfflineInventory as persistOfflineRestock,
+} from './offlineInventoryOps.js';
 import crypto from 'crypto';
 
 // ============================================================
@@ -158,7 +164,7 @@ const lookupProduct = (db, productId) => {
         price: Number(pRes[0].values[0][1]) || 0,
       };
     }
-  } catch {}
+  } catch { }
   return null;
 };
 
@@ -226,14 +232,14 @@ const upsertSyncedOrder = (db, ord) => {
     if (existing.length && existing[0].values.length && existing[0].values[0][0] === 'PENDING_SYNC') {
       return;
     }
-  } catch {}
+  } catch { }
 
   // 🛡️ فحص ومنع التكرار الصارم بواسطة client_order_id:
   // إذا كان هناك صف محلي مسجل بمعرف مؤقت لنفس الـ client_order_id، نحذفه لتجنب تكرار الصف
   if (clientOrderId) {
     try {
       db.run(`DELETE FROM orders WHERE client_order_id = ? AND _id != ?`, [clientOrderId, ord._id]);
-    } catch {}
+    } catch { }
   }
 
   try {
@@ -256,19 +262,19 @@ const upsertSyncedOrder = (db, ord) => {
       updated_at = excluded.updated_at
     WHERE IFNULL(orders.sync_status, 'SYNCED') != 'PENDING_SYNC'
   `, [
-    ord._id,
-    orderNumber,
-    dayKey,
-    itemsJson,
-    Number(ord.totalAmount ?? ord.total_amount) || 0,
-    ord.status || 'completed',
-    tableNumber,
-    cashierId,
-    ord.notes || '',
-    clientOrderId,
-    createdAt,
-    updatedAt,
-  ]);
+      ord._id,
+      orderNumber,
+      dayKey,
+      itemsJson,
+      Number(ord.totalAmount ?? ord.total_amount) || 0,
+      ord.status || 'completed',
+      tableNumber,
+      cashierId,
+      ord.notes || '',
+      clientOrderId,
+      createdAt,
+      updatedAt,
+    ]);
   } catch (upsertErr) {
     db.run(`
       INSERT OR REPLACE INTO orders (_id, order_number, day_key, items, total_amount, status, table_number, cashier_id, notes, sync_status, client_order_id, created_at, updated_at)
@@ -383,7 +389,7 @@ export function setupIpcHandlers(mainWindow) {
           existingRes[0].columns.forEach((col, idx) => { raw[col] = existingRes[0].values[0][idx]; });
           return { success: true, data: mapOrderRow(raw, db) };
         }
-      } catch {}
+      } catch { }
 
       // ─── رقم فاتورة مؤقت تسلسلي يومي (اليوم التجاري بتوقيت القاهرة) ──
       // عدّاد محلي مستقل يبدأ من 1 لكل يوم تجاري جديد — لا علاقة له إطلاقاً
@@ -552,104 +558,15 @@ export function setupIpcHandlers(mainWindow) {
   ipcMain.handle('offline:create-expense', async (_event, expenseData) => {
     try {
       const db = getDb();
-      const clientExpenseId = expenseData.clientExpenseId || `off_exp_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-
-      // Idempotency: نفس clientExpenseId = نفس السجل (لا تكرار ولا زيادة مخزون مرتين)
-      try {
-        const existingRes = db.exec(
-          `SELECT * FROM expenses WHERE client_expense_id = ? OR _id = ? LIMIT 1`,
-          [clientExpenseId, clientExpenseId]
-        );
-        if (existingRes.length && existingRes[0].values.length) {
-          const raw = {};
-          existingRes[0].columns.forEach((col, idx) => { raw[col] = existingRes[0].values[0][idx]; });
-          return {
-            success: true,
-            data: {
-              _id: raw._id,
-              description: raw.description || '',
-              amount: Number(raw.amount) || 0,
-              category: raw.category || 'other',
-              inventoryItemLinked: raw.inventory_item_linked || undefined,
-              inventoryQuantityAdded: Number(raw.inventory_quantity_added) || undefined,
-              unitCost: Number(raw.unit_cost) || undefined,
-              date: raw.date || raw.created_at || new Date().toISOString(),
-              syncStatus: raw.sync_status || 'PENDING_SYNC',
-              clientExpenseId: raw.client_expense_id || clientExpenseId,
-              createdAt: raw.created_at || raw.date || new Date().toISOString(),
-              isOffline: true,
-            },
-          };
-        }
-      } catch {}
-
-      const now = expenseData.date || new Date().toISOString();
-
-      const amount = Number(expenseData.amount) || 0;
-      const totalCost = Number(expenseData.totalCost ?? amount) || 0;
-      const qtyNum = Number(expenseData.inventoryQuantityAdded) || 0;
-      const unitCost = qtyNum > 0 && totalCost > 0 ? Number((totalCost / qtyNum).toFixed(2)) : 0;
-
-      // Save expense to SQLite
-      db.run(`
-        INSERT INTO expenses (_id, description, amount, category, inventory_item_linked, inventory_quantity_added, unit_cost, date, added_by, sync_status, client_expense_id, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_SYNC', ?, ?)
-      `, [
-        clientExpenseId,
-        expenseData.description,
-        amount,
-        expenseData.category || 'inventory',
-        expenseData.inventoryItemLinked || null,
-        qtyNum || null,
-        unitCost || 0,
-        now,
-        expenseData.addedBy || '',
-        clientExpenseId,
-        now
-      ]);
-
-      // If category === 'inventory', immediately increase stock in local SQLite
-      if (expenseData.category === 'inventory' && expenseData.inventoryItemLinked) {
-        db.run(`
-          UPDATE inventory 
-          SET quantity = quantity + ?, 
-              cost_price = CASE WHEN ? > 0 THEN ? ELSE cost_price END,
-              last_restock_total_cost = ?,
-              last_restocked = ?,
-              updated_at = ?
-          WHERE _id = ?
-        `, [qtyNum, unitCost, unitCost, totalCost, now, now, expenseData.inventoryItemLinked]);
+      const result = persistOfflineExpense(db, expenseData, (operation) => enqueueSecureOperation(db, operation));
+      if (result.queued) {
+        saveDatabase();
+        setTimeout(() => processSyncQueue(mainWindow), 100);
       }
-
-      // Add to sync queue with cryptographic hash-chaining
-      enqueueSecureOperation(db, {
-        clientOpId: clientExpenseId,
-        entityType: 'expense',
-        action: 'CREATE',
-        payload: expenseData,
-        createdAt: now,
-      });
-
-      saveDatabase();
-
-      // Trigger background sync attempt
-      setTimeout(() => processSyncQueue(mainWindow), 100);
-
-      return {
-        success: true,
-        data: {
-          _id: clientExpenseId,
-          description: expenseData.description,
-          amount,
-          category: expenseData.category,
-          inventoryItemLinked: expenseData.inventoryItemLinked,
-          inventoryQuantityAdded: qtyNum,
-          unitCost,
-          date: now,
-          createdAt: now,
-          isOffline: true,
-        }
-      };
+      if (result.success && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:data-updated', { expenses: true, inventory: true });
+      }
+      return result;
     } catch (err) {
       console.error('offline:create-expense error:', err);
       return { success: false, message: err.message };
@@ -660,27 +577,7 @@ export function setupIpcHandlers(mainWindow) {
   ipcMain.handle('offline:get-expenses', async () => {
     try {
       const db = getDb();
-      const res = db.exec(`SELECT * FROM expenses ORDER BY date DESC, created_at DESC`);
-      if (!res.length) return [];
-      const { columns, values } = res[0];
-      return values.map((row) => {
-        const raw = {};
-        columns.forEach((col, idx) => { raw[col] = row[idx]; });
-        return {
-          _id: raw._id,
-          description: raw.description || '',
-          amount: Number(raw.amount) || 0,
-          category: raw.category || 'other',
-          inventoryItemLinked: raw.inventory_item_linked || undefined,
-          inventoryQuantityAdded: Number(raw.inventory_quantity_added) || undefined,
-          unitCost: Number(raw.unit_cost) || undefined,
-          date: raw.date || raw.created_at || new Date().toISOString(),
-          addedBy: raw.added_by || '',
-          syncStatus: raw.sync_status || 'SYNCED',
-          clientExpenseId: raw.client_expense_id,
-          createdAt: raw.created_at || raw.date || new Date().toISOString(),
-        };
-      });
+      return listOfflineExpenses(db);
     } catch (err) {
       console.error('offline:get-expenses error:', err);
       return [];
@@ -691,66 +588,15 @@ export function setupIpcHandlers(mainWindow) {
   ipcMain.handle('offline:restock-inventory', async (_event, restockData) => {
     try {
       const db = getDb();
-      const clientOpId = restockData.clientRestockId || `off_rstk_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-      const now = new Date().toISOString();
-
-      const qtyNum = Number(restockData.quantity) || 0;
-      const totalCost = Number(restockData.totalCost) || 0;
-      const costPrice = Number(restockData.costPrice) || (qtyNum > 0 ? Number((totalCost / qtyNum).toFixed(2)) : 0);
-
-      const targetId = String(restockData.id || restockData._id || restockData.inventoryId || '');
-      if (!targetId) {
-        return { success: false, message: 'Missing inventory item id' };
+      const result = persistOfflineRestock(db, restockData, (operation) => enqueueSecureOperation(db, operation));
+      if (result.queued) {
+        saveDatabase();
+        setTimeout(() => processSyncQueue(mainWindow), 100);
       }
-
-      // ⚠️ سبب "المخزن مش بيضيف": لو الـ UPDATE ما لقاش صف بالـ _id ده،
-      // SQLite بيعمل "صفر تغييرات" من غير أي خطأ → الكاشير شايف رسالة نجاح
-      // بس الرصيد ما اتزادش. ده بيحصل لما الصنف يكون اتعمل بعد آخر مزامنة
-      // فمش موجود في SQLite المحلي.
-      const existingRes = db.exec(`SELECT _id FROM inventory WHERE _id = ? LIMIT 1`, [targetId]);
-      if (!existingRes.length || !existingRes[0].values.length) {
-        console.warn(`[restock] inventory item ${targetId} not found in local SQLite`);
-        return {
-          success: false,
-          message: 'الصنف غير موجود في المخزن المحلي — حدّث البيانات مرة واحدة وهو متصل بالإنترنت',
-        };
+      if (result.success && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:data-updated', { expenses: true, inventory: true });
       }
-
-      const updateRes = db.run(`
-        UPDATE inventory 
-        SET quantity = quantity + ?, 
-            cost_price = CASE WHEN ? > 0 THEN ? ELSE cost_price END,
-            last_restock_total_cost = ?,
-            last_restocked = ?,
-            updated_at = ?
-        WHERE _id = ?
-      `, [qtyNum, costPrice, costPrice, totalCost, now, now, targetId]);
-
-      // تحقق إضافي: SQLite ما بيرجعش عدد الصفوف المتأثرة بسهولة في كل الإصدارات،
-      // فبنقرأ الرصيد بعد التحديث للتأكد إن الكمية اتزادت فعلاً.
-      const afterRes = db.exec(`SELECT quantity FROM inventory WHERE _id = ? LIMIT 1`, [targetId]);
-      const qtyAfter = Number(afterRes?.[0]?.values?.[0]?.[0]);
-      if (!Number.isFinite(qtyAfter) || qtyAfter <= 0) {
-        return { success: false, message: 'فشل تحديث رصيد الصنف في المخزن المحلي' };
-      }
-
-      // Add to sync queue with cryptographic hash-chaining
-      // clientRestockId يضمن Idempotency على السيرفر — نفس التوريد لو اتبعت مرتين
-      // (انقطاع نت أثناء الرد) لا يرفع الرصيد مرتين.
-      enqueueSecureOperation(db, {
-        clientOpId,
-        entityType: 'inventory_restock',
-        action: 'UPDATE',
-        payload: { ...restockData, id: targetId, clientRestockId: clientOpId },
-        createdAt: now,
-      });
-
-      saveDatabase();
-
-      // Trigger background sync attempt
-      setTimeout(() => processSyncQueue(mainWindow), 100);
-
-      return { success: true, clientRestockId: clientOpId };
+      return result;
     } catch (err) {
       console.error('offline:restock-inventory error:', err);
       return { success: false, message: err.message };
@@ -761,96 +607,15 @@ export function setupIpcHandlers(mainWindow) {
   ipcMain.handle('offline:create-inventory-item', async (_event, itemData) => {
     try {
       const db = getDb();
-      const clientInventoryId = itemData.clientInventoryId || `off_inv_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-      try {
-        const existingRes = db.exec(
-          `SELECT * FROM inventory WHERE _id = ? OR client_inventory_id = ? LIMIT 1`,
-          [clientInventoryId, clientInventoryId]
-        );
-        if (existingRes.length && existingRes[0].values.length) {
-          const row = existingRes[0].values[0];
-          const cols = existingRes[0].columns;
-          const raw = {};
-          cols.forEach((col, idx) => { raw[col] = row[idx]; });
-          return {
-            success: true,
-            data: {
-              _id: raw._id,
-              clientInventoryId: raw.client_inventory_id || raw._id,
-              name: raw.name,
-              quantity: Number(raw.quantity) || 0,
-              unit: raw.unit || 'KG',
-              minLimit: Number(raw.min_limit) || 5,
-              costPrice: Number(raw.cost_price) || 0,
-              lastRestockTotalCost: Number(raw.last_restock_total_cost) || 0,
-              lastRestocked: raw.last_restocked,
-              syncStatus: raw.sync_status || 'PENDING_SYNC',
-              isOffline: true,
-            },
-          };
-        }
-      } catch {}
-      const now = new Date().toISOString();
-
-      const qtyNum = Number(itemData.quantity) || 0;
-      const minLimit = itemData.minLimit !== undefined ? Number(itemData.minLimit) : 5;
-      const costPrice = Number(itemData.costPrice) || 0;
-      const totalCost = itemData.totalCost !== undefined ? Number(itemData.totalCost) : Number((costPrice * qtyNum).toFixed(2));
-
-      db.run(`
-        INSERT INTO inventory (_id, name, quantity, unit, min_limit, cost_price, last_restock_total_cost, last_restocked, updated_at, sync_status, client_inventory_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_SYNC', ?)
-      `, [
-        clientInventoryId,
-        String(itemData.name || '').trim(),
-        qtyNum,
-        String(itemData.unit || 'KG'),
-        minLimit,
-        costPrice,
-        totalCost,
-        now,
-        now,
-        clientInventoryId,
-      ]);
-
-      // يُرفع للسيرفر تلقائياً عند عودة النت (POST /inventory) — والسيرفر يمنع التكرار
-      // بنفس clientInventoryId حتى لو اتبعت العملية مرتين.
-      enqueueSecureOperation(db, {
-        clientOpId: clientInventoryId,
-        entityType: 'inventory_create',
-        action: 'CREATE',
-        payload: {
-          name: String(itemData.name || '').trim(),
-          quantity: qtyNum,
-          unit: String(itemData.unit || 'KG'),
-          minLimit,
-          costPrice,
-          totalCost,
-          clientInventoryId,
-        },
-        createdAt: now,
-      });
-
-      saveDatabase();
-
-      setTimeout(() => processSyncQueue(mainWindow), 100);
-
-      return {
-        success: true,
-        data: {
-          _id: clientInventoryId,
-          clientInventoryId,
-          name: String(itemData.name || '').trim(),
-          quantity: qtyNum,
-          unit: String(itemData.unit || 'KG'),
-          minLimit,
-          costPrice,
-          lastRestockTotalCost: totalCost,
-          lastRestocked: now,
-          syncStatus: 'PENDING_SYNC',
-          isOffline: true,
-        },
-      };
+      const result = persistOfflineInventoryItem(db, itemData, (operation) => enqueueSecureOperation(db, operation));
+      if (result.queued) {
+        saveDatabase();
+        setTimeout(() => processSyncQueue(mainWindow), 100);
+      }
+      if (result.success && mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('sync:data-updated', { inventory: true, expenses: true });
+      }
+      return result;
     } catch (err) {
       console.error('offline:create-inventory-item error:', err);
       return { success: false, message: err.message };
@@ -949,32 +714,7 @@ export function setupIpcHandlers(mainWindow) {
         }
       } else if (entityType === 'expenses') {
         for (const exp of records) {
-          if (!exp || !exp._id) continue;
-          db.run(`
-            INSERT INTO expenses (_id, description, amount, category, inventory_item_linked, inventory_quantity_added, unit_cost, date, added_by, sync_status, client_expense_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?)
-            ON CONFLICT(_id) DO UPDATE SET
-              description = excluded.description,
-              amount = excluded.amount,
-              category = excluded.category,
-              inventory_item_linked = excluded.inventory_item_linked,
-              inventory_quantity_added = excluded.inventory_quantity_added,
-              unit_cost = excluded.unit_cost,
-              date = excluded.date,
-              added_by = excluded.added_by
-          `, [
-            exp._id,
-            exp.description || '',
-            Number(exp.amount) || 0,
-            exp.category || 'other',
-            typeof exp.inventoryItemLinked === 'object' ? exp.inventoryItemLinked?._id : (exp.inventoryItemLinked || null),
-            Number(exp.inventoryQuantityAdded) || null,
-            Number(exp.unitCost) || null,
-            exp.date || exp.createdAt || new Date().toISOString(),
-            typeof exp.addedBy === 'object' ? exp.addedBy?._id || '' : (exp.addedBy || ''),
-            exp._id,
-            exp.createdAt || exp.date || new Date().toISOString()
-          ]);
+          cacheServerExpense(db, exp);
         }
       }
 
@@ -1113,7 +853,7 @@ export function setupIpcHandlers(mainWindow) {
     return new Promise((resolve) => {
       let printWin = null;
       const cleanup = () => {
-        try { if (printWin && !printWin.isDestroyed()) printWin.close(); } catch {}
+        try { if (printWin && !printWin.isDestroyed()) printWin.close(); } catch { }
         printWin = null;
       };
 

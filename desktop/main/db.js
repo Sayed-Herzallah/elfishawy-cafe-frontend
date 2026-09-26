@@ -213,6 +213,7 @@ function runMigrations(db) {
       added_by TEXT,
       sync_status TEXT DEFAULT 'SYNCED',
       client_expense_id TEXT UNIQUE,
+      purchase_number TEXT UNIQUE,
       created_at TEXT
     );
 
@@ -228,21 +229,22 @@ function runMigrations(db) {
   `);
 
   // Safe ALTER TABLE migrations for existing databases
-  try { db.run(`ALTER TABLE local_users ADD COLUMN session_token TEXT;`); } catch {}
-  try { db.run(`ALTER TABLE inventory ADD COLUMN last_restock_total_cost REAL DEFAULT 0;`); } catch {}
-  try { db.run(`ALTER TABLE inventory ADD COLUMN last_restocked TEXT;`); } catch {}
-  try { db.run(`ALTER TABLE inventory ADD COLUMN last_restocked_by TEXT;`); } catch {}
-  try { db.run(`ALTER TABLE sync_queue ADD COLUMN sequence_id INTEGER;`); } catch {}
-  try { db.run(`ALTER TABLE sync_queue ADD COLUMN prev_hash TEXT;`); } catch {}
-  try { db.run(`ALTER TABLE sync_queue ADD COLUMN op_hash TEXT;`); } catch {}
+  try { db.run(`ALTER TABLE local_users ADD COLUMN session_token TEXT;`); } catch { }
+  try { db.run(`ALTER TABLE inventory ADD COLUMN last_restock_total_cost REAL DEFAULT 0;`); } catch { }
+  try { db.run(`ALTER TABLE inventory ADD COLUMN last_restocked TEXT;`); } catch { }
+  try { db.run(`ALTER TABLE inventory ADD COLUMN last_restocked_by TEXT;`); } catch { }
+  try { db.run(`ALTER TABLE sync_queue ADD COLUMN sequence_id INTEGER;`); } catch { }
+  try { db.run(`ALTER TABLE sync_queue ADD COLUMN prev_hash TEXT;`); } catch { }
+  try { db.run(`ALTER TABLE sync_queue ADD COLUMN op_hash TEXT;`); } catch { }
   // ترقيم الفواتير اليومي الموحّد: مفتاح اليوم التجاري بتوقيت القاهرة
-  try { db.run(`ALTER TABLE orders ADD COLUMN day_key TEXT;`); } catch {}
+  try { db.run(`ALTER TABLE orders ADD COLUMN day_key TEXT;`); } catch { }
   // تتبع مزامنة المخزون الأوفلاين: حالة المزامنة + معرّف العميل للأصناف الجديدة
-  try { db.run(`ALTER TABLE inventory ADD COLUMN sync_status TEXT DEFAULT 'SYNCED';`); } catch {}
-  try { db.run(`ALTER TABLE inventory ADD COLUMN client_inventory_id TEXT;`); } catch {}
+  try { db.run(`ALTER TABLE inventory ADD COLUMN sync_status TEXT DEFAULT 'SYNCED';`); } catch { }
+  try { db.run(`ALTER TABLE inventory ADD COLUMN client_inventory_id TEXT;`); } catch { }
+  try { db.run(`ALTER TABLE expenses ADD COLUMN purchase_number TEXT;`); } catch { }
   // الرقم المؤقت (أوفلاين) — منفصل تماماً عن الرقم النهائي القادم من السيرفر
-  try { db.run(`ALTER TABLE orders ADD COLUMN provisional_number TEXT;`); } catch {}
-  try { db.run(`CREATE TABLE IF NOT EXISTS local_counters (_id TEXT PRIMARY KEY, seq INTEGER DEFAULT 0);`); } catch {}
+  try { db.run(`ALTER TABLE orders ADD COLUMN provisional_number TEXT;`); } catch { }
+  try { db.run(`CREATE TABLE IF NOT EXISTS local_counters (_id TEXT PRIMARY KEY, seq INTEGER DEFAULT 0);`); } catch { }
 
   // ترحيل بيانات الإصدارات الأقدم: الفواتير المعلقة (PENDING_SYNC) كان رقمها المخزَّن
   // في order_number رقم مؤقت محلي وليس رقماً نهائياً → ننقله لعمود provisional_number
@@ -256,14 +258,14 @@ function runMigrations(db) {
               AND order_number NOT GLOB '*[^0-9]*'`);
     db.run(`UPDATE orders SET order_number = NULL
             WHERE IFNULL(sync_status, 'SYNCED') = 'PENDING_SYNC'`);
-  } catch {}
+  } catch { }
 
   // تنظيف أي أرقام فواتير قديمة تالفة أو غير متوافقة (أطول من 5 أرقام أو تحتوي حروف من Mongo _id)
   // الرقم النهائي (order_number) أرقام فقط؛ الرقم المؤقت في عمود منفصل ولا يتأثر.
   try {
     db.run(`UPDATE orders SET order_number = NULL WHERE order_number GLOB '*[^0-9]*' OR LENGTH(order_number) > 6;`);
     db.run(`UPDATE orders SET provisional_number = NULL WHERE provisional_number GLOB '*[^0-9]*' OR LENGTH(provisional_number) > 6;`);
-  } catch {}
+  } catch { }
 
   // إصلاح صفوف فواتير أوفلاين تالفة (INSERT قديم كان يضع PENDING_SYNC في عمود notes
   // ويضع clientOrderId في sync_status) — نستعيد الهوية الصحيحة clientOrderId = _id
@@ -288,7 +290,7 @@ function runMigrations(db) {
         AND IFNULL(sync_status, '') = 'PENDING_SYNC'
         AND (client_order_id IS NULL OR client_order_id = '' OR client_order_id GLOB '20*')
     `);
-  } catch {}
+  } catch { }
 
   // Seed default offline cashier if no local users exist
   try {
