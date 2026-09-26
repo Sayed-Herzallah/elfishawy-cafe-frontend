@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Local Offline Operations
   createOfflineOrder: (orderData) => ipcRenderer.invoke('offline:create-order', orderData),
+  reconcileSyncedOrder: (clientOrderId, serverOrder) =>
+    ipcRenderer.invoke('offline:reconcile-synced-order', { clientOrderId, serverOrder }),
   getOfflineOrders: () => ipcRenderer.invoke('offline:get-orders'),
   createOfflineExpense: (expenseData) => ipcRenderer.invoke('offline:create-expense', expenseData),
   getOfflineExpenses: () => ipcRenderer.invoke('offline:get-expenses'),

@@ -3,6 +3,11 @@ import { ApiResponse, Order, InventoryItem, Expense, KPIStats, ChartsData, Order
 import { offlineStore } from './data/offlineStore';
 import { mergeOrderLists } from '../utils/orderDisplay';
 import { saveOrdersSnapshot, readOrdersSnapshot } from '../utils/ordersCache';
+import {
+  findServerExpenseByClientId,
+  findServerInventoryByClientId,
+  findServerOrderByClientId,
+} from './orderReconcile';
 
 const ORDERS_FETCH_TIMEOUT_MS = 8000;
 
@@ -131,35 +136,90 @@ export const orderService = {
     items: { product: string; quantity: number; price?: number }[];
     tableNumber: number;
     notes?: string;
-    clientOrderId?: string;  // ← يُمرَّر من handleCheckoutAndPrint للتطابق لاحقاً
+    clientOrderId?: string;
     orderNumber?: number;
+    /** POS Desktop: الصف + الرقم المؤقت + خصم المخزون تمّ محلياً مسبقاً */
+    localPrepared?: boolean;
   }): Promise<ApiResponse<Order>> => {
-    // If on Desktop, check if online before calling server
-    if (offlineStore.isDesktop()) {
-      const isOnline = await offlineStore.isOnline();
-      if (!isOnline) {
-        const offlineRes = await offlineStore.createOfflineOrder(payload);
-        if (offlineRes.success && offlineRes.data) {
-          saveOrdersSnapshot([offlineRes.data]);
-          return {
-            success: true,
-            message: 'تم حفظ الطلب محلياً بنجاح (وضع غير متصل)',
-            data: offlineRes.data,
-          };
-        }
-      }
-    }
-
-    /** نستخدم الـ clientOrderId الممرَّر — أو نولّد جديد لو لم يُمرَّر */
     const clientOrderId =
       payload.clientOrderId ||
       `off_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const localPrepared = Boolean(payload.localPrepared);
+    const { clientOrderId: _omit, localPrepared: _lp, ...serverBody } = payload as any;
 
-    const { clientOrderId: _omit, ...serverBody } = payload as any;
+    const finishLocalPending = async (message: string): Promise<ApiResponse<Order>> => {
+      const local = await offlineStore.getLocalOrderByClientId(clientOrderId);
+      if (local) {
+        saveOrdersSnapshot([local]);
+        return { success: true, message, data: local as Order };
+      }
+      const offlineRes = await offlineStore.createOfflineOrder({ ...serverBody, clientOrderId });
+      if (offlineRes.success && offlineRes.data) {
+        saveOrdersSnapshot([offlineRes.data]);
+        return {
+          success: true,
+          message,
+          data: offlineRes.data,
+        };
+      }
+      throw new Error(offlineRes.message || 'Failed to save order locally');
+    };
 
-    /** timeout 8 ثواني — كافٍ لـ Vercel cold start بدون تعطيل الـ UI (الـ UI أصبح optimistic) */
+    const applyServerOrder = async (serverOrder: Order, message?: string): Promise<ApiResponse<Order>> => {
+      if (offlineStore.isDesktop()) {
+        await offlineStore.reconcileSyncedOrder(clientOrderId, serverOrder);
+        await offlineStore.cacheOrders([serverOrder]);
+      }
+      saveOrdersSnapshot([serverOrder]);
+      return {
+        success: true,
+        message: message || 'Order created',
+        data: serverOrder,
+      };
+    };
+
+    if (offlineStore.isDesktop()) {
+      const isOnline = await offlineStore.isOnline();
+
+      if (!localPrepared && !isOnline) {
+        return finishLocalPending('تم حفظ الطلب محلياً بنجاح (وضع غير متصل)');
+      }
+
+      if (localPrepared && !isOnline) {
+        return finishLocalPending('تم حفظ الطلب محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت');
+      }
+
+      const CREATE_ORDER_TIMEOUT_MS = 8000;
+      try {
+        const res = await ApiClient.request<Order>('/orders', {
+          method: 'POST',
+          body: JSON.stringify({ ...serverBody, clientOrderId }),
+          signal: AbortSignal.timeout(CREATE_ORDER_TIMEOUT_MS),
+        });
+        if (res.success && res.data) {
+          return applyServerOrder(res.data);
+        }
+        return res;
+      } catch (networkErr: any) {
+        const reconciled = await findServerOrderByClientId(clientOrderId);
+        if (reconciled) {
+          return applyServerOrder(
+            reconciled,
+            'تم تأكيد الطلب على السيرفر بعد التحقق (بدون تكرار محلي)'
+          );
+        }
+        if (localPrepared) {
+          return finishLocalPending(
+            'تم حفظ الطلب محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت'
+          );
+        }
+        return finishLocalPending(
+          'تم حفظ الطلب محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت'
+        );
+      }
+    }
+
     const CREATE_ORDER_TIMEOUT_MS = 8000;
-
     try {
       const res = await ApiClient.request<Order>('/orders', {
         method: 'POST',
@@ -168,25 +228,18 @@ export const orderService = {
       });
       if (res.success && res.data) {
         saveOrdersSnapshot([res.data]);
-        if (offlineStore.isDesktop()) {
-          await offlineStore.cacheOrders([res.data]);
-        }
       }
       return res;
     } catch (networkErr: any) {
-      // Desktop: حفظ أوفلاين كامل عند أي خطأ شبكة
-      if (offlineStore.isDesktop()) {
-        const offlineRes = await offlineStore.createOfflineOrder({ ...serverBody, clientOrderId } as any);
-        if (offlineRes.success && offlineRes.data) {
-          saveOrdersSnapshot([offlineRes.data]);
-          return {
-            success: true,
-            message: 'تم حفظ الطلب محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت',
-            data: offlineRes.data,
-          };
-        }
+      const reconciled = await findServerOrderByClientId(clientOrderId);
+      if (reconciled) {
+        saveOrdersSnapshot([reconciled]);
+        return {
+          success: true,
+          message: 'تم تأكيد الطلب على السيرفر بعد التحقق',
+          data: reconciled,
+        };
       }
-      // متصفح: رمي الخطأ — الـ caller (handleCheckoutAndPrint) قد حفظ الفاتورة optimistically
       throw networkErr;
     }
   },
@@ -248,39 +301,82 @@ export const inventoryService = {
     minLimit: number;
     costPrice?: number;
     totalCost?: number;
+    clientInventoryId?: string;
+    localPrepared?: boolean;
   }): Promise<ApiResponse<InventoryItem>> => {
-    // أوفلاين: ننشئ الصنف محلياً فوراً ويُزامَن تلقائياً عند عودة الاتصال —
-    // والسيرفر يمنع التكرار بنفس clientInventoryId لو أُعيد الإرسال.
+    const clientInventoryId =
+      data.clientInventoryId ||
+      `off_inv_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const localPrepared = Boolean(data.localPrepared);
+    const { localPrepared: _lp, clientInventoryId: _cid, ...serverBody } = data;
+
+    const finishLocalInventory = async (message: string): Promise<ApiResponse<InventoryItem>> => {
+      const offlineRes = await offlineStore.createOfflineInventoryItem({
+        ...serverBody,
+        clientInventoryId,
+      });
+      if (offlineRes.success && offlineRes.data) {
+        return {
+          success: true,
+          message,
+          data: offlineRes.data as InventoryItem,
+        };
+      }
+      throw new Error(offlineRes.message || 'Failed to create inventory item locally');
+    };
+
     if (offlineStore.isDesktop()) {
       const isOnline = await offlineStore.isOnline();
-      if (!isOnline) {
-        const offlineRes = await offlineStore.createOfflineInventoryItem(data);
-        if (offlineRes.success && offlineRes.data) {
+      if (!localPrepared && !isOnline) {
+        return finishLocalInventory('تم إنشاء الصنف محلياً بنجاح (وضع غير متصل)');
+      }
+      if (localPrepared && !isOnline) {
+        return finishLocalInventory('تم إنشاء الصنف محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت');
+      }
+
+      try {
+        const res = await ApiClient.request<InventoryItem>('/inventory', {
+          method: 'POST',
+          body: JSON.stringify({ ...serverBody, clientInventoryId }),
+        });
+        if (res.success && res.data) {
+          offlineStore.cacheEntities('inventory', [res.data]);
+        }
+        return res;
+      } catch (networkErr) {
+        const reconciled = await findServerInventoryByClientId(clientInventoryId);
+        if (reconciled) {
+          offlineStore.cacheEntities('inventory', [reconciled]);
           return {
             success: true,
-            message: 'تم إنشاء الصنف محلياً بنجاح (وضع غير متصل)',
-            data: offlineRes.data as InventoryItem,
+            message: 'تم تأكيد الصنف على السيرفر بعد التحقق',
+            data: reconciled,
           };
         }
+        if (localPrepared) {
+          return finishLocalInventory(
+            'تم إنشاء الصنف محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت'
+          );
+        }
+        return finishLocalInventory(
+          'تم إنشاء الصنف محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت'
+        );
       }
     }
 
     try {
       return await ApiClient.request<InventoryItem>('/inventory', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...serverBody, clientInventoryId }),
       });
     } catch (networkErr) {
-      // فشل الشبكة أثناء الإرسال: ننشئ الصنف محلياً بدل فقدان البيانات
-      if (offlineStore.isDesktop()) {
-        const offlineRes = await offlineStore.createOfflineInventoryItem(data);
-        if (offlineRes.success && offlineRes.data) {
-          return {
-            success: true,
-            message: 'تم إنشاء الصنف محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت',
-            data: offlineRes.data as InventoryItem,
-          };
-        }
+      const reconciled = await findServerInventoryByClientId(clientInventoryId);
+      if (reconciled) {
+        return {
+          success: true,
+          message: 'تم تأكيد الصنف على السيرفر بعد التحقق',
+          data: reconciled,
+        };
       }
       throw networkErr;
     }
@@ -373,36 +469,93 @@ export const expenseService = {
     totalCost?: number;
     unitCost?: number;
     date?: string;
+    clientExpenseId?: string;
+    localPrepared?: boolean;
   }): Promise<ApiResponse<Expense>> => {
+    const clientExpenseId =
+      data.clientExpenseId ||
+      `off_exp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    const localPrepared = Boolean(data.localPrepared);
+    const { clientExpenseId: _cid, localPrepared: _lp, ...serverBody } = data;
+
+    const finishLocalExpense = async (message: string): Promise<ApiResponse<Expense>> => {
+      const existing = await offlineStore.getLocalExpenseByClientId(clientExpenseId);
+      if (existing) {
+        return { success: true, message, data: existing as Expense };
+      }
+      const offlineRes = await offlineStore.createOfflineExpense({ ...serverBody, clientExpenseId });
+      if (offlineRes.success && offlineRes.data) {
+        return {
+          success: true,
+          message,
+          data: offlineRes.data,
+        };
+      }
+      throw new Error(offlineRes.message || 'Failed to save expense locally');
+    };
+
+    const applyServerExpense = async (serverExpense: Expense, message?: string): Promise<ApiResponse<Expense>> => {
+      if (offlineStore.isDesktop()) {
+        offlineStore.cacheEntities('expenses', [serverExpense]);
+      }
+      return {
+        success: true,
+        message: message || 'Expense created',
+        data: serverExpense,
+      };
+    };
+
     if (offlineStore.isDesktop()) {
       const isOnline = await offlineStore.isOnline();
-      if (!isOnline) {
-        const offlineRes = await offlineStore.createOfflineExpense(data);
-        if (offlineRes.success && offlineRes.data) {
-          return {
-            success: true,
-            message: 'تم تسجيل المصروف/التوريد محلياً بنجاح (وضع غير متصل)',
-            data: offlineRes.data,
-          };
+      if (!localPrepared && !isOnline) {
+        return finishLocalExpense('تم تسجيل المصروف/التوريد محلياً بنجاح (وضع غير متصل)');
+      }
+      if (localPrepared && !isOnline) {
+        return finishLocalExpense('تم تسجيل المصروف/التوريد محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت');
+      }
+
+      try {
+        const res = await ApiClient.request<Expense>('/expenses', {
+          method: 'POST',
+          body: JSON.stringify({ ...serverBody, clientExpenseId }),
+        });
+        if (res.success && res.data) {
+          return applyServerExpense(res.data);
         }
+        return res;
+      } catch (networkErr) {
+        const reconciled = await findServerExpenseByClientId(clientExpenseId);
+        if (reconciled) {
+          return applyServerExpense(
+            reconciled,
+            'تم تأكيد المصروف على السيرفر بعد التحقق (بدون تكرار محلي)'
+          );
+        }
+        if (localPrepared) {
+          return finishLocalExpense(
+            'تم تسجيل المصروف/التوريد محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت'
+          );
+        }
+        return finishLocalExpense(
+          'تم تسجيل المصروف/التوريد محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت'
+        );
       }
     }
 
     try {
-      return await ApiClient.request<Expense>('/expenses', {
+      const res = await ApiClient.request<Expense>('/expenses', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: JSON.stringify({ ...serverBody, clientExpenseId }),
       });
+      return res;
     } catch (networkErr) {
-      if (offlineStore.isDesktop()) {
-        const offlineRes = await offlineStore.createOfflineExpense(data);
-        if (offlineRes.success && offlineRes.data) {
-          return {
-            success: true,
-            message: 'تم تسجيل المصروف/التوريد محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت',
-            data: offlineRes.data,
-          };
-        }
+      const reconciled = await findServerExpenseByClientId(clientExpenseId);
+      if (reconciled) {
+        return {
+          success: true,
+          message: 'تم تأكيد المصروف على السيرفر بعد التحقق',
+          data: reconciled,
+        };
       }
       throw networkErr;
     }

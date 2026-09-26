@@ -200,6 +200,23 @@ export const offlineStore = {
     throw new Error('Offline order creation is only available in Desktop mode');
   },
 
+  async reconcileSyncedOrder(clientOrderId: string, serverOrder: any): Promise<boolean> {
+    if (!isElectron() || !window.electronAPI?.reconcileSyncedOrder) return false;
+    try {
+      const res = await window.electronAPI.reconcileSyncedOrder(clientOrderId, serverOrder);
+      return Boolean(res?.success);
+    } catch {
+      return false;
+    }
+  },
+
+  async getLocalOrderByClientId(clientOrderId: string): Promise<any | null> {
+    const cid = String(clientOrderId || '').trim();
+    if (!cid) return null;
+    const rows = await this.getOfflineOrders();
+    return rows.find((o) => String(o.clientOrderId || o.client_order_id || '') === cid) || null;
+  },
+
   /**
    * قراءة كل الفواتير المحفوظة محلياً **بدون أي حد أقصى**.
    * - أولاً عبر `offline:get-orders` (الإصدار الأحدث)
@@ -243,6 +260,13 @@ export const offlineStore = {
       return await window.electronAPI.createOfflineExpense(payload);
     }
     throw new Error('Offline expense creation is only available in Desktop mode');
+  },
+
+  async getLocalExpenseByClientId(clientExpenseId: string): Promise<any | null> {
+    const cid = String(clientExpenseId || '').trim();
+    if (!cid) return null;
+    const rows = await this.getOfflineExpenses();
+    return rows.find((e) => String(e.clientExpenseId || e.client_expense_id || '') === cid) || null;
   },
 
   async getOfflineExpenses(): Promise<any[]> {

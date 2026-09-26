@@ -1,7 +1,7 @@
 // desktop/main/ipc.js
 import { ipcMain, BrowserWindow } from 'electron';
 import { getDb, saveDatabase, getMasterKey } from './db.js';
-import { processSyncQueue, configureSync, pullServerUpdates } from './sync.js';
+import { processSyncQueue, configureSync, pullServerUpdates, reconcileOrderWithServer } from './sync.js';
 import { frontendUpdater } from './frontendUpdater.js';
 import { encryptSensitiveString, decryptSensitiveString, computeOpHash } from './security.js';
 import crypto from 'crypto';
@@ -372,6 +372,19 @@ export function setupIpcHandlers(mainWindow) {
       const db = getDb();
       const clientOrderId = orderData.clientOrderId || `off_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
 
+      // Idempotency: نفس clientOrderId = نفس السجل (لا رقم مؤقت جديد ولا خصم مخزون مرتين)
+      try {
+        const existingRes = db.exec(
+          `SELECT * FROM orders WHERE client_order_id = ? OR _id = ? LIMIT 1`,
+          [clientOrderId, clientOrderId]
+        );
+        if (existingRes.length && existingRes[0].values.length) {
+          const raw = {};
+          existingRes[0].columns.forEach((col, idx) => { raw[col] = existingRes[0].values[0][idx]; });
+          return { success: true, data: mapOrderRow(raw, db) };
+        }
+      } catch {}
+
       // ─── رقم فاتورة مؤقت تسلسلي يومي (اليوم التجاري بتوقيت القاهرة) ──
       // عدّاد محلي مستقل يبدأ من 1 لكل يوم تجاري جديد — لا علاقة له إطلاقاً
       // بأرقام السيرفر النهائية → لا "زيادة غلط" عند انقطاع الإنترنت.
@@ -504,6 +517,19 @@ export function setupIpcHandlers(mainWindow) {
     }
   });
 
+  // POS أونلاين: مطابقة صف محلي PENDING مع رد السيرفر دون إعادة خصم مخزون
+  ipcMain.handle('offline:reconcile-synced-order', async (_event, { clientOrderId, serverOrder }) => {
+    try {
+      const db = getDb();
+      const ok = reconcileOrderWithServer(db, clientOrderId, serverOrder);
+      if (ok) saveDatabase();
+      return { success: ok };
+    } catch (err) {
+      console.error('offline:reconcile-synced-order error:', err);
+      return { success: false, message: err.message };
+    }
+  });
+
   // Get local orders
   ipcMain.handle('offline:get-orders', async () => {
     try {
@@ -526,7 +552,37 @@ export function setupIpcHandlers(mainWindow) {
   ipcMain.handle('offline:create-expense', async (_event, expenseData) => {
     try {
       const db = getDb();
-      const clientExpenseId = `off_exp_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+      const clientExpenseId = expenseData.clientExpenseId || `off_exp_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+
+      // Idempotency: نفس clientExpenseId = نفس السجل (لا تكرار ولا زيادة مخزون مرتين)
+      try {
+        const existingRes = db.exec(
+          `SELECT * FROM expenses WHERE client_expense_id = ? OR _id = ? LIMIT 1`,
+          [clientExpenseId, clientExpenseId]
+        );
+        if (existingRes.length && existingRes[0].values.length) {
+          const raw = {};
+          existingRes[0].columns.forEach((col, idx) => { raw[col] = existingRes[0].values[0][idx]; });
+          return {
+            success: true,
+            data: {
+              _id: raw._id,
+              description: raw.description || '',
+              amount: Number(raw.amount) || 0,
+              category: raw.category || 'other',
+              inventoryItemLinked: raw.inventory_item_linked || undefined,
+              inventoryQuantityAdded: Number(raw.inventory_quantity_added) || undefined,
+              unitCost: Number(raw.unit_cost) || undefined,
+              date: raw.date || raw.created_at || new Date().toISOString(),
+              syncStatus: raw.sync_status || 'PENDING_SYNC',
+              clientExpenseId: raw.client_expense_id || clientExpenseId,
+              createdAt: raw.created_at || raw.date || new Date().toISOString(),
+              isOffline: true,
+            },
+          };
+        }
+      } catch {}
+
       const now = expenseData.date || new Date().toISOString();
 
       const amount = Number(expenseData.amount) || 0;
@@ -685,6 +741,34 @@ export function setupIpcHandlers(mainWindow) {
     try {
       const db = getDb();
       const clientInventoryId = itemData.clientInventoryId || `off_inv_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+      try {
+        const existingRes = db.exec(
+          `SELECT * FROM inventory WHERE _id = ? OR client_inventory_id = ? LIMIT 1`,
+          [clientInventoryId, clientInventoryId]
+        );
+        if (existingRes.length && existingRes[0].values.length) {
+          const row = existingRes[0].values[0];
+          const cols = existingRes[0].columns;
+          const raw = {};
+          cols.forEach((col, idx) => { raw[col] = row[idx]; });
+          return {
+            success: true,
+            data: {
+              _id: raw._id,
+              clientInventoryId: raw.client_inventory_id || raw._id,
+              name: raw.name,
+              quantity: Number(raw.quantity) || 0,
+              unit: raw.unit || 'KG',
+              minLimit: Number(raw.min_limit) || 5,
+              costPrice: Number(raw.cost_price) || 0,
+              lastRestockTotalCost: Number(raw.last_restock_total_cost) || 0,
+              lastRestocked: raw.last_restocked,
+              syncStatus: raw.sync_status || 'PENDING_SYNC',
+              isOffline: true,
+            },
+          };
+        }
+      } catch {}
       const now = new Date().toISOString();
 
       const qtyNum = Number(itemData.quantity) || 0;

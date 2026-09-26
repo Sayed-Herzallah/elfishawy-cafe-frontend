@@ -21,9 +21,10 @@ import {
   buildProductLookup,
   resolveOrderItemName,
   displayOrderNumber,
+  mergeOrderLists,
 } from '../utils/orderDisplay';
 import { readOrdersSnapshot, saveOrdersSnapshot } from '../utils/ordersCache';
-import { getBusinessDayKey, orderBusinessDayKey } from '../utils/businessDay';
+import { offlineStore } from '../services/data/offlineStore';
 import {
   Plus,
   Trash2,
@@ -101,7 +102,7 @@ export const CashierPOSPage: React.FC = () => {
     );
   const applyOrders = (data: Order[]) => {
     const lookup = buildProductLookup(productsRef.current);
-    const recentOrders = (data || [])
+    const recentOrders = mergeOrderLists(data || [], [])
       .map((o) => normalizeOrder(o, lookup))
       .filter((o) => isWithinLast24Hours(o.createdAt) && o.status !== 'cancelled')
       .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
@@ -412,139 +413,128 @@ export const CashierPOSPage: React.FC = () => {
   const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   const handleCheckoutAndPrint = () => {
-    if (cart.length === 0) {
-      showToast('السلة فارغة. الرجاء اختيار طلبات أولاً', 'error');
-      return;
-    }
+    void (async () => {
+      if (cart.length === 0) {
+        showToast('السلة فارغة. الرجاء اختيار طلبات أولاً', 'error');
+        return;
+      }
 
-    // ✅ رقم الطاولة إجباري
-    const parsedTableNumber = tableNumber ? parseInt(tableNumber, 10) : NaN;
-    if (isNaN(parsedTableNumber) || parsedTableNumber < 1) {
-      setTableNumberError('رقم الطاولة مطلوب — اكتب رقم الطاولة قبل تأكيد الطلب');
-      showToast('الرجاء إدخال رقم الطاولة قبل تأكيد الطلب', 'error');
-      return;
-    }
-    setTableNumberError('');
+      const parsedTableNumber = tableNumber ? parseInt(tableNumber, 10) : NaN;
+      if (isNaN(parsedTableNumber) || parsedTableNumber < 1) {
+        setTableNumberError('رقم الطاولة مطلوب — اكتب رقم الطاولة قبل تأكيد الطلب');
+        showToast('الرجاء إدخال رقم الطاولة قبل تأكيد الطلب', 'error');
+        return;
+      }
+      setTableNumberError('');
 
-    // حماية ضد الضغط المزدوج السريع
-    if (isSubmitting) return;
-    setIsSubmitting(true);
+      if (isSubmitting) return;
+      setIsSubmitting(true);
 
-    // ─── جمع بيانات العجز والملاحظات ───────────────────────────────
-    const shortagesForThisOrder = new Set<string>();
-    cart.forEach((cartItem) => {
-      const depSec = recipeDepletedMap[cartItem.product._id];
-      if (depSec && depSec.length > 0) depSec.forEach((n) => shortagesForThisOrder.add(n));
-    });
-    const shortagesList = Array.from(shortagesForThisOrder);
-    const payloadNotes = appendShortagesToNotes(orderNote, shortagesList);
-
-    // ─── لقطة ثابتة من السلة قبل المسح ─────────────────────────────
-    const cartSnapshot = cart.map((item) => ({
-      product: { _id: item.product._id, name: item.product.name, price: item.product.price },
-      quantity: item.quantity,
-      price: item.product.price,
-    }));
-    const orderTotal = cart.reduce((s, i) => s + i.product.price * i.quantity, 0);
-
-    // ─── بناء فاتورة مؤقتة فوراً من البيانات المحلية ───────────────
-    const ts = Date.now();
-    const clientOrderId = `off_${ts}_${Math.random().toString(36).slice(2, 7)}`;
-
-    // ─── معاينة الرقم المؤقت (تسلسل محلي مستقل يبدأ من 1 كل يوم تجاري) ───
-    // الرقم النهائي للفاتورة يُصدره السيرفر فقط. هذا الرقم المؤقت لعرض الفاتورة
-    // فوراً (أوفلاين أو أونلاين) ثم يُستبدل بالرقم النهائي فور وصول رد السيرفر/الديسكتوب.
-    const todayKey = getBusinessDayKey();
-    const pendingTodayCount = allOrders.filter(
-      (o) =>
-        orderBusinessDayKey((o as any).dayKey ?? o.createdAt) === todayKey &&
-        String((o as any).syncStatus || '').toUpperCase() === 'PENDING_SYNC'
-    ).length;
-    const provisionalOrderNumber = String(pendingTodayCount + 1);
-
-    const now = new Date().toISOString();
-    const lookup = buildProductLookup(products);
-
-    const optimisticRaw = {
-      _id: clientOrderId,
-      clientOrderId,
-      orderNumber: '',
-      provisionalNumber: provisionalOrderNumber,
-      items: cartSnapshot,
-      totalAmount: orderTotal,
-      status: 'completed' as const,
-      tableNumber: parsedTableNumber,
-      notes: payloadNotes,
-      syncStatus: 'PENDING_SYNC',
-      createdAt: now,
-      updatedAt: now,
-    };
-    const optimisticOrder = normalizeOrder(optimisticRaw, lookup) as Order;
-
-    // ─── تحديث الـ UI فوراً — بدون أي انتظار ───────────────────────
-    setAllOrders((prev) => {
-      const updated = [optimisticOrder, ...prev];
-      setRecentOrders(updated.slice(0, 4));
-      return updated;
-    });
-    setSelectedReceiptOrder(optimisticOrder);
-    saveOrdersSnapshot([optimisticRaw]);
-
-    if (shortagesList.length > 0) {
-      recordOrderShortages(clientOrderId, clientOrderId, shortagesList);
-    }
-
-    showToast('تم تأكيد الطلب وحفظ الفاتورة بنجاح!');
-    handleClearCart();
-    setIsSubmitting(false);  // ← يُطلق الزر فوراً بعد عرض الـ UI
-
-    // ─── إرسال للسيرفر في الخلفية — بدون await ──────────────────────
-    // نمرر نفس clientOrderId وسعر البيع الفعلي.
-    // ملاحظة: لا نرسل أي رقم — الرقم النهائي يُصدره السيرفر فقط من العداد الذري.
-    const serverPayload = {
-      items: cartSnapshot.map((i) => ({ product: i.product._id, quantity: i.quantity, price: i.price })),
-      tableNumber: parsedTableNumber,
-      notes: payloadNotes,
-      clientOrderId,
-    };
-
-    orderService.createOrder(serverPayload)
-      .then((res) => {
-        if (!res.success || !res.data) return;
-        // استبدال الفاتورة المؤقتة بالنسخة الرسمية من السيرفر (رقم فاتورة حقيقي)
-        const serverOrder = normalizeOrder({
-          ...res.data,
-          createdAt: res.data.createdAt || now,
-          items: cartSnapshot,
-        }, lookup) as Order;
-
-        setAllOrders((prev) =>
-          prev.map((o) =>
-            o._id === clientOrderId || (o as any).clientOrderId === clientOrderId
-              ? serverOrder
-              : o
-          )
-        );
-        setRecentOrders((prev) =>
-          prev.map((o) =>
-            o._id === clientOrderId || (o as any).clientOrderId === clientOrderId
-              ? serverOrder
-              : o
-          )
-        );
-        // لو الكاشير لسه شايف الفاتورة المؤقتة → حدّثها برقم الفاتورة الحقيقي
-        setSelectedReceiptOrder((prev) =>
-          prev && (prev._id === clientOrderId || (prev as any).clientOrderId === clientOrderId)
-            ? serverOrder
-            : prev
-        );
-        saveOrdersSnapshot([res.data]);
-        // تحديث المخزون في الخلفية بعد ما السيرفر يرد
-        setTimeout(() => loadData(), 500);
-      })
-      .catch(() => {
-        // الفاتورة محفوظة محلياً — ستُزامن تلقائياً
+      const shortagesForThisOrder = new Set<string>();
+      cart.forEach((cartItem) => {
+        const depSec = recipeDepletedMap[cartItem.product._id];
+        if (depSec && depSec.length > 0) depSec.forEach((n) => shortagesForThisOrder.add(n));
       });
+      const shortagesList = Array.from(shortagesForThisOrder);
+      const payloadNotes = appendShortagesToNotes(orderNote, shortagesList);
+
+      const cartSnapshot = cart.map((item) => ({
+        product: { _id: item.product._id, name: item.product.name, price: item.product.price },
+        quantity: item.quantity,
+        price: item.product.price,
+      }));
+      const orderTotal = cart.reduce((s, i) => s + i.product.price * i.quantity, 0);
+
+      const ts = Date.now();
+      const clientOrderId = `off_${ts}_${Math.random().toString(36).slice(2, 7)}`;
+      const now = new Date().toISOString();
+      const lookup = buildProductLookup(products);
+
+      const serverPayload = {
+        items: cartSnapshot.map((i) => ({ product: i.product._id, quantity: i.quantity, price: i.price })),
+        tableNumber: parsedTableNumber,
+        notes: payloadNotes,
+        clientOrderId,
+      };
+
+      let optimisticRaw: Record<string, unknown> = {
+        _id: clientOrderId,
+        clientOrderId,
+        orderNumber: '',
+        items: cartSnapshot,
+        totalAmount: orderTotal,
+        status: 'completed',
+        tableNumber: parsedTableNumber,
+        notes: payloadNotes,
+        syncStatus: 'PENDING_SYNC',
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      // مصدر واحد للرقم المؤقت: SQLite allocateProvisionalNumber() عبر createOfflineOrder
+      if (offlineStore.isDesktop()) {
+        try {
+          const localRes = await offlineStore.createOfflineOrder(serverPayload);
+          if (!localRes.success || !localRes.data) {
+            showError(new Error(localRes.message || 'تعذّر حفظ الفاتورة محلياً'));
+            setIsSubmitting(false);
+            return;
+          }
+          optimisticRaw = localRes.data;
+        } catch (err) {
+          showError(err);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
+      const optimisticOrder = normalizeOrder(optimisticRaw, lookup) as Order;
+
+      setAllOrders((prev) => {
+        const updated = mergeOrderLists([optimisticOrder], prev);
+        setRecentOrders(updated.slice(0, 4));
+        return updated;
+      });
+      setSelectedReceiptOrder(optimisticOrder);
+      saveOrdersSnapshot([optimisticRaw]);
+
+      if (shortagesList.length > 0) {
+        recordOrderShortages(clientOrderId, clientOrderId, shortagesList);
+      }
+
+      showToast('تم تأكيد الطلب وحفظ الفاتورة بنجاح!');
+      handleClearCart();
+      setIsSubmitting(false);
+
+      orderService
+        .createOrder({ ...serverPayload, localPrepared: offlineStore.isDesktop() })
+        .then((res) => {
+          if (!res.success || !res.data) return;
+          const serverOrder = normalizeOrder(
+            {
+              ...res.data,
+              clientOrderId,
+              createdAt: res.data.createdAt || now,
+              items: cartSnapshot,
+            },
+            lookup
+          ) as Order;
+
+          setAllOrders((prev) => mergeOrderLists(prev, [serverOrder]));
+          setRecentOrders((prev) => mergeOrderLists(prev, [serverOrder]).slice(0, 4));
+          setSelectedReceiptOrder((prev) => {
+            if (!prev) return prev;
+            const cid = String((prev as any).clientOrderId || prev._id || '');
+            if (cid !== clientOrderId) return prev;
+            return serverOrder;
+          });
+          saveOrdersSnapshot([res.data]);
+          setTimeout(() => loadData(), 500);
+        })
+        .catch(() => {
+          /* الفاتورة محفوظة محلياً — ستُزامَن تلقائياً */
+        });
+    })();
   };
 
   const filteredProducts = products.filter((p) => {

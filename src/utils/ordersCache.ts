@@ -11,7 +11,7 @@
  *
  * كل الدوال هنا آمنة: أي فشل في التخزين يتم تجاهله بصمت (تحسيني فقط).
  */
-import { normalizeOrder } from './orderDisplay';
+import { mergeOrderLists, normalizeOrder } from './orderDisplay';
 
 const ORDERS_CACHE_KEY = 'elfishawy_orders_cache_v1';
 // F3: 2000 فاتورة كحد أقصى (بدل 400) — يغطي أيام كاملة من البيانات للعرض أوفلاين،
@@ -26,6 +26,7 @@ const WRITABLE_ORDER_COLUMNS = [
   '_id',
   'order_number',
   'provisional_number',
+  'day_key',
   'items',
   'total_amount',
   'status',
@@ -77,6 +78,7 @@ export const slimOrderForCache = (order: any): any => {
     notes: normalized.notes,
     syncStatus: raw.syncStatus || raw.sync_status || 'SYNCED',
     clientOrderId: normalized.clientOrderId || null,
+    dayKey: normalized.dayKey || raw.day_key || undefined,
     createdAt: normalized.createdAt || new Date().toISOString(),
     updatedAt: normalized.updatedAt || normalized.createdAt || new Date().toISOString(),
   };
@@ -116,43 +118,8 @@ export const normalizeCachedOrderRows = (rows: any[]): any[] => {
 };
 
 /** دمج قائمتين من الفواتير بدون تكرار (دمج كاش SQLite مع لقطة localStorage) */
-export const mergeCachedOrders = (primary: any[] = [], extra: any[] = []): any[] => {
-  const byKey = new Map<string, any>();
-  // خريطة منفصلة: clientOrderId → مفتاح الصف في byKey
-  const byCid = new Map<string, string>();
-
-  const take = (list: any[]) => {
-    (list || []).forEach((order) => {
-      if (!order || typeof order !== 'object') return;
-      const id  = String(order._id || order.clientOrderId || order.client_order_id || '');
-      const cid = String(order.clientOrderId || order.client_order_id || '');
-
-      // هل الفاتورة موجودة بنفس clientOrderId؟ → نحتفظ بالنسخة المُزامَنة
-      if (cid && byCid.has(cid)) {
-        const existingKey = byCid.get(cid)!;
-        const existing = byKey.get(existingKey);
-        if (existing) {
-          // صف «قيد المزامنة» يُستبدل بالنسخة المُزامَنة عند وجودها
-          if (isPendingSync(existing) && !isPendingSync(order)) byKey.set(existingKey, order);
-        }
-        return;
-      }
-
-      const key = uniqueKeyOf(order);
-      if (!key) return;
-      const previous = byKey.get(key);
-      if (previous) {
-        if (isPendingSync(previous) && !isPendingSync(order)) byKey.set(key, order);
-        return;
-      }
-      byKey.set(key, order);
-      if (cid) byCid.set(cid, key);
-    });
-  };
-  take(primary);
-  take(extra);
-  return Array.from(byKey.values()).sort((a, b) => timeOf(b) - timeOf(a));
-};
+export const mergeCachedOrders = (primary: any[] = [], extra: any[] = []): any[] =>
+  mergeOrderLists(primary, extra);
 
 
 /** قراءة لقطة الفواتير المحفوظة في المتصفح */
@@ -200,6 +167,8 @@ const valueForColumn = (order: any, column: string): any => {
       const provStr = String(order.provisionalNumber || order.provisional_number || '').trim();
       return /^\d{1,6}$/.test(provStr) ? provStr : null;
     }
+    case 'day_key':
+      return order.dayKey || order.day_key || null;
     case 'items':
       return JSON.stringify(order.items || []);
     case 'total_amount':
@@ -214,9 +183,10 @@ const valueForColumn = (order: any, column: string): any => {
       return order.notes || '';
     case 'sync_status':
       return 'SYNCED';
-    case 'client_order_id':
-      // لا نكتب client_order_id قادماً من السيرفر حتى لا نتعارض مع صف "قيد المزامنة" المحلي
-      return null;
+    case 'client_order_id': {
+      const cid = String(order.clientOrderId || order.client_order_id || '').trim();
+      return cid || null;
+    }
     case 'created_at':
       return order.createdAt || new Date().toISOString();
     case 'updated_at':

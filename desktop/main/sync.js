@@ -56,6 +56,49 @@ function resolveServerInventoryId(db, localId) {
   }
 }
 
+/** تأجيل عملية طابور المزامنة لانتظار تبعية (مثل صنف مخزون لم يُرفع بعد) — بدون FAILED دائم */
+function deferSyncQueueItem(db, queueId, attempts, message) {
+  db.run(
+    `UPDATE sync_queue SET status = 'PENDING', attempts = ?, last_error = ? WHERE id = ?`,
+    [Number(attempts) + 1, message, queueId]
+  );
+}
+
+/**
+ * مطابقة صف الطلب المحلي (PENDING) مع نتيجة السيرفر — بدون خصم مخزون إضافي.
+ * تُستخدم من طابور المزامنة ومن مسار الـ POS المباشر أونلاين.
+ */
+export function reconcileOrderWithServer(db, clientOrderId, serverResult) {
+  if (!clientOrderId || !serverResult?.orderNumber) return false;
+  const nowIso = new Date().toISOString();
+  const orderNumber = String(serverResult.orderNumber);
+  const serverId = serverResult._id;
+
+  try {
+    const existingCheck = db.exec(`SELECT _id FROM orders WHERE _id = ?`, [serverId]);
+    if (existingCheck.length && existingCheck[0].values.length) {
+      db.run(`DELETE FROM orders WHERE client_order_id = ? AND _id != ?`, [clientOrderId, serverId]);
+      db.run(
+        `UPDATE orders SET order_number = ?, sync_status = 'SYNCED', client_order_id = ?, updated_at = ? WHERE _id = ?`,
+        [orderNumber, clientOrderId, nowIso, serverId]
+      );
+    } else {
+      db.run(
+        `UPDATE orders SET _id = ?, order_number = ?, sync_status = 'SYNCED', updated_at = ? WHERE client_order_id = ?`,
+        [serverId, orderNumber, nowIso, clientOrderId]
+      );
+    }
+    db.run(
+      `UPDATE sync_queue SET status = 'COMPLETED', synced_at = ? WHERE client_op_id = ? AND entity_type = 'order' AND status IN ('PENDING', 'FAILED')`,
+      [nowIso, clientOrderId]
+    );
+    return true;
+  } catch (err) {
+    console.error('reconcileOrderWithServer error:', err.message);
+    return false;
+  }
+}
+
 export async function processSyncQueue(mainWindow) {
   if (isSyncing) return { success: false, message: 'Sync already in progress' };
   isSyncing = true;
@@ -167,23 +210,7 @@ export async function processSyncQueue(mainWindow) {
             success = true;
             serverResult = data.data;
 
-            // Reconcile SQLite order with real Mongo _id and sequence orderNumber safely
-            if (serverResult && serverResult.orderNumber) {
-              const nowIso = new Date().toISOString();
-              const existingCheck = db.exec(`SELECT _id FROM orders WHERE _id = ?`, [serverResult._id]);
-              if (existingCheck.length && existingCheck[0].values.length) {
-                db.run(`DELETE FROM orders WHERE client_order_id = ? AND _id != ?`, [clientOpId, serverResult._id]);
-                db.run(
-                  `UPDATE orders SET order_number = ?, sync_status = 'SYNCED', client_order_id = ?, updated_at = ? WHERE _id = ?`,
-                  [serverResult.orderNumber, clientOpId, nowIso, serverResult._id]
-                );
-              } else {
-                db.run(
-                  `UPDATE orders SET _id = ?, order_number = ?, sync_status = 'SYNCED', updated_at = ? WHERE client_order_id = ?`,
-                  [serverResult._id, serverResult.orderNumber, nowIso, clientOpId]
-                );
-              }
-            }
+            reconcileOrderWithServer(db, clientOpId, serverResult);
           } else {
             const err = new Error(data.message || `Server returned ${orderResponse.status} for order`);
             err.statusCode = orderResponse.status;
@@ -203,11 +230,7 @@ export async function processSyncQueue(mainWindow) {
             if (serverItemId) {
               linkedId = serverItemId;
             } else {
-              const nextAttempts = Number(attempts) + 1;
-              db.run(
-                `UPDATE sync_queue SET status = ?, attempts = ?, last_error = 'Waiting for linked inventory item to sync' WHERE id = ?`,
-                [nextAttempts >= 20 ? 'FAILED' : 'PENDING', nextAttempts, id]
-              );
+              deferSyncQueueItem(db, id, attempts, 'Waiting for linked inventory item to sync');
               continue;
             }
           }
@@ -251,11 +274,7 @@ export async function processSyncQueue(mainWindow) {
           // نفس المنطق: صنف أُنشئ أوفلاين → نستنى مزامنته ثم نستخدم المعرّف الحقيقي
           const restockItemId = resolveServerInventoryId(db, rawRestockItemId);
           if (!restockItemId) {
-            const nextAttempts = Number(attempts) + 1;
-            db.run(
-              `UPDATE sync_queue SET status = ?, attempts = ?, last_error = 'Waiting for inventory item to sync' WHERE id = ?`,
-              [nextAttempts >= 20 ? 'FAILED' : 'PENDING', nextAttempts, id]
-            );
+            deferSyncQueueItem(db, id, attempts, 'Waiting for inventory item to sync');
             continue;
           }
           const restockResponse = await fetch(`${apiBaseUrl}/inventory/${restockItemId}/restock`, {
