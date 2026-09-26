@@ -128,6 +128,21 @@ export const offlineStore = {
     }
   },
 
+  async updateLocalProductStock(productId: string, newQty: number): Promise<boolean> {
+    if (!isElectron() || !window.electronAPI?.execute) return false;
+    try {
+      const safeQty = Math.max(0, Math.floor(Number(newQty) || 0));
+      const inStock = safeQty > 0 ? 1 : 0;
+      await window.electronAPI.execute(
+        "UPDATE products SET stock_quantity = ?, in_stock = ?, updated_at = ? WHERE _id = ?",
+        [safeQty, inStock, new Date().toISOString(), productId]
+      );
+      return true;
+    } catch (e) {
+      console.warn("Failed to update local product stock in SQLite:", e);
+      return false;
+    }
+  },
   async getCachedProducts(): Promise<any[]> {
     if (!isElectron() || !window.electronAPI?.query) return [];
     try {

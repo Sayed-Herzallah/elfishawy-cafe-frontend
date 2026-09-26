@@ -85,9 +85,9 @@ export function reconcileRestockExpenseWithServer(db, clientRestockId, serverExp
 }
 
 export function reconcileExpenseWithServer(db, clientExpenseId, serverExpense) {
-  const clientId = String(clientExpenseId || '');
-  const result = serverExpense && typeof serverExpense === 'object' ? serverExpense : { _id: serverExpense };
-  const serverId = String(result._id || '');
+  const clientId = String(clientExpenseId || "");
+  const result = serverExpense && typeof serverExpense === "object" ? serverExpense : { _id: serverExpense };
+  const serverId = String(result._id || "");
   const purchaseNumber = result.purchaseNumber || null;
   if (!clientId || !isMongoObjectId(serverId)) return false;
 
@@ -96,9 +96,22 @@ export function reconcileExpenseWithServer(db, clientExpenseId, serverExpense) {
     db.run(`DELETE FROM expenses WHERE client_expense_id = ? AND _id != ?`, [clientId, serverId]);
   }
   db.run(
-    `UPDATE expenses SET _id = ?, sync_status = 'SYNCED', client_expense_id = ?, purchase_number = COALESCE(?, purchase_number) WHERE client_expense_id = ? OR _id = ? OR _id = ?`,
+    `UPDATE expenses SET _id = ?, sync_status = "SYNCED", client_expense_id = ?, purchase_number = COALESCE(?, purchase_number) WHERE client_expense_id = ? OR _id = ? OR _id = ?`,
     [serverId, clientId, purchaseNumber, clientId, clientId, serverId]
   );
+  db.run(
+    `UPDATE sync_queue SET status = "COMPLETED", synced_at = ? WHERE client_op_id = ? AND status IN ("PENDING", "FAILED")`,
+    [new Date().toISOString(), clientId]
+  );
+  try {
+    const expRow = db.exec(`SELECT inventory_item_linked FROM expenses WHERE _id = ? LIMIT 1`, [serverId]);
+    if (expRow.length && expRow[0].values.length) {
+      const linkedInvId = expRow[0].values[0][0];
+      if (linkedInvId) {
+        db.run(`UPDATE inventory SET sync_status = "SYNCED" WHERE _id = ? OR client_inventory_id = ?`, [linkedInvId, linkedInvId]);
+      }
+    }
+  } catch {}
   return true;
 }
 
@@ -122,7 +135,7 @@ export function cacheServerExpense(db, exp) {
   db.run(`
     INSERT INTO expenses (_id, description, amount, category, inventory_item_linked, inventory_quantity_added, unit_cost, date, added_by, sync_status, client_expense_id, purchase_number, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?, ?, ?)
-    ON CONFLICT DO UPDATE SET
+    ON CONFLICT(_id) DO UPDATE SET
       description = excluded.description,
       amount = excluded.amount,
       category = excluded.category,
@@ -132,6 +145,7 @@ export function cacheServerExpense(db, exp) {
       date = excluded.date,
       added_by = excluded.added_by,
       purchase_number = excluded.purchase_number,
+      client_expense_id = excluded.client_expense_id,
       sync_status = 'SYNCED'
     WHERE IFNULL(expenses.sync_status, 'SYNCED') != 'PENDING_SYNC'
   `, [

@@ -4,6 +4,7 @@ import { Expense, InventoryItem, ExpenseCategory } from '../../types';
 import { useNotification } from '../../contexts/NotificationContext';
 import { syncAllProductsStock, ensurePurchaseRestockAndSync } from '../../utils/stockSync';
 import { playSuccessSound } from '../../utils/soundFeedback';
+import { getBusinessDayKey, shiftDayKey } from '../../utils/businessDay';
 import { StatCard } from '../../components/ui/StatCard';
 import { ComparisonStatCard } from '../../components/ui/ComparisonStatCard';
 import { DateRangeFilter, DateRange, toLocalDateString } from '../../components/ui/DateRangeFilter';
@@ -399,16 +400,17 @@ export const AdminExpensesPage: React.FC = () => {
     // الفترات السريعة
     if (matchesDate && dateFilter !== 'all') {
       const now = new Date();
+      const expDayKey = getBusinessDayKey(expDate);
+      const nowDayKey = getBusinessDayKey(now);
       if (dateFilter === 'today') {
-        matchesDate = expDate.toDateString() === now.toDateString();
+        matchesDate = expDayKey === nowDayKey;
       } else if (dateFilter === 'week') {
-        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-        matchesDate = expDate >= weekAgo;
+        const weekAgo = shiftDayKey(nowDayKey, -7);
+        matchesDate = expDayKey >= weekAgo;
       } else if (dateFilter === 'month') {
-        matchesDate =
-          expDate.getMonth() === now.getMonth() && expDate.getFullYear() === now.getFullYear();
+        matchesDate = expDayKey.slice(0, 7) === nowDayKey.slice(0, 7);
       } else if (dateFilter === 'year') {
-        matchesDate = expDate.getFullYear() === now.getFullYear();
+        matchesDate = expDayKey.slice(0, 4) === nowDayKey.slice(0, 4);
       }
     }
 

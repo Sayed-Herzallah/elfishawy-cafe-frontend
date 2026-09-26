@@ -182,7 +182,8 @@ export function createOfflineExpense(db, expenseData, enqueue) {
             cost_price = CASE WHEN ? > 0 THEN ? ELSE cost_price END,
             last_restock_total_cost = ?,
             last_restocked = ?,
-            updated_at = ?
+            updated_at = ?,
+            sync_status = 'PENDING_SYNC'
         WHERE _id = ?
       `, [quantity, unitCost, unitCost, totalCost, now, now, expenseData.inventoryItemLinked]);
         }
@@ -305,7 +306,8 @@ export function restockOfflineInventory(db, restockData, enqueue) {
           cost_price = CASE WHEN ? > 0 THEN ? ELSE cost_price END,
           last_restock_total_cost = ?,
           last_restocked = ?,
-          updated_at = ?
+          updated_at = ?,
+          sync_status = 'PENDING_SYNC'
       WHERE _id = ?
     `, [quantity, unitCost, unitCost, totalCost, now, now, targetId]);
 

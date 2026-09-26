@@ -78,6 +78,7 @@ export const CashierInventoryPage: React.FC = () => {
 
     // 🔄 إعادة تحميل قيود الشراء عند اكتمال أي مزامنة/سحب (Desktop) — بدون F5
     const cleanup = window.electronAPI?.onDataUpdated?.(() => {
+      refetch();
       expenseService.listExpenses()
         .then((res) => {
           if (res.success && res.data) {

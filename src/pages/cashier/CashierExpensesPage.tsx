@@ -15,6 +15,7 @@ import { exportElementToPdf } from '../../utils/pdfExport';
 import { formatPrice, formatNumber, formatDate, formatTime, formatStat } from '../../utils/formatters';
 import { ensurePurchaseRestockAndSync } from '../../utils/stockSync';
 import { playSuccessSound } from '../../utils/soundFeedback';
+import { getBusinessDayKey, shiftDayKey } from '../../utils/businessDay';
 import {
   Plus,
   ShoppingBag,
@@ -278,6 +279,8 @@ export const CashierExpensesPage: React.FC = () => {
   const filteredExpenses = useMemo(() => {
     return expenses.filter((e) => {
       if (!e || typeof e !== 'object') return false;
+      // 🔐 حصر شاشة الكاشير على مشتريات وتوريدات المخزون فقط — منع عرض المصروفات التشغيلية
+      if (e.category && e.category !== 'inventory') return false;
       const desc = e.description || '';
       const q = searchQuery.trim().toLowerCase();
       const supplier = parseSupplier(desc).toLowerCase();
@@ -322,16 +325,17 @@ export const CashierExpensesPage: React.FC = () => {
         }
       } else if (dateFilter !== 'all') {
         const now = new Date();
+        const expDayKey = getBusinessDayKey(expDate);
+        const nowDayKey = getBusinessDayKey(now);
         if (dateFilter === 'today') {
-          matchesDate = expDate.toDateString() === now.toDateString();
+          matchesDate = expDayKey === nowDayKey;
         } else if (dateFilter === 'week') {
-          const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-          matchesDate = expDate >= weekAgo;
+          const weekAgo = shiftDayKey(nowDayKey, -7);
+          matchesDate = expDayKey >= weekAgo;
         } else if (dateFilter === 'month') {
-          matchesDate =
-            expDate.getMonth() === now.getMonth() && expDate.getFullYear() === now.getFullYear();
+          matchesDate = expDayKey.slice(0, 7) === nowDayKey.slice(0, 7);
         } else if (dateFilter === 'year') {
-          matchesDate = expDate.getFullYear() === now.getFullYear();
+          matchesDate = expDayKey.slice(0, 4) === nowDayKey.slice(0, 4);
         }
       }
 

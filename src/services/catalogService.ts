@@ -49,6 +49,26 @@ export const productService = {
     if (params?.inStock !== undefined) query.append('inStock', String(params.inStock));
     const qs = query.toString();
 
+    if (offlineStore.isDesktop()) {
+      const isOnline = await offlineStore.isOnline();
+      if (!isOnline) {
+        let cached = await offlineStore.getCachedProducts();
+        if (cached && cached.length > 0) {
+          if (params?.category) {
+            cached = cached.filter((p: any) => p.category === params.category);
+          }
+          if (params?.search) {
+            const q = params.search.toLowerCase();
+            cached = cached.filter((p: any) => p.name?.toLowerCase().includes(q));
+          }
+          if (params?.inStock !== undefined) {
+            cached = cached.filter((p: any) => Boolean(p.inStock) === params.inStock);
+          }
+          return { success: true, message: 'Loaded from local offline database', data: cached };
+        }
+      }
+    }
+
     try {
       const res = await ApiClient.request<Product[]>(`/products${qs ? `?${qs}` : ''}`, { method: 'GET' });
       if (res.success && Array.isArray(res.data) && !qs) {
@@ -84,7 +104,18 @@ export const productService = {
     });
   },
 
-  updateProduct: (id: string, formData: FormData): Promise<ApiResponse<Product>> => {
+  updateProduct: async (id: string, formData: FormData): Promise<ApiResponse<Product>> => {
+    if (offlineStore.isDesktop()) {
+      const isOnline = await offlineStore.isOnline();
+      if (!isOnline) {
+        const rawStock = formData.get('stockQuantity');
+        if (rawStock !== null) {
+          const qty = Number(rawStock) || 0;
+          await offlineStore.updateLocalProductStock(id, qty);
+        }
+        return { success: true, message: 'Product updated locally' };
+      }
+    }
     return ApiClient.request<Product>(`/products/${id}`, {
       method: 'PATCH',
       body: formData,

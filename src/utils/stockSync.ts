@@ -18,6 +18,12 @@ export const toBase = (qty: number, unit: string): number => toBaseQty(qty, unit
  * Sends the full product details (name, price, category) to pass backend validations.
  */
 async function updateProductStockOnServer(product: any, newQty: number): Promise<boolean> {
+  const safeQty = Math.max(0, Math.floor(Number(newQty) || 0));
+  // 1) تحديث محلي فوري في SQLite للديسكتوب — عشان الكاشير والمنيو يشوفوا الرصيد فوراً أوفلاين
+  if (offlineStore.isDesktop()) {
+    await offlineStore.updateLocalProductStock(product._id, safeQty);
+  }
+  // 2) محاولة التحديث على السيرفر (أونلاين)
   try {
     const fd = new FormData();
     fd.append('name', product.name);
@@ -28,8 +34,8 @@ async function updateProductStockOnServer(product: any, newQty: number): Promise
       : (product.category?._id || '');
     fd.append('category', catId);
 
-    fd.append('stockQuantity', String(newQty));
-    fd.append('inStock', String(newQty > 0));
+    fd.append('stockQuantity', String(safeQty));
+    fd.append('inStock', String(safeQty > 0));
 
     if (product.description) {
       fd.append('description', product.description);
@@ -38,8 +44,7 @@ async function updateProductStockOnServer(product: any, newQty: number): Promise
     const res = await productService.updateProduct(product._id, fd);
     return res.success;
   } catch (e) {
-    console.error(`Failed to update product stock for ${product.name} (${product._id}):`, e);
-    return false;
+    return offlineStore.isDesktop();
   }
 }
 

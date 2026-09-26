@@ -333,37 +333,61 @@ export const inventoryService = {
     if (params?.lowStock !== undefined) query.append('lowStock', String(params.lowStock));
     const qs = query.toString();
 
+    // 1) فحص وضع عدم الاتصال في الديسكتوب — عودة فورية من SQLite بدون انتظار timeout
+    if (offlineStore.isDesktop()) {
+      const isOnline = await offlineStore.isOnline();
+      if (!isOnline) {
+        let cached = await offlineStore.getCachedInventory();
+        if (cached && cached.length > 0) {
+          if (params?.search) {
+            const q = params.search.toLowerCase();
+            cached = cached.filter((i: any) => i.name?.toLowerCase().includes(q));
+          }
+          if (params?.lowStock) {
+            cached = cached.filter((i: any) => isStockLow(i.quantity, i.minLimit));
+          }
+          return { success: true, message: 'Loaded from local offline database', data: cached };
+        }
+      }
+    }
+
     try {
       const res = await ApiClient.request<InventoryItem[]>(`/inventory${qs ? `?${qs}` : ''}`, { method: 'GET' });
       if (res.success && Array.isArray(res.data) && !qs) {
-        // ✅ كاش المتصفح: حفظ القائمة في localStorage لاستخدامها أوفلاين
         if (!offlineStore.isDesktop()) {
           try { localStorage.setItem('ef_inventory_cache', JSON.stringify(res.data)); } catch { /* تجاهل */ }
         }
-        // ✅ await: نضمن حفظ بيانات السيرفر في SQLite قبل أي انقطاع للشبكة
         await offlineStore.cacheEntities('inventory', res.data);
         if (offlineStore.isDesktop()) {
-          // السيرفر هو المصدر الوحيد عند الاتصال — نضيف فقط الأصناف المعلقة محلياً
-          // التي لم تصل للسيرفر بعد (clientInventoryId مش موجود في بيانات السيرفر)
           const localItems = await offlineStore.getCachedInventory();
-          const serverClientIds = new Set(
-            res.data.map((i: any) => String(i.clientInventoryId || i._id || ''))
-          );
-          const serverMongoIds = new Set(res.data.map((i: any) => String(i._id || '')));
-          const pendingOnlyLocals = localItems.filter((li: any) => {
-            const cid = String(li.clientInventoryId || li.client_inventory_id || '');
-            const lid = String(li._id || '');
-            // أضف الصنف المحلي فقط لو PENDING_SYNC ومش موجود على السيرفر
-            return (
-              String(li.syncStatus || li.sync_status || '').toUpperCase() === 'PENDING_SYNC' &&
-              !serverClientIds.has(cid) &&
-              !serverMongoIds.has(lid) &&
-              !serverMongoIds.has(cid)
-            );
+          // دمج ذكي: الأصناف المحلية التي لديها PENDING_SYNC (توريد أوفلاين أو إضافة أوفلاين)
+          // تحل محل أو تُضاف إلى بيانات السيرفر لحين اكتمال المزامنة
+          const pendingMap = new Map<string, any>();
+          for (const li of localItems) {
+            if (String(li.syncStatus || li.sync_status || '').toUpperCase() === 'PENDING_SYNC') {
+              const cid = String(li.clientInventoryId || li.client_inventory_id || '');
+              const lid = String(li._id || '');
+              if (lid) pendingMap.set(lid, li);
+              if (cid) pendingMap.set(cid, li);
+            }
+          }
+          const mergedData = res.data.map((si: any) => {
+            const sid = String(si._id || '');
+            const scid = String(si.clientInventoryId || '');
+            const local = pendingMap.get(sid) || (scid ? pendingMap.get(scid) : undefined);
+            if (local) {
+              pendingMap.delete(sid);
+              if (scid) pendingMap.delete(scid);
+              return { ...si, ...local, quantity: local.quantity, costPrice: local.costPrice || si.costPrice };
+            }
+            return si;
           });
+          for (const remainingLocal of pendingMap.values()) {
+            mergedData.push(remainingLocal);
+          }
           return {
             ...res,
-            data: [...res.data, ...pendingOnlyLocals] as InventoryItem[],
+            data: mergedData as InventoryItem[],
           };
         }
       }
@@ -482,29 +506,30 @@ export const inventoryService = {
 
   restockItem: async (id: string, quantity: number, costPrice?: number, totalCost?: number, operationId?: string): Promise<ApiResponse<InventoryItem>> => {
     const clientRestockId = operationId || `off_rstk_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-    // 🩺 تشخيص: لو الـ IPC رجّع success:false (مثلاً الصنف مش موجود محلياً)
-    // كان الكود بيتجاهل النتيجة وبيقول "تم التوريد بنجاح" والفعل الرصيد يزيدش.
-    // دلوقتي: لو فشل التوريد المحلي نتحقق من السيرفر قبل ما نعلن الفشل.
-    const restockLocal = async (): Promise<boolean> => {
+    const restockLocal = async (): Promise<InventoryItem | null> => {
       try {
         const res = await offlineStore.restockOfflineInventory({ id, quantity, costPrice, totalCost, clientRestockId });
-        return Boolean(res?.success);
+        if (res?.success) {
+          const items = await offlineStore.getCachedInventory();
+          return items.find((i: any) => String(i._id) === String(id) || String(i.clientInventoryId) === String(id)) || null;
+        }
+        return null;
       } catch {
-        return false;
+        return null;
       }
     };
 
     if (offlineStore.isDesktop()) {
       const isOnline = await offlineStore.isOnline();
       if (!isOnline) {
-        const ok = await restockLocal();
-        if (ok) {
+        const updatedItem = await restockLocal();
+        if (updatedItem) {
           return {
             success: true,
             message: 'تم توريد الكمية محلياً وسيتم المزامنة عند عودة الاتصال',
+            data: updatedItem,
           };
         }
-        // فشل التوريد المحلي — نرجّع رسالة واضحة بدل نجاح وهمي
         return {
           success: false,
           message:
@@ -514,17 +539,22 @@ export const inventoryService = {
     }
 
     try {
-      return await ApiClient.request<InventoryItem>(`/inventory/${id}/restock`, {
+      const res = await ApiClient.request<InventoryItem>(`/inventory/${id}/restock`, {
         method: 'PATCH',
         body: JSON.stringify({ quantity, costPrice, totalCost, clientRestockId }),
       });
+      if (res.success && res.data && offlineStore.isDesktop()) {
+        await offlineStore.cacheEntities('inventory', [res.data]);
+      }
+      return res;
     } catch (networkErr) {
       if (offlineStore.isDesktop()) {
-        const ok = await restockLocal();
-        if (ok) {
+        const updatedItem = await restockLocal();
+        if (updatedItem) {
           return {
             success: true,
             message: 'تم توريد الكمية محلياً وسيتم المزامنة عند عودة الاتصال',
+            data: updatedItem,
           };
         }
       }
@@ -556,6 +586,20 @@ export const expenseService = {
     if (params?.category) query.append('category', params.category);
     if (params?.searchDate) query.append('searchDate', params.searchDate);
     const qs = query.toString();
+
+    // فحص وضع عدم الاتصال في الديسكتوب — عودة فورية من SQLite
+    if (offlineStore.isDesktop()) {
+      const isOnline = await offlineStore.isOnline();
+      if (!isOnline) {
+        let localExpenses = await offlineStore.getOfflineExpenses();
+        if (params?.category) {
+          localExpenses = localExpenses.filter((e: any) => e.category === params.category);
+        }
+        if (localExpenses && localExpenses.length > 0) {
+          return { success: true, message: 'Loaded from local offline database', data: localExpenses };
+        }
+      }
+    }
 
     try {
       const res = await ApiClient.request<Expense[]>(`/expenses${qs ? `?${qs}` : ''}`, { method: 'GET' });
