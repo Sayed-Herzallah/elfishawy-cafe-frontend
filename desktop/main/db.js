@@ -2,7 +2,7 @@
 import fs from 'fs';
 import path from 'path';
 import initSqlJs from 'sql.js';
-import { getOrCreateMasterKey, encryptBuffer, decryptBuffer } from './security.js';
+import { getOrCreateMasterKey, encryptBuffer, decryptBuffer, encryptSensitiveString } from './security.js';
 
 let dbInstance = null;
 let dbFilePath = null;

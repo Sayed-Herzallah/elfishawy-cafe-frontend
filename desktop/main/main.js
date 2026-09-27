@@ -10,6 +10,14 @@ import { frontendUpdater } from './frontendUpdater.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+if (process.env.ELECTRON_TEST_MODE === 'true') {
+  const testUserDataDir = process.env.ELECTRON_TEST_USER_DATA_DIR;
+  if (!testUserDataDir) {
+    throw new Error('Electron test mode requires ELECTRON_TEST_USER_DATA_DIR');
+  }
+  app.setPath('userData', path.resolve(testUserDataDir));
+}
+
 let mainWindow = null;
 let splashWindow = null;
 
@@ -103,7 +111,10 @@ async function createWindow() {
           let lastOnlineState = false;
           setInterval(async () => {
             try {
-              const res = await fetch('https://elfishawy-cafe-server.vercel.app/', {
+              const healthUrl = process.env.ELECTRON_TEST_MODE === 'true'
+                ? `${process.env.ELECTRON_TEST_API_URL}/`
+                : 'https://elfishawy-cafe-server.vercel.app/';
+              const res = await fetch(healthUrl, {
                 method: 'GET',
                 signal: AbortSignal.timeout(3000),
               }).catch(() => null);

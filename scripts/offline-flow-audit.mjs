@@ -381,11 +381,12 @@ const sameNameCreate = createOfflineInventoryItem(fixDb, {
   totalCost: 60,
 }, enqueueFix);
 assert(
-  'creating an item with an existing name becomes a restock (no duplicate card)',
-  sameNameCreate.success && sameNameCreate.existing === true &&
+  'creating an item with an existing name is rejected without changing stock or creating a purchase',
+  sameNameCreate.success === false && sameNameCreate.existing === true &&
   sc(`SELECT COUNT(*) FROM inventory`) === 1 &&
-  sc(`SELECT quantity FROM inventory WHERE _id = ?`, [serverZeroItemId]) === 25 &&
-  sc(`SELECT COUNT(*) FROM expenses WHERE category = 'inventory'`) === 2
+  sc(`SELECT quantity FROM inventory WHERE _id = ?`, [serverZeroItemId]) === 20 &&
+  sc(`SELECT COUNT(*) FROM expenses WHERE category = 'inventory'`) === 1 &&
+  sc(`SELECT COUNT(*) FROM sync_queue WHERE client_op_id = ?`, ['off_inv_duplicate_attempt']) === 0
 );
 
 // كاش السيرفر: الصنف بنفس client_inventory_id لازم يندمج في صف واحد (مفيش كارت مكرر)

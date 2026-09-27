@@ -4,7 +4,12 @@ import { decryptSensitiveString, computeOpHash } from './security.js';
 
 let isSyncing = false;
 let syncIntervalTimer = null;
-let apiBaseUrl = 'https://elfishawy-cafe-server.vercel.app';
+const testMode = process.env.ELECTRON_TEST_MODE === 'true';
+const testApiUrl = process.env.ELECTRON_TEST_API_URL || '';
+if (testMode && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(testApiUrl)) {
+  throw new Error('Electron test mode requires a localhost ELECTRON_TEST_API_URL');
+}
+let apiBaseUrl = testMode ? testApiUrl : 'https://elfishawy-cafe-server.vercel.app';
 let authToken = '';
 
 export function configureSync({ serverUrl, token }) {

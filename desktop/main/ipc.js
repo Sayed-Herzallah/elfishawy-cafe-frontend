@@ -324,7 +324,10 @@ export function setupIpcHandlers(mainWindow) {
   // Check connectivity
   ipcMain.handle('app:check-online', async () => {
     try {
-      const res = await fetch('https://elfishawy-cafe-server.vercel.app/', {
+      const healthUrl = process.env.ELECTRON_TEST_MODE === 'true'
+        ? `${process.env.ELECTRON_TEST_API_URL}/`
+        : 'https://elfishawy-cafe-server.vercel.app/';
+      const res = await fetch(healthUrl, {
         method: 'GET',
         signal: AbortSignal.timeout(4000),
       }).catch(() => null);
