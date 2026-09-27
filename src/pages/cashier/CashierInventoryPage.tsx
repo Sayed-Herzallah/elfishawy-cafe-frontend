@@ -43,6 +43,7 @@ export const CashierInventoryPage: React.FC = () => {
   // 🔑 معرّف ثابت لعملية الشراء — إعادة المحاولة/الدبل كليك ما تسجّلش قيد شراء تاني
   // (ولا ترفع رصيد الخام مرتين) لأن السيرفر يعتبر نفس clientExpenseId نفس العملية.
   const [purchaseOperationId, setPurchaseOperationId] = useState<string>('');
+  const [createOperationId, setCreateOperationId] = useState<string>('');
 
   // Add Item Form Data
   const [formData, setFormData] = useState({ name: '', quantity: '10', unit: 'KG', minLimit: '5', totalCost: '' });
@@ -100,6 +101,12 @@ export const CashierInventoryPage: React.FC = () => {
       setPurchaseOperationId(`off_exp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
     }
   }, [isPurchaseModalOpen]);
+
+  useEffect(() => {
+    if (isAddModalOpen) {
+      setCreateOperationId(`off_inv_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+    }
+  }, [isAddModalOpen]);
 
   /** استخراج اسم المورد من وصف قيد الشراء بصيغة [مورد: ...] — زي صفحة المشتريات */
   const parseSupplier = (desc: string): string => {
@@ -166,6 +173,7 @@ export const CashierInventoryPage: React.FC = () => {
         minLimit: Number(formData.minLimit) || 5,
         // ✅ الإجمالي بيتبعت للباك إند وهو بيحسب سعر تكلفة الوحدة (الإجمالي ÷ الكمية) ويسجل رصيد افتتاحي في المشتريات
         totalCost: formData.totalCost ? Number(formData.totalCost) : undefined,
+        clientInventoryId: createOperationId || undefined,
       });
 
       if (res.success) {
@@ -174,14 +182,14 @@ export const CashierInventoryPage: React.FC = () => {
           Boolean((res.data as any)?.sync_status === 'PENDING_SYNC');
 
         if (isOfflineResult) {
-          showToast('✅ تمت إضافة الصنف محلياً — سيتزامن مع قاعدة البيانات عند عودة الإنترنت', 'info');
+          showToast('تم حفظ الصنف على هذا الجهاز مؤقتاً — راجع حالة المزامنة قبل الاعتماد عليه على أجهزة أخرى', 'info');
         } else {
           showToast('تمت إضافة صنف المخزون بنجاح');
         }
         setIsAddModalOpen(false);
         setFormData({ name: '', quantity: '10', unit: 'KG', minLimit: '5', totalCost: '' });
         // ✅ دائماً نحدّث القائمة — refetch تشمل الأوفلاين من SQLite
-        refetch();
+        await refetch();
       } else {
         showToast(res.message || 'تعذّرت إضافة الصنف — حاول مرة أخرى', 'error');
       }
@@ -189,11 +197,11 @@ export const CashierInventoryPage: React.FC = () => {
       const msg = String(err?.message || '');
       // ✅ وضع أوفلاين في الديسكتوب: الخطأ بيجي من IPC أو شبكة — نعرض رسالة ونعيد الفرز من SQLite
       if (msg.includes('محلياً') || msg.toLowerCase().includes('local') || msg.toLowerCase().includes('offline')) {
-        showToast('✅ تمت إضافة الصنف محلياً — سيتزامن مع قاعدة البيانات عند عودة الإنترنت', 'info');
+        showToast('تم حفظ الصنف على هذا الجهاز مؤقتاً — راجع حالة المزامنة قبل الاعتماد عليه على أجهزة أخرى', 'info');
         setIsAddModalOpen(false);
         setFormData({ name: '', quantity: '10', unit: 'KG', minLimit: '5', totalCost: '' });
         // ✅ refetch بعد الأوفلاين يجيب القائمة من SQLite (تشمل الصنف الجديد)
-        refetch();
+        await refetch();
       } else {
         showError(err);
       }

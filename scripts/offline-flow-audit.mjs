@@ -21,7 +21,7 @@ import { cacheServerInventoryItem } from '../desktop/main/inventoryCache.js';
 const displayOrderNumber = (order) => {
   const syncStatus = String(order?.syncStatus ?? order?.sync_status ?? '').toUpperCase();
   const isPending = syncStatus === 'PENDING_SYNC';
-  if (isPending) {
+  if (isPending || !/^\d{1,6}$/.test(String(order?.orderNumber ?? order?.order_number ?? '').trim())) {
     const provisional = String(order?.provisionalNumber ?? order?.provisional_number ?? '').trim();
     if (/^\d{1,6}$/.test(provisional)) return `مؤقت ${provisional}`;
     return '—';
@@ -80,6 +80,16 @@ assert(
     orderNumber: '27',
     provisionalNumber: '2',
   }) === '27'
+);
+
+assert(
+  'large valid sequential server invoice numbers are not hidden',
+  displayOrderNumber({ syncStatus: 'SYNCED', orderNumber: '1114', provisionalNumber: '2' }) === '1114'
+);
+
+assert(
+  'missing server invoice number falls back to an explicitly provisional number',
+  displayOrderNumber({ syncStatus: 'SYNCED', orderNumber: '', provisionalNumber: '1' }) === 'مؤقت 1'
 );
 
 assert(
@@ -392,6 +402,14 @@ assert(
 // كاش السيرفر: الصنف بنفس client_inventory_id لازم يندمج في صف واحد (مفيش كارت مكرر)
 const cacheDb = new SQL.Database();
 cacheDb.run(`
+  CREATE TABLE orders (
+    _id TEXT PRIMARY KEY, order_number TEXT, items TEXT NOT NULL, total_amount REAL NOT NULL,
+    sync_status TEXT DEFAULT 'SYNCED', client_order_id TEXT, created_at TEXT
+  );
+  CREATE TABLE sync_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, client_op_id TEXT UNIQUE NOT NULL, entity_type TEXT NOT NULL,
+    action TEXT NOT NULL, payload TEXT NOT NULL, status TEXT DEFAULT 'PENDING'
+  );
   CREATE TABLE inventory (
     _id TEXT PRIMARY KEY, name TEXT NOT NULL, quantity REAL NOT NULL, unit TEXT NOT NULL,
     min_limit REAL DEFAULT 5, cost_price REAL DEFAULT 0, last_restock_total_cost REAL DEFAULT 0,
@@ -434,6 +452,18 @@ assert(
     clientInventoryId: 'off_inv_pending',
   }) === false &&
   cacheCount(`SELECT quantity FROM inventory WHERE _id = 'off_inv_pending'`) === 7
+);
+
+cacheDb.run(`INSERT INTO inventory (_id, name, quantity, unit, min_limit, sync_status) VALUES (?, ?, ?, ?, ?, 'SYNCED')`,
+  ['off_inv_local_sale', 'Locally sold material', 8, 'KG', 1]);
+cacheDb.run(`INSERT INTO orders (_id, order_number, items, total_amount, sync_status, client_order_id, created_at) VALUES (?, NULL, ?, ?, 'PENDING_SYNC', ?, ?)`,
+  ['off_order_local_sale', JSON.stringify([{ product: { _id: 'audit-product' } }]), 10, 'off_order_local_sale', new Date().toISOString()]);
+cacheDb.run(`INSERT INTO sync_queue (client_op_id, entity_type, action, payload, status) VALUES (?, 'order', 'CREATE', ?, 'PENDING')`,
+  ['off_order_local_sale', JSON.stringify({ items: [{ product: { _id: 'audit-product' } }] })]);
+assert(
+  'server inventory cache does not overwrite stock while a local sale is pending',
+  cacheServerInventoryItem(cacheDb, { _id: 'off_inv_local_sale', name: 'Locally sold material', quantity: 10, unit: 'KG', minLimit: 1 }) === false &&
+  cacheCount(`SELECT quantity FROM inventory WHERE _id = 'off_inv_local_sale'`) === 8
 );
 
 if (failed > 0) {

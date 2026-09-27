@@ -441,9 +441,9 @@ export const AdminExpensesPage: React.FC = () => {
 
   // 📊 كل الإحصائيات بتتحسب من النتائج المفلترة المعروضة فعلاً — مش من كل السجلات
   const shownTotal = filteredExpenses.reduce((s, e) => s + e.amount, 0);
-  const todayKey = new Date().toDateString();
+  const todayKey = getBusinessDayKey();
   const shownTodayTotal = expenses
-    .filter((e) => new Date(e.date || e.createdAt).toDateString() === todayKey)
+    .filter((e) => getBusinessDayKey(e.date || e.createdAt || '') === todayKey)
     .reduce((s, e) => s + e.amount, 0);
   const shownUnits = filteredExpenses.reduce((s, e) => s + (e.inventoryQuantityAdded || 0), 0);
 

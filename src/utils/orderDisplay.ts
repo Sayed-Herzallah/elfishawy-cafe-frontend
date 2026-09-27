@@ -281,7 +281,9 @@ export const displayOrderNumber = (order: any): string => {
   const isPending = syncStatus === 'PENDING_SYNC';
 
   // فاتورة لم تُزامن بعد: الرقم المؤقت فقط — لا نعرض order_number حتى لو بقي من بيانات قديمة
-  if (isPending) {
+  const rawOrderNumber = String(order?.orderNumber ?? order?.order_number ?? '').trim();
+  const validFinalNumber = /^\d{1,6}$/.test(rawOrderNumber);
+  if (isPending || !validFinalNumber) {
     const provisional = String(
       order?.provisionalNumber ?? order?.provisional_number ?? ''
     ).trim();
@@ -291,15 +293,13 @@ export const displayOrderNumber = (order: any): string => {
     return 'قيد الترقيم';
   }
 
-  const raw = String(order?.orderNumber ?? order?.order_number ?? '').trim();
+  const raw = rawOrderNumber;
   if (raw) {
     const cleaned = raw.replace(/^OFF-/i, '').trim();
     // بيانات قديمة: clientOrderId مخزّن خطأً كـ order_number — نتجاهله
     if (cleaned.startsWith('off_')) {
       // no orderNumber available, fall through to provisional fallback
-    } else if (/^\d{1,3}$/.test(cleaned) && Number(cleaned) <= 999) {
-      // الأرقام الرسمية محدودة بما يصدره العداد اليومي الحالي؛ القيم القديمة
-      // الشاذة (مثل 1114) لا تُعرض كرقم فاتورة صالح.
+    } else if (/^\d{1,6}$/.test(cleaned)) {
       return cleaned;
     } else if (cleaned.startsWith('tmp_')) {
       // إزالة بادئة tmp_ لو وُجدت من بيانات قديمة

@@ -23,6 +23,20 @@ export function cacheServerInventoryItem(db, inv) {
 
   const clientInventoryId = inv.clientInventoryId || inv.client_inventory_id || '';
 
+  // A sale may have been applied locally before its order reached MongoDB.
+  // Do not overwrite that stock deduction with the older server snapshot.
+  const linkedPendingOrder = db.exec(
+    `SELECT 1 FROM orders o
+     JOIN sync_queue q ON q.client_op_id = o.client_order_id
+     WHERE o.sync_status = 'PENDING_SYNC'
+       AND q.entity_type = 'order'
+       AND q.status IN ('PENDING', 'FAILED')
+       AND (o.items LIKE '%' || ? || '%' OR o.items LIKE '%' || ? || '%')
+     LIMIT 1`,
+    [String(inv._id), String(clientInventoryId)]
+  );
+  if (linkedPendingOrder.length && linkedPendingOrder[0].values.length) return false;
+
   // 1) الصنف عنده عملية محلية معلّقة → نحترم الرصيد المحلي ولا نكتب فوقه
   const pendingItem = db.exec(
     `SELECT 1 FROM inventory

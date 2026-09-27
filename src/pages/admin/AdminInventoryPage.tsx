@@ -236,12 +236,18 @@ export const AdminInventoryPage: React.FC = () => {
       });
 
       if (res.success) {
-        showToast('تمت إضافة صنف المخزون بنجاح');
+        const pendingSync = String((res.data as any)?.syncStatus || (res.data as any)?.sync_status || '').toUpperCase() === 'PENDING_SYNC';
+        showToast(
+          pendingSync
+            ? 'تم حفظ الصنف محلياً مؤقتاً — سيظهر على المنصة بعد اكتمال المزامنة'
+            : 'تمت إضافة صنف المخزون ومزامنته بنجاح',
+          pendingSync ? 'info' : 'success'
+        );
         setIsAddModalOpen(false);
         setIsFormSubmitted(false);
         setFormErrors({});
         setFormData({ name: '', quantity: '10', unit: 'KG', minLimit: '5', totalCost: '' });
-        loadInventory();
+        await loadInventory();
       }
     } catch (err) {
       showError(err);

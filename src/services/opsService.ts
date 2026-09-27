@@ -4,6 +4,7 @@ import { offlineStore } from './data/offlineStore';
 import { mergeOrderLists } from '../utils/orderDisplay';
 import { saveOrdersSnapshot, readOrdersSnapshot } from '../utils/ordersCache';
 import { isStockLow } from '../utils/stockStatus';
+import { getBusinessDayKey } from '../utils/businessDay';
 import {
   findServerExpenseByClientId,
   findServerInventoryByClientId,
@@ -16,6 +17,48 @@ const ORDERS_FETCH_TIMEOUT_MS = 8000;
 const isPendingSync = (row: any): boolean => {
   const status = String(row?.syncStatus || row?.sync_status || '').toUpperCase();
   return status === 'PENDING_SYNC' || status === 'PENDING';
+};
+
+const isInvoiceNumber = (value: unknown): boolean => /^\d{1,6}$/.test(String(value ?? '').trim());
+const localInventoryDraftKey = 'ef_inventory_pending_drafts';
+
+const syncBrowserInventoryDrafts = async (): Promise<void> => {
+  if (offlineStore.isDesktop() || typeof localStorage === 'undefined' || !(await offlineStore.isOnline())) return;
+  let drafts: any[];
+  try {
+    const raw = localStorage.getItem(localInventoryDraftKey);
+    drafts = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(drafts) || drafts.length === 0) return;
+  } catch {
+    return;
+  }
+
+  const remaining: any[] = [];
+  for (const draft of drafts) {
+    try {
+      const res = await ApiClient.request<InventoryItem>('/inventory', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: draft.name,
+          quantity: draft.quantity,
+          unit: draft.unit,
+          minLimit: draft.minLimit,
+          totalCost: draft.totalCost,
+          clientInventoryId: draft.clientInventoryId,
+        }),
+      });
+      if (!res.success || !res.data) throw new Error('Inventory draft sync was not confirmed');
+      const rawCache = localStorage.getItem('ef_inventory_cache');
+      const cache = rawCache ? JSON.parse(rawCache) : [];
+      localStorage.setItem('ef_inventory_cache', JSON.stringify(mergeInventoryLists([res.data], Array.isArray(cache) ? cache : [])));
+    } catch {
+      remaining.push(draft);
+    }
+  }
+  try {
+    if (remaining.length) localStorage.setItem(localInventoryDraftKey, JSON.stringify(remaining));
+    else localStorage.removeItem(localInventoryDraftKey);
+  } catch { /* best effort */ }
 };
 
 /** دمج قائمة السيرفر مع صفوف محلية معلقة فقط (تجنّب تكرار الفواتير المُزامَنة) */
@@ -277,7 +320,16 @@ export const orderService = {
         signal: AbortSignal.timeout(CREATE_ORDER_TIMEOUT_MS),
       });
       if (res.success && res.data) {
-        saveOrdersSnapshot([res.data]);
+        if (isInvoiceNumber(res.data.orderNumber)) {
+          saveOrdersSnapshot([res.data]);
+          return res;
+        }
+        const reconciled = await findServerOrderByClientId(clientOrderId);
+        if (reconciled && isInvoiceNumber(reconciled.orderNumber)) {
+          saveOrdersSnapshot([reconciled]);
+          return { ...res, data: reconciled };
+        }
+        throw new Error('لم يؤكد السيرفر رقم فاتورة صالحاً. تحقّق من سجل الطلبات قبل تكرار البيع.');
       }
       return res;
     } catch (networkErr: any) {
@@ -333,22 +385,21 @@ export const inventoryService = {
     if (params?.search) query.append('search', params.search);
     if (params?.lowStock !== undefined) query.append('lowStock', String(params.lowStock));
     const qs = query.toString();
+    if (!qs) await syncBrowserInventoryDrafts();
 
     // 1) فحص وضع عدم الاتصال في الديسكتوب — عودة فورية من SQLite بدون انتظار timeout
     if (offlineStore.isDesktop()) {
       const isOnline = await offlineStore.isOnline();
       if (!isOnline) {
         let cached = await offlineStore.getCachedInventory();
-        if (cached && cached.length > 0) {
-          if (params?.search) {
-            const q = params.search.toLowerCase();
-            cached = cached.filter((i: any) => i.name?.toLowerCase().includes(q));
-          }
-          if (params?.lowStock) {
-            cached = cached.filter((i: any) => isStockLow(i.quantity, i.minLimit));
-          }
-          return { success: true, message: 'Loaded from local offline database', data: cached };
+        if (params?.search) {
+          const q = params.search.toLowerCase();
+          cached = cached.filter((i: any) => i.name?.toLowerCase().includes(q));
         }
+        if (params?.lowStock) {
+          cached = cached.filter((i: any) => isStockLow(i.quantity, i.minLimit));
+        }
+        return { success: true, message: 'Loaded from local offline database', data: cached };
       }
     }
 
@@ -356,7 +407,14 @@ export const inventoryService = {
       const res = await ApiClient.request<InventoryItem[]>(`/inventory${qs ? `?${qs}` : ''}`, { method: 'GET' });
       if (res.success && Array.isArray(res.data) && !qs) {
         if (!offlineStore.isDesktop()) {
-          try { localStorage.setItem('ef_inventory_cache', JSON.stringify(res.data)); } catch { /* تجاهل */ }
+          try {
+            const raw = localStorage.getItem('ef_inventory_cache');
+            const cached = raw ? JSON.parse(raw) : [];
+            const pending = Array.isArray(cached)
+              ? cached.filter((item: any) => String(item.syncStatus || '').toUpperCase() === 'PENDING_SYNC')
+              : [];
+            localStorage.setItem('ef_inventory_cache', JSON.stringify(mergeInventoryLists(res.data, pending)));
+          } catch { /* تجاهل */ }
         }
         await offlineStore.cacheEntities('inventory', res.data);
         if (offlineStore.isDesktop()) {
@@ -487,11 +545,54 @@ export const inventoryService = {
       }
     }
 
+    // Browser offline mode: keep the new item visible and retryable in a local draft.
+    if (!(await offlineStore.isOnline())) {
+      const pending: InventoryItem = {
+        _id: clientInventoryId,
+        clientInventoryId,
+        name: String(serverBody.name || '').trim(),
+        quantity: Number(serverBody.quantity) || 0,
+        unit: String(serverBody.unit || 'KG'),
+        minLimit: Number(serverBody.minLimit) || 5,
+        costPrice: Number(serverBody.quantity) > 0
+          ? Number(((Number(serverBody.totalCost) || 0) / Number(serverBody.quantity)).toFixed(2))
+          : Number((serverBody as any).costPrice) || 0,
+        syncStatus: 'PENDING_SYNC',
+        isOffline: true,
+      } as InventoryItem;
+      try {
+        const raw = localStorage.getItem('ef_inventory_cache');
+        const cached = raw ? JSON.parse(raw) : [];
+        const merged = mergeInventoryLists(Array.isArray(cached) ? cached : [], [pending]);
+        localStorage.setItem('ef_inventory_cache', JSON.stringify(merged));
+        const rawDrafts = localStorage.getItem(localInventoryDraftKey);
+        const drafts = rawDrafts ? JSON.parse(rawDrafts) : [];
+        const safeDrafts = Array.isArray(drafts) ? drafts : [];
+        if (!safeDrafts.some((draft: any) => draft.clientInventoryId === clientInventoryId)) {
+          safeDrafts.push({ ...serverBody, clientInventoryId });
+        }
+        localStorage.setItem(localInventoryDraftKey, JSON.stringify(safeDrafts));
+      } catch { /* storage is best-effort */ }
+      return {
+        success: true,
+        message: 'تم حفظ الصنف في هذا المتصفح محلياً، وسيتطلب اتصالاً لإرساله إلى الخادم',
+        data: pending,
+      };
+    }
+
     try {
-      return await ApiClient.request<InventoryItem>('/inventory', {
+      const res = await ApiClient.request<InventoryItem>('/inventory', {
         method: 'POST',
         body: JSON.stringify({ ...serverBody, clientInventoryId }),
       });
+      if (res.success && res.data) {
+        try {
+          const raw = localStorage.getItem('ef_inventory_cache');
+          const cached = raw ? JSON.parse(raw) : [];
+          localStorage.setItem('ef_inventory_cache', JSON.stringify(mergeInventoryLists([res.data], Array.isArray(cached) ? cached : [])));
+        } catch { /* cache is best-effort */ }
+      }
+      return res;
     } catch (networkErr) {
       const reconciled = await findServerInventoryByClientId(clientInventoryId);
       if (reconciled) {
@@ -596,9 +697,14 @@ export const expenseService = {
         const filtered = params?.category
           ? localExpenses.filter((e: any) => e.category === params.category)
           : localExpenses;
-        return { success: true, message: 'Loaded from local offline database', data: filtered };
+        const merged = params?.searchDate
+          ? filtered.filter((e: any) => getBusinessDayKey(String(e.date || e.createdAt || '')) === getBusinessDayKey(params.searchDate!))
+          : filtered;
+        return { success: true, message: 'Loaded from local offline database', data: merged };
       }
     }
+
+    if (!offlineStore.isDesktop()) await syncBrowserInventoryDrafts();
 
     try {
       const res = await ApiClient.request<Expense[]>(`/expenses${qs ? `?${qs}` : ''}`, { method: 'GET' });
