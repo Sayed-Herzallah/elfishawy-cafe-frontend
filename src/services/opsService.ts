@@ -5,6 +5,7 @@ import { mergeOrderLists } from '../utils/orderDisplay';
 import { saveOrdersSnapshot, readOrdersSnapshot } from '../utils/ordersCache';
 import { isStockLow } from '../utils/stockStatus';
 import { getBusinessDayKey } from '../utils/businessDay';
+import { dedupeExpenseRows } from '../utils/localMerge';
 import {
   findServerExpenseByClientId,
   findServerInventoryByClientId,
@@ -112,22 +113,7 @@ const mergeInventoryLists = (serverRows: InventoryItem[] = [], localRows: any[] 
 };
 
 const mergeExpenseLists = (serverRows: Expense[] = [], localRows: any[] = []): Expense[] => {
-  const byKey = new Map<string, Expense>();
-  const keyOf = (row: any) =>
-    String(row?.clientExpenseId || row?.client_expense_id || row?._id || '');
-
-  for (const row of serverRows) {
-    const key = keyOf(row);
-    if (key) byKey.set(key, row);
-  }
-  for (const row of localRows) {
-    const key = keyOf(row);
-    if (!key) continue;
-    if (!byKey.has(key)) {
-      byKey.set(key, row as Expense);
-    }
-  }
-  return Array.from(byKey.values()).sort(
+  return dedupeExpenseRows([...serverRows, ...localRows]).sort(
     (a, b) =>
       new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime()
   );
@@ -296,6 +282,36 @@ export const orderService = {
 
       if (localPrepared && !isOnline) {
         return finishLocalPending('تم حفظ الطلب محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت');
+      }
+
+      // Desktop orders are already committed to SQLite and the durable sync
+      // queue by the POS before this service is called. Never POST them again
+      // from the renderer: the queue is the single network writer for this ID.
+      // This closes the race where IPC starts queue sync while the renderer
+      // concurrently sends the same sale to /orders.
+      if (localPrepared) {
+        try {
+          await offlineStore.triggerSync();
+          const [localOrder, serverOrders] = await Promise.all([
+            offlineStore.getLocalOrderByClientId(clientOrderId),
+            orderService.getOrders(),
+          ]);
+          const confirmed = serverOrders.data?.find((order: any) =>
+            String(order?.clientOrderId || order?.client_order_id || '') === clientOrderId
+          );
+          if (confirmed) return applyServerOrder(confirmed);
+          if (localOrder) {
+            saveOrdersSnapshot([localOrder]);
+            return {
+              success: true,
+              message: 'تم حفظ الطلب محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت',
+              data: localOrder as Order,
+            };
+          }
+          return { success: false, message: 'لم يتم العثور على الفاتورة المحلية بعد المزامنة' };
+        } catch {
+          return finishLocalPending('تم حفظ الطلب محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت');
+        }
       }
 
       const CREATE_ORDER_TIMEOUT_MS = 20000;
@@ -729,20 +745,23 @@ export const expenseService = {
     try {
       const res = await ApiClient.request<Expense[]>(`/expenses${qs ? `?${qs}` : ''}`, { method: 'GET' });
       if (res.success && Array.isArray(res.data)) {
+        // رقم فاتورة الشراء هو الهوية النهائية؛ منع تكرار استجابة السيرفر
+        // يجعل الويب والديسكتوب والإحصائيات تستخدم نفس مجموعة القيود.
+        const serverRows = dedupeExpenseRows(res.data);
         // ✅ كاش المتصفح: حفظ القائمة في localStorage لاستخدامها أوفلاين
         if (!qs && !offlineStore.isDesktop()) {
-          try { localStorage.setItem('ef_expenses_cache', JSON.stringify(res.data)); } catch { /* تجاهل */ }
+          try { localStorage.setItem('ef_expenses_cache', JSON.stringify(serverRows)); } catch { /* تجاهل */ }
         }
         if (offlineStore.isDesktop()) {
           // ✅ await: يضمن حفظ كل فواتير السيرفر في SQLite قبل أي انقطاع للشبكة
-          await offlineStore.cacheEntities('expenses', res.data);
+          await offlineStore.cacheEntities('expenses', serverRows);
           if (!qs) {
             const localExpenses = await offlineStore.getOfflineExpenses();
             // Only add pending operations that have not arrived from the server.
             // A local row already represented by either its server id or client id
             // must not inflate the purchases count after reconciliation.
             const serverIds = new Set<string>();
-            for (const expense of res.data as any[]) {
+            for (const expense of serverRows as any[]) {
               const serverId = String(expense?._id || '');
               const clientId = String(expense?.clientExpenseId || expense?.client_expense_id || '');
               if (serverId) serverIds.add(serverId);
@@ -754,10 +773,11 @@ export const expenseService = {
               const localId = String(expense?._id || '');
               return status === 'PENDING_SYNC' && !serverIds.has(clientId) && !serverIds.has(localId);
             });
-            const merged = mergeExpenseLists(res.data, pendingOnly);
+            const merged = mergeExpenseLists(serverRows, pendingOnly);
             return { ...res, data: merged };
           }
         }
+        return { ...res, data: serverRows };
       }
       return res;
     } catch (err) {

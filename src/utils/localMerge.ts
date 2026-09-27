@@ -63,9 +63,20 @@ export const dedupeInventoryRows = <T extends Record<string, any>>(rows: T[]): T
  *   تفضل ظاهرة كما هي → (11 من السيرفر + 1 معلّقة = 12)، وبعد المزامنة 12 بس.
  */
 export const dedupeExpenseRows = <T extends Record<string, any>>(rows: T[]): T[] => {
-  const byKey = new Map<string, T>();
-  const identityToKey = new Map<string, string>();
-  (rows || []).forEach((row, index) => {
+  const input = rows || [];
+  const parent = input.map((_, index) => index);
+  const find = (index: number): number => {
+    if (parent[index] !== index) parent[index] = find(parent[index]);
+    return parent[index];
+  };
+  const union = (left: number, right: number) => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot !== rightRoot) parent[rightRoot] = leftRoot;
+  };
+  const identityToIndex = new Map<string, number>();
+
+  input.forEach((row, index) => {
     const clientId = String(row?.clientExpenseId || row?.client_expense_id || '').trim();
     const purchaseNumber = String(row?.purchaseNumber || row?.purchase_number || '').trim();
     const id = String(row?._id || '').trim();
@@ -74,22 +85,26 @@ export const dedupeExpenseRows = <T extends Record<string, any>>(rows: T[]): T[]
       purchaseNumber && `purchase:${purchaseNumber}`,
       id && `id:${id}`,
     ].filter(Boolean) as string[];
-    const key = identities.map((identity) => identityToKey.get(identity)).find(Boolean) || `__expense_${index}`;
-    const prev = byKey.get(key);
-    if (!prev) {
-      byKey.set(key, row);
-    } else {
-      const prevPending = isPendingSyncRow(prev);
-      const rowPending = isPendingSyncRow(row);
-      // الصف المُزامن هو المرجع لأي عملية وصلت السيرفر
-      if (prevPending && !rowPending) {
-        byKey.set(key, { ...prev, ...row });
-      } else if (!(rowPending && !prevPending)) {
-        // الاتنين بنفس الحالة: نفضّل صف السيرفر (المعرّف النهائي)
-        byKey.set(key, isServerObjectId(row?._id) && !isServerObjectId(prev?._id) ? { ...prev, ...row } : { ...row, ...prev });
-      }
+    for (const identity of identities) {
+      const previous = identityToIndex.get(identity);
+      if (previous !== undefined) union(index, previous);
+      else identityToIndex.set(identity, index);
     }
-    for (const identity of identities) identityToKey.set(identity, key);
   });
-  return Array.from(byKey.values());
+
+  const byRoot = new Map<number, T>();
+  input.forEach((row, index) => {
+    const root = find(index);
+    const previous = byRoot.get(root);
+    if (!previous) {
+      byRoot.set(root, row);
+      return;
+    }
+    const previousPending = isPendingSyncRow(previous);
+    const rowPending = isPendingSyncRow(row);
+    const rowIsPreferred = (previousPending && !rowPending) ||
+      (previousPending === rowPending && isServerObjectId(row?._id) && !isServerObjectId(previous?._id));
+    byRoot.set(root, rowIsPreferred ? { ...previous, ...row } : { ...row, ...previous });
+  });
+  return Array.from(byRoot.values());
 };

@@ -274,7 +274,19 @@ export const CashierPOSPage: React.FC = () => {
     // ⚡ التحديث التلقائي الفوري عند اكتمال أي مزامنة أو سحب فواتير جديدة من السيرفر (Desktop)
     const cleanupDataSync = window.electronAPI?.onDataUpdated?.((_data) => {
       orderService.getOrders().then((res) => {
-        if (res.success && res.data) applyOrders(res.data);
+        if (res.success && res.data) {
+          applyOrders(res.data);
+          const lookup = buildProductLookup(productsRef.current);
+          setSelectedReceiptOrder((selected) => {
+            if (!selected) return selected;
+            const selectedClientId = String((selected as any).clientOrderId || (selected as any).client_order_id || '');
+            if (!selectedClientId) return selected;
+            const confirmed = mergeOrderLists(res.data || [], []).find((order: any) =>
+              String(order?.clientOrderId || order?.client_order_id || '') === selectedClientId
+            );
+            return confirmed ? normalizeOrder(confirmed, lookup) as Order : selected;
+          });
+        }
       }).catch(() => {});
       productService.listProducts().then((res) => {
         if (res.success && res.data) applyProducts(res.data);

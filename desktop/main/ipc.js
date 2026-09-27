@@ -521,8 +521,9 @@ export function setupIpcHandlers(mainWindow) {
 
       saveDatabase();
 
-      // Trigger background sync attempt
-      setTimeout(() => processSyncQueue(mainWindow), 100);
+      // POS starts one explicit sync after the local commit. Starting the queue
+      // here as well raced its request against the renderer's online POST and
+      // could create two server invoices for one checkout on older deployments.
 
       return {
         success: true,
