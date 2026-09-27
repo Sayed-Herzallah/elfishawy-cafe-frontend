@@ -280,10 +280,17 @@ export const CashierPOSPage: React.FC = () => {
         if (res.success && res.data) applyProducts(res.data);
       }).catch(() => {});
     });
+    const refreshProductsAfterOfflineInventorySync = () => {
+      productService.listProducts().then((res) => {
+        if (res.success && res.data) applyProducts(res.data);
+      }).catch(() => {});
+    };
+    window.addEventListener('ef:inventory-draft-synced', refreshProductsAfterOfflineInventorySync);
 
     return () => {
       clearInterval(interval);
       if (cleanupDataSync) cleanupDataSync();
+      window.removeEventListener('ef:inventory-draft-synced', refreshProductsAfterOfflineInventorySync);
     };
   }, []);
 

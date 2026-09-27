@@ -22,18 +22,19 @@ const isPendingSync = (row: any): boolean => {
 const isInvoiceNumber = (value: unknown): boolean => /^\d{1,6}$/.test(String(value ?? '').trim());
 const localInventoryDraftKey = 'ef_inventory_pending_drafts';
 
-const syncBrowserInventoryDrafts = async (): Promise<void> => {
-  if (offlineStore.isDesktop() || typeof localStorage === 'undefined' || !(await offlineStore.isOnline())) return;
+const syncBrowserInventoryDrafts = async (): Promise<number> => {
+  if (offlineStore.isDesktop() || typeof localStorage === 'undefined' || !(await offlineStore.isOnline())) return 0;
   let drafts: any[];
   try {
     const raw = localStorage.getItem(localInventoryDraftKey);
     drafts = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(drafts) || drafts.length === 0) return;
+    if (!Array.isArray(drafts) || drafts.length === 0) return 0;
   } catch {
-    return;
+    return 0;
   }
 
   const remaining: any[] = [];
+  let syncedCount = 0;
   for (const draft of drafts) {
     try {
       const res = await ApiClient.request<InventoryItem>('/inventory', {
@@ -50,7 +51,13 @@ const syncBrowserInventoryDrafts = async (): Promise<void> => {
       if (!res.success || !res.data) throw new Error('Inventory draft sync was not confirmed');
       const rawCache = localStorage.getItem('ef_inventory_cache');
       const cache = rawCache ? JSON.parse(rawCache) : [];
-      localStorage.setItem('ef_inventory_cache', JSON.stringify(mergeInventoryLists([res.data], Array.isArray(cache) ? cache : [])));
+      const clientId = String(draft.clientInventoryId || '').trim();
+      const withoutDraftAlias = (Array.isArray(cache) ? cache : []).filter((item: any) =>
+        String(item?.clientInventoryId || item?.client_inventory_id || '') !== clientId &&
+        String(item?._id || '') !== clientId
+      );
+      localStorage.setItem('ef_inventory_cache', JSON.stringify(mergeInventoryLists([res.data], withoutDraftAlias)));
+      syncedCount += 1;
     } catch {
       remaining.push(draft);
     }
@@ -59,7 +66,20 @@ const syncBrowserInventoryDrafts = async (): Promise<void> => {
     if (remaining.length) localStorage.setItem(localInventoryDraftKey, JSON.stringify(remaining));
     else localStorage.removeItem(localInventoryDraftKey);
   } catch { /* best effort */ }
+  if (syncedCount > 0 && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('ef:inventory-draft-synced', { detail: { count: syncedCount } }));
+  }
+  return syncedCount;
 };
+
+// Browser drafts used to wait until the inventory screen was opened again.
+// Retry immediately when connectivity returns, even if the user stays on POS.
+if (typeof window !== 'undefined' && !(window as any).__efInventoryDraftSyncBound) {
+  (window as any).__efInventoryDraftSyncBound = true;
+  window.addEventListener('online', () => {
+    void syncBrowserInventoryDrafts();
+  });
+}
 
 /** دمج قائمة السيرفر مع صفوف محلية معلقة فقط (تجنّب تكرار الفواتير المُزامَنة) */
 const mergeServerWithLocalPending = <T extends { _id?: string; clientOrderId?: string; client_order_id?: string }>(

@@ -166,10 +166,29 @@ export const AdminInventoryPage: React.FC = () => {
 
   // 🔄 تحديث تلقائي فوري عند اكتمال أي مزامنة/سحب بيانات من السيرفر (Desktop) — بدون F5
   useEffect(() => {
-    const cleanup = window.electronAPI?.onDataUpdated?.(() => {
+    const cleanup = window.electronAPI?.onDataUpdated?.((data) => {
       loadInventory();
+      if (data?.inventory) {
+        syncAllProductsStock().then((updatedCount) => {
+          if (updatedCount > 0) {
+            showToast(`تم تحديث توافر ${updatedCount} منتج مرتبط بالمخزون`, 'info');
+          }
+        }).catch(() => {});
+      }
     });
-    return () => { cleanup?.(); };
+    const handleBrowserDraftSync = () => {
+      loadInventory();
+      syncAllProductsStock().then((updatedCount) => {
+        if (updatedCount > 0) {
+          showToast(`تم تحديث توافر ${updatedCount} منتج مرتبط بالمخزون`, 'info');
+        }
+      }).catch(() => {});
+    };
+    window.addEventListener('ef:inventory-draft-synced', handleBrowserDraftSync);
+    return () => {
+      cleanup?.();
+      window.removeEventListener('ef:inventory-draft-synced', handleBrowserDraftSync);
+    };
   }, []);
 
   // 🔄 مزامنة أرصدة المنتجات مع المخزن عند فتح الصفحة —
@@ -248,6 +267,15 @@ export const AdminInventoryPage: React.FC = () => {
         setFormErrors({});
         setFormData({ name: '', quantity: '10', unit: 'KG', minLimit: '5', totalCost: '' });
         await loadInventory();
+        // After a confirmed online create, refresh recipe-derived product stock.
+        // Pending offline items are recalculated by the server when their queued
+        // inventory_create operation arrives, so don't publish stale local values.
+        if (!pendingSync) {
+          const updatedCount = await syncAllProductsStock().catch(() => 0);
+          if (updatedCount > 0) {
+            showToast(`تم تحديث توافر ${updatedCount} منتج مرتبط بالمخزون`, 'info');
+          }
+        }
       }
     } catch (err) {
       showError(err);
