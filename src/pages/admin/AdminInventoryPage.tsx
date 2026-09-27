@@ -15,6 +15,7 @@ import { ComparisonStatCard } from '../../components/ui/ComparisonStatCard';
 import { DateRangeFilter, DateRange, toLocalDateString } from '../../components/ui/DateRangeFilter';
 import { DashboardFilterBar } from '../../components/ui/DashboardFilterBar';
 import { Badge } from '../../components/ui/Badge';
+import { InventorySyncStatus } from '../../components/ui/InventorySyncStatus';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -704,6 +705,7 @@ export const AdminInventoryPage: React.FC = () => {
                            </div>
                            <div className="min-w-0">
                              <h4 className="font-bold text-gray-900 text-sm truncate">{item.name}</h4>
+                             <InventorySyncStatus syncStatus={item.syncStatus} sync_status={item.sync_status} className="mt-1" />
                              {latestRestockTimeByItem.get(item._id) ? (
                                <p className="text-[10px] text-gray-400 font-mono truncate">
                                  آخر توريد: {formatDate(new Date(latestRestockTimeByItem.get(item._id)!))}{restockerName ? ` • ${restockerName}` : ''}
@@ -864,6 +866,7 @@ export const AdminInventoryPage: React.FC = () => {
                           </td>
 
                           <td className="py-3.5 px-3">
+                            <InventorySyncStatus syncStatus={item.syncStatus} sync_status={item.sync_status} className="mb-1" />
                             <Badge
                               variant={isOut ? 'out' : isLow ? 'low' : 'available'}
                               size="sm"

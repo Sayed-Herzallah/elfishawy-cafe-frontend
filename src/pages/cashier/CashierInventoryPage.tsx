@@ -11,6 +11,7 @@ import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import { Select } from '../../components/ui/Select';
 import { Badge } from '../../components/ui/Badge';
+import { InventorySyncStatus } from '../../components/ui/InventorySyncStatus';
 import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
 import { StatCard } from '../../components/ui/StatCard';
 import { useInventorySync } from '../../hooks/useInventorySync';
@@ -571,6 +572,7 @@ export const CashierInventoryPage: React.FC = () => {
                       </div>
                       <div className="min-w-0">
                         <h4 className="font-bold text-gray-900 text-sm truncate">{item.name}</h4>
+                        <InventorySyncStatus syncStatus={item.syncStatus} sync_status={item.sync_status} className="mt-1" />
                         <p className="text-[10px] text-gray-400 font-mono truncate mt-0.5">
                           {latestRestockTimeByItem.get(item._id)
                             ? `آخر توريد: ${formatDate(new Date(latestRestockTimeByItem.get(item._id)!))}`
@@ -689,6 +691,7 @@ export const CashierInventoryPage: React.FC = () => {
                       </td>
 
                       <td className="py-3 px-3">
+                        <InventorySyncStatus syncStatus={item.syncStatus} sync_status={item.sync_status} className="mb-1" />
                         {isOut ? (
                           <Badge variant="out" size="sm">
                             نافد من المخزن

@@ -76,6 +76,9 @@ export interface InventoryItem {
   lastRestockedBy?: string | { _id: string; userName: string; email: string };
   createdAt?: string;
   updatedAt?: string;
+  /** Local desktop sync state; PENDING_SYNC remains visible until the server confirms the restock. */
+  syncStatus?: string;
+  sync_status?: string;
 }
 
 export type OrderStatus = 'pending' | 'completed' | 'cancelled';

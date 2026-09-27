@@ -487,6 +487,12 @@ export async function processSyncQueue(mainWindow) {
             })) {
               throw new Error('Server did not return the restock purchase ID for reconciliation');
             }
+            // The purchase confirmation is also the authoritative confirmation for this restock.
+            // Clear the inventory badge only after the server accepted the operation.
+            db.run(
+              `UPDATE inventory SET sync_status = 'SYNCED' WHERE _id = ? OR client_inventory_id = ?`,
+              [restockItemId, rawRestockItemId]
+            );
             success = true;
           } else {
             const err = new Error(data.message || `Server returned ${restockResponse.status} for restock`);
