@@ -288,11 +288,7 @@ export const displayOrderNumber = (order: any): string => {
     if (/^\d{1,6}$/.test(provisional)) {
       return `مؤقت ${provisional}`;
     }
-    const tableNumber = order?.tableNumber ?? order?.table_number;
-    if (tableNumber !== undefined && tableNumber !== null && String(tableNumber).trim() !== '') {
-      return `ط${String(tableNumber).trim()}`;
-    }
-    return '—';
+    return 'قيد الترقيم';
   }
 
   const raw = String(order?.orderNumber ?? order?.order_number ?? '').trim();
@@ -301,13 +297,14 @@ export const displayOrderNumber = (order: any): string => {
     // بيانات قديمة: clientOrderId مخزّن خطأً كـ order_number — نتجاهله
     if (cleaned.startsWith('off_')) {
       // no orderNumber available, fall through to provisional fallback
-    } else if (cleaned && !cleaned.startsWith('tmp_')) {
-      // إذا كان الرقم تسلسلياً نقياً نرجعه بالكامل دون اقتطاع
+    } else if (/^\d{1,3}$/.test(cleaned) && Number(cleaned) <= 999) {
+      // الأرقام الرسمية محدودة بما يصدره العداد اليومي الحالي؛ القيم القديمة
+      // الشاذة (مثل 1114) لا تُعرض كرقم فاتورة صالح.
       return cleaned;
     } else if (cleaned.startsWith('tmp_')) {
       // إزالة بادئة tmp_ لو وُجدت من بيانات قديمة
       const numOnly = cleaned.replace(/\D/g, '');
-      if (numOnly) return numOnly;
+      if (/^\d{1,3}$/.test(numOnly) && Number(numOnly) <= 999) return numOnly;
     }
   }
 
@@ -319,11 +316,6 @@ export const displayOrderNumber = (order: any): string => {
     return `مؤقت ${provisional}`;
   }
 
-  // إذا لم يتوفر orderNumber إطلاقاً، نستخدم رقم الطاولة كمرجع واضح بدل تشويه الأرقام بـ Mongo _id
-  const tableNumber = order?.tableNumber ?? order?.table_number;
-  if (tableNumber !== undefined && tableNumber !== null && String(tableNumber).trim() !== '') {
-    return `ط${String(tableNumber).trim()}`;
-  }
-
-  return '—';
+  // لا نعرض رقم الطاولة على أنه رقم فاتورة عند غياب رقم صالح أو provisional id.
+  return 'قيد الترقيم';
 };

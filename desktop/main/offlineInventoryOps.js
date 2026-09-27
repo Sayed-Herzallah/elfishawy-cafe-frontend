@@ -120,10 +120,9 @@ export function createOfflineInventoryItem(db, itemData, enqueue) {
     const name = String(itemData.name || '').trim();
     const unit = String(itemData.unit || 'KG');
 
-    // ♻️ منع تكرار الأصناف: لو فيه صنف بنفس الاسم في المخزن المحلي (جاي من السيرفر أو
-    // أنشأه الديسكتوب أوفلاين) فالمطلوب توريد مش إنشاء. الإنشاء القديم كان بيعمل صف
-    // تاني بنفس الاسم → كارت مكرر في المخزن، والسيرفر بيرفضه بعد المزامنة
-    // (409: الاسم موجود) فيفضل صف محلي PENDING_SYNC للأبد ومش بيظهر قيد شراء في المشتريات.
+    // Do not infer inventory identity from a name. Restocking must use the
+    // selected item's stable server/local id; otherwise a typo/case collision
+    // could silently increase a different item's stock.
     const sameNameRow = rows(
         db,
         'SELECT * FROM inventory WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1',
@@ -131,30 +130,12 @@ export function createOfflineInventoryItem(db, itemData, enqueue) {
     )[0];
 
     if (sameNameRow) {
-        if (quantity <= 0) {
-            return {
-                success: true,
-                queued: false,
-                existing: true,
-                message: 'الصنف موجود بالفعل في المخزن — مفيش إنشاء جديد',
-                data: inventoryRowPayload(sameNameRow),
-            };
-        }
-        const restock = restockOfflineInventory(db, {
-            id: sameNameRow._id,
-            // معرّف ثابت مبني على عملية الإنشاء → إعادة المحاولة ما تزوّدش الكمية مرتين
-            clientRestockId: `${clientInventoryId}:existing`,
-            quantity,
-            totalCost,
-            costPrice,
-            date: now,
-            addedBy: itemData.addedBy,
-            description: `توريد مخزون: ${sameNameRow.name} - كمية: ${quantity} ${sameNameRow.unit}`,
-        }, enqueue);
         return {
-            ...restock,
+            success: false,
+            queued: false,
             existing: true,
-            message: 'الصنف موجود بالفعل في المخزن — تمت إضافة الكمية كتوريد على نفس الصنف',
+            message: 'الصنف موجود بالفعل. اختر الصنف الموجود وسجّل توريدًا بمعرّفه بدل إنشاء صنف بالاسم نفسه.',
+            data: inventoryRowPayload(sameNameRow),
         };
     }
 
