@@ -197,7 +197,10 @@ export function createOfflineExpense(db, expenseData, enqueue) {
         return { success: true, queued, data: expensePayload(existing) };
     }
 
+    // Business date may be backdated by the cashier. Keep a separate actual
+    // creation timestamp so a new offline purchase can be shown at the top.
     const now = expenseData.date || new Date().toISOString();
+    const createdAt = new Date().toISOString();
     const amount = Number(expenseData.amount) || 0;
     const totalCost = Number(expenseData.totalCost ?? amount) || 0;
     const quantity = Number(expenseData.inventoryQuantityAdded) || 0;
@@ -208,7 +211,7 @@ export function createOfflineExpense(db, expenseData, enqueue) {
         db.run(`
       INSERT INTO expenses (_id, description, amount, category, inventory_item_linked, inventory_quantity_added, unit_cost, date, added_by, sync_status, client_expense_id, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING_SYNC', ?, ?)
-    `, [clientExpenseId, expenseData.description, amount, category, expenseData.inventoryItemLinked || null, quantity || null, unitCost, now, expenseData.addedBy || '', clientExpenseId, now]);
+    `, [clientExpenseId, expenseData.description, amount, category, expenseData.inventoryItemLinked || null, quantity || null, unitCost, now, expenseData.addedBy || '', clientExpenseId, createdAt]);
 
         if (category === 'inventory' && expenseData.inventoryItemLinked) {
             db.run(`
@@ -228,7 +231,7 @@ export function createOfflineExpense(db, expenseData, enqueue) {
             entityType: 'expense',
             action: 'CREATE',
             payload: { ...expenseData, clientExpenseId },
-            createdAt: now,
+            createdAt,
         });
     });
 
@@ -335,6 +338,7 @@ export function restockOfflineInventory(db, restockData, enqueue) {
     const totalCost = Number(restockData.totalCost ?? ((Number(restockData.costPrice) || 0) * quantity)) || 0;
     const unitCost = quantity > 0 ? Number((totalCost / quantity).toFixed(2)) : Number(restockData.costPrice) || 0;
     const now = restockData.date || new Date().toISOString();
+    const createdAt = new Date().toISOString();
     const description = restockData.description || `توريد مخزون: ${item.name} - كمية: ${quantity} ${item.unit}`;
 
     transaction(db, () => {
@@ -352,14 +356,14 @@ export function restockOfflineInventory(db, restockData, enqueue) {
         db.run(`
       INSERT INTO expenses (_id, description, amount, category, inventory_item_linked, inventory_quantity_added, unit_cost, date, added_by, sync_status, client_expense_id, created_at)
       VALUES (?, ?, ?, 'inventory', ?, ?, ?, ?, ?, 'PENDING_SYNC', ?, ?)
-    `, [clientRestockId, description, totalCost, localRowId, quantity, unitCost, now, restockData.addedBy || '', clientRestockId, now]);
+    `, [clientRestockId, description, totalCost, localRowId, quantity, unitCost, now, restockData.addedBy || '', clientRestockId, createdAt]);
 
         enqueue({
             clientOpId: clientRestockId,
             entityType: 'inventory_restock',
             action: 'UPDATE',
             payload: { ...restockData, id: localRowId, totalCost, clientRestockId },
-            createdAt: now,
+          createdAt,
         });
     });
 

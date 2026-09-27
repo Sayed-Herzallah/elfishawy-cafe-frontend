@@ -438,8 +438,11 @@ export const AdminExpensesPage: React.FC = () => {
 
     return matchesCategory && matchesDate && matchesSearch;
   }).sort((a, b) => {
-    const timeA = new Date(a.date || a.createdAt || 0).getTime() || 0;
-    const timeB = new Date(b.date || b.createdAt || 0).getTime() || 0;
+    const pendingA = String((a as any).syncStatus || (a as any).sync_status || '').toUpperCase() === 'PENDING_SYNC';
+    const pendingB = String((b as any).syncStatus || (b as any).sync_status || '').toUpperCase() === 'PENDING_SYNC';
+    if (pendingA !== pendingB) return pendingA ? -1 : 1;
+    const timeA = new Date(pendingA ? a.createdAt || a.date || 0 : a.date || a.createdAt || 0).getTime() || 0;
+    const timeB = new Date(pendingB ? b.createdAt || b.date || 0 : b.date || b.createdAt || 0).getTime() || 0;
     return timeB - timeA;
   });
 
