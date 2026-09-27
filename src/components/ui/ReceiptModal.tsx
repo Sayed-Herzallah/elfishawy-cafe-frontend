@@ -396,7 +396,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ order, isOpen, onClo
       // ===== Desktop (Electron): طباعة صامتة إلى جميع طابعات الكاشير المخصصة بدون Windows Dialog =====
       if (isElectron && (window as any).electronAPI?.silentPrint) {
         // 1. جلب الطابعات المخصصة لهذا الجهاز
-        const targetPrinters = getConfiguredCashierPrinters();
+        const targetPrinters = Array.from(new Set(getConfiguredCashierPrinters()));
 
         // فحص الطابعات المتاحة فعلياً على ويندوز
         let sysPrinters: CashierPrinterInfo[] = availablePrinters;

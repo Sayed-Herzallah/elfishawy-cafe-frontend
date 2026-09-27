@@ -4,8 +4,6 @@ import { decryptSensitiveString, computeOpHash } from './security.js';
 
 let isSyncing = false;
 let syncIntervalTimer = null;
-let isSyncCycleRunning = false;
-let forcePullRequested = false;
 let lastServerPullAt = 0;
 const SERVER_PULL_INTERVAL_MS = 15_000;
 const testMode = process.env.ELECTRON_TEST_MODE === 'true';
@@ -280,6 +278,9 @@ export async function processSyncQueue(mainWindow) {
   isSyncing = true;
 
   try {
+    const token = getAuthToken();
+    if (!token) return { success: false, message: 'No authenticated session' };
+
     const db = getDb();
     const res = db.exec(`
       SELECT id, client_op_id, entity_type, action, payload, attempts, sequence_id, prev_hash, op_hash
@@ -293,7 +294,6 @@ export async function processSyncQueue(mainWindow) {
       return { success: true, count: 0 };
     }
 
-    const token = getAuthToken();
     const rows = res[0].values;
     let syncedCount = 0;
     const syncedEntities = new Set();
@@ -597,6 +597,9 @@ let isPulling = false;
 export async function pullServerUpdates(mainWindow) {
   if (isPulling) return;
   isPulling = true;
+  // Start the interval from request launch, so a slow server pull cannot keep
+  // the one-second coordinator trying to launch another full snapshot.
+  lastServerPullAt = Date.now();
   try {
     const token = getAuthToken();
     if (!token) return;
@@ -824,28 +827,21 @@ export async function pullServerUpdates(mainWindow) {
 
 /** One coordinator for timer, login, reconnect and manual sync requests. */
 export async function runSyncCycle(mainWindow, { forcePull = false } = {}) {
-  if (isSyncCycleRunning) {
-    if (forcePull) forcePullRequested = true;
-    return { success: false, message: 'Sync cycle already in progress' };
-  }
-  isSyncCycleRunning = true;
-  try {
-    forcePull = forcePull || forcePullRequested;
-    forcePullRequested = false;
-    if (!getAuthToken()) return { success: false, message: 'No authenticated session' };
-    const health = await fetch(`${apiBaseUrl}/`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(3000),
-    }).catch(() => null);
-    if (!health?.ok) return { success: false, message: 'Server unavailable' };
+  if (!getAuthToken()) return { success: false, message: 'No authenticated session' };
 
-    const upload = await processSyncQueue(mainWindow);
-    const pullIsDue = forcePull || Date.now() - lastServerPullAt >= SERVER_PULL_INTERVAL_MS;
-    if (pullIsDue) await pullServerUpdates(mainWindow);
-    return upload;
-  } finally {
-    isSyncCycleRunning = false;
+  // Push local business operations first. The authenticated POST is the actual
+  // connectivity check; do not gate it on a separate root health request.
+  const upload = await processSyncQueue(mainWindow);
+
+  // Pulling six full resources is slower and independent from uploading. Run
+  // it in the background so it can never hold up local invoices/purchases.
+  const pullIsDue = forcePull || Date.now() - lastServerPullAt >= SERVER_PULL_INTERVAL_MS;
+  if (pullIsDue && !isPulling) {
+    void pullServerUpdates(mainWindow).catch((err) => {
+      console.warn('[Sync] Background pull failed:', err?.message || err);
+    });
   }
+  return upload;
 }
 
 export function startBackgroundSync(mainWindow, intervalMs = 1000) {

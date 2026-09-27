@@ -119,7 +119,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         if (loggedInUser && typeof window !== 'undefined' && window.electronAPI?.cacheUserCredentials) {
           window.electronAPI.cacheUserCredentials(loggedInUser, password, res.tokens.accessToken).catch(() => {});
           if (window.electronAPI?.setAuthToken) {
-            window.electronAPI.setAuthToken(res.tokens.accessToken).catch(() => {});
+            window.electronAPI.setAuthToken(res.tokens.accessToken)
+              .then(() => window.electronAPI?.triggerSync?.())
+              .catch(() => {});
           }
         }
 

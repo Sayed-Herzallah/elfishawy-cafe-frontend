@@ -340,13 +340,6 @@ export function setupIpcHandlers(mainWindow) {
   // Set Auth Token for Sync
   ipcMain.handle('auth:set-token', async (_event, token) => {
     configureSync({ token });
-    if (token) {
-      // Force the initial authenticated upload/pull through the same guarded
-      // coordinator used by the timer and manual Sync.
-      setTimeout(() => void runSyncCycle(mainWindow, { forcePull: true }).catch((err) => {
-        console.warn('[Sync] Initial authenticated cycle failed:', err?.message || err);
-      }), 0);
-    }
     return { success: true };
   });
 
@@ -855,9 +848,14 @@ export function setupIpcHandlers(mainWindow) {
                 {
                   silent: true,
                   printBackground: true,
-                  printerName: printerName || undefined,
+                  // Electron expects the system printer name as `deviceName`.
+                  // `printerName` is ignored and can silently route the job to
+                  // the default printer instead of the selected cashier printer.
+                  deviceName: printerName || undefined,
                   margins: { marginType: 'none' },
-                  pageSize: 'A4', // سيُستبدل بـ @page في CSS الفاتورة
+                  // Use the selected printer's configured roll/page size. Forcing
+                  // A4 here clips/scales a 72mm thermal receipt into blank scraps.
+                  usePrinterDefaultPageSize: true,
                 },
                 (success, reason) => {
                   cleanup();
