@@ -348,6 +348,10 @@ export const CashierInventoryPage: React.FC = () => {
     if (filterMode === 'low') return matchesSearch && isStockLow(item.quantity, item.minLimit);
     if (filterMode === 'out') return matchesSearch && isStockOut(item.quantity);
     return matchesSearch;
+  }).sort((a, b) => {
+    const timeA = new Date(a.lastRestocked || a.updatedAt || a.createdAt || 0).getTime() || 0;
+    const timeB = new Date(b.lastRestocked || b.updatedAt || b.createdAt || 0).getTime() || 0;
+    return timeB - timeA;
   });
 
   return (

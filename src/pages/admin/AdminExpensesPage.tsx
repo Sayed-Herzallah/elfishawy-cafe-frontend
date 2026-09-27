@@ -437,6 +437,10 @@ export const AdminExpensesPage: React.FC = () => {
       String(e.amount).includes(q);
 
     return matchesCategory && matchesDate && matchesSearch;
+  }).sort((a, b) => {
+    const timeA = new Date(a.date || a.createdAt || 0).getTime() || 0;
+    const timeB = new Date(b.date || b.createdAt || 0).getTime() || 0;
+    return timeB - timeA;
   });
 
   // 📊 كل الإحصائيات بتتحسب من النتائج المفلترة المعروضة فعلاً — مش من كل السجلات

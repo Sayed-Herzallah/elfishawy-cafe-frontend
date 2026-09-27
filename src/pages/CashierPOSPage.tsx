@@ -54,7 +54,7 @@ export const CashierPOSPage: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   // ✅ فلتر حالة التوفر — الكاشير يشوف المنخفض والنافذ بضغطة واحدة
-  const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out'>('all');
+  const [stockFilter, setStockFilter] = useState<'all' | 'low' | 'out' | 'available'>('all');
   const [cart, setCart] = useState<CartItem[]>([]);
   const [tableNumber, setTableNumber] = useState<string>('');
   // ✅ Validation أحمر لرقم الطاولة — الحقل يظهر بخطأ واضح لما يتأكد الطلب وهو فاضي
@@ -601,11 +601,12 @@ export const CashierPOSPage: React.FC = () => {
       searchQuery.trim() === '' ||
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (p.description || '').toLowerCase().includes(searchQuery.toLowerCase());
-    // ✅ فلتر حالة التوفر: نافذ / منخفض / الكل
+    // ✅ فلتر حالة التوفر: متوفر / نافذ / منخفض / الكل
     const matchesStock =
       stockFilter === 'all' ||
       (stockFilter === 'out' && productStockState(p) === 'out') ||
-      (stockFilter === 'low' && productStockState(p) === 'low');
+      (stockFilter === 'low' && productStockState(p) === 'low') ||
+      (stockFilter === 'available' && productStockState(p) === 'available');
     return matchesCat && matchesSearch && matchesStock;
   });
 
@@ -950,9 +951,23 @@ export const CashierPOSPage: React.FC = () => {
                     });
                 const lowCount = scopedProducts.filter((p) => productStockState(p) === 'low').length;
                 const outCount = scopedProducts.filter((p) => productStockState(p) === 'out').length;
+                const availableCount = scopedProducts.filter((p) => productStockState(p) === 'available').length;
 
                 return (
                   <>
+                    <button
+                      onClick={() => setStockFilter(stockFilter === 'available' ? 'all' : 'available')}
+                      className={`inline-flex items-center gap-1 py-1.5 px-3 rounded-xl font-bold whitespace-nowrap transition cursor-pointer border ${
+                        stockFilter === 'available'
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                      }`}
+                      title={stockFilter === 'available' ? 'إلغاء التحديد — إظهار الكل' : 'إظهار المنتجات المتوفرة فقط'}
+                    >
+                      <CheckCircle2 className="w-3 h-3" />
+                      متوفر ({availableCount})
+                    </button>
+
                     <button
                       onClick={() => setStockFilter(stockFilter === 'low' ? 'all' : 'low')}
                       className={`inline-flex items-center gap-1 py-1.5 px-3 rounded-xl font-bold whitespace-nowrap transition cursor-pointer border ${

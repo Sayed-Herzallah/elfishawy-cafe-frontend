@@ -478,6 +478,10 @@ export const AdminInventoryPage: React.FC = () => {
     if (filterMode === 'low') return isStockLow(item.quantity, item.minLimit);
     if (filterMode === 'out') return isStockOut(item.quantity);
     return true;
+  }).sort((a, b) => {
+    const timeA = new Date(a.lastRestocked || a.updatedAt || a.createdAt || 0).getTime() || 0;
+    const timeB = new Date(b.lastRestocked || b.updatedAt || b.createdAt || 0).getTime() || 0;
+    return timeB - timeA;
   });
 
   // 📊 كل الإحصائيات بتتحسب من النتائج المعروضة بعد الفلترة — مش من كل الأصناف
