@@ -73,6 +73,8 @@ export const CashierExpensesPage: React.FC = () => {
   const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   const contentRef = useRef<HTMLDivElement>(null);
+  // 🔑 معرّف ثابت لعملية الشراء — نفس الفاتورة ممنوع تتسجل مرتين عند إعادة المحاولة
+  const purchaseOperationIdRef = useRef<string>('');
 
   const [formData, setFormData] = useState({
     description: '',
@@ -122,6 +124,13 @@ export const CashierExpensesPage: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  // 🔑 توليد معرّف العملية مرة واحدة عند فتح مودال تسجيل الشراء
+  useEffect(() => {
+    if (isAddModalOpen) {
+      purchaseOperationIdRef.current = `off_exp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    }
+  }, [isAddModalOpen]);
 
   // 🔄 تحديث تلقائي فوري عند اكتمال المزامنة أو سحب مصروفات جديدة من السيرفر (Desktop)
   useEffect(() => {
@@ -196,6 +205,8 @@ export const CashierExpensesPage: React.FC = () => {
         totalCost: Number(formData.amount),
         unitCost: purchaseUnitCost,
         date: formData.date ? new Date(formData.date).toISOString() : new Date().toISOString(),
+        // 🔑 هوية ثابتة للعملية — إعادة المحاولة تعدّل نفس القيد بدل إنشاء قيد جديد
+        clientExpenseId: purchaseOperationIdRef.current || undefined,
       });
 
       if (res.success) {

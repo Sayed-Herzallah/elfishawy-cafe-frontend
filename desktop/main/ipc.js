@@ -2,6 +2,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { getDb, saveDatabase, getMasterKey } from './db.js';
 import { cacheServerExpense, processSyncQueue, configureSync, pullServerUpdates, reconcileOrderWithServer } from './sync.js';
+import { cacheServerInventoryItem } from './inventoryCache.js';
 import { frontendUpdater } from './frontendUpdater.js';
 import { encryptSensitiveString, decryptSensitiveString, computeOpHash } from './security.js';
 import {
@@ -654,41 +655,9 @@ export function setupIpcHandlers(mainWindow) {
         }
       } else if (entityType === 'inventory') {
         for (const inv of records) {
-          if (!inv || !inv._id) continue;
-          const localClientId = inv.clientInventoryId || inv.client_inventory_id || '';
-          const pendingItem = db.exec(
-            `SELECT 1 FROM inventory
-             WHERE IFNULL(sync_status, 'SYNCED') = 'PENDING_SYNC'
-               AND (_id = ? OR (client_inventory_id IS NOT NULL AND client_inventory_id != '' AND client_inventory_id = ?))
-             LIMIT 1`,
-            [inv._id, localClientId]
-          );
-          if (pendingItem.length && pendingItem[0].values.length) continue;
-
-          db.run(`
-            INSERT INTO inventory (_id, name, quantity, unit, min_limit, cost_price, last_restock_total_cost, last_restocked, updated_at, sync_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED')
-            ON CONFLICT(_id) DO UPDATE SET
-              name = excluded.name,
-              quantity = excluded.quantity,
-              unit = excluded.unit,
-              min_limit = excluded.min_limit,
-              cost_price = excluded.cost_price,
-              last_restock_total_cost = excluded.last_restock_total_cost,
-              last_restocked = excluded.last_restocked,
-              updated_at = excluded.updated_at
-            WHERE IFNULL(inventory.sync_status, 'SYNCED') != 'PENDING_SYNC'
-          `, [
-            inv._id,
-            inv.name,
-            inv.quantity,
-            inv.unit,
-            inv.minLimit,
-            inv.costPrice || 0,
-            inv.lastRestockTotalCost || 0,
-            inv.lastRestocked || '',
-            inv.updatedAt || new Date().toISOString()
-          ]);
+          // صف واحد لكل صنف (منع الكارت/الرصيد المكرر) + احترام العمليات
+          // المحلية المعلّقة — كل التفاصيل في desktop/main/inventoryCache.js
+          cacheServerInventoryItem(db, inv);
         }
       } else if (entityType === 'recipes') {
         for (const r of records) {

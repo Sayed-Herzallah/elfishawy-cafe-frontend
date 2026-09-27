@@ -16,6 +16,7 @@ import {
   reconcileRestockExpenseWithServer,
   resolveServerInventoryId,
 } from '../desktop/main/sync.js';
+import { cacheServerInventoryItem } from '../desktop/main/inventoryCache.js';
 
 const displayOrderNumber = (order) => {
   const syncStatus = String(order?.syncStatus ?? order?.sync_status ?? '').toUpperCase();
@@ -313,6 +314,125 @@ try {
 assert(
   'inventory row rolls back when queue insertion fails',
   createFailed && Number(rollbackDb.exec(`SELECT COUNT(*) FROM inventory`)[0].values[0][0]) === 0
+);
+
+// ════════════════════════════════════════════════════════════════════
+// سيناريوهات الإصلاح: التوريد أوفلاين برصيد صفر + معرّف الواجهة المؤقت،
+// منع تكرار الأصناف بالاسم، ودمج صف المخزن المؤقت مع صف السيرفر.
+// ════════════════════════════════════════════════════════════════════
+const fixDb = new SQL.Database();
+fixDb.run(`
+  CREATE TABLE inventory (
+    _id TEXT PRIMARY KEY, name TEXT NOT NULL, quantity REAL NOT NULL, unit TEXT NOT NULL,
+    min_limit REAL DEFAULT 5, cost_price REAL DEFAULT 0, last_restock_total_cost REAL DEFAULT 0,
+    last_restocked TEXT, sync_status TEXT DEFAULT 'SYNCED', client_inventory_id TEXT UNIQUE, updated_at TEXT
+  );
+  CREATE TABLE expenses (
+    _id TEXT PRIMARY KEY, description TEXT NOT NULL, amount REAL NOT NULL, category TEXT NOT NULL,
+    inventory_item_linked TEXT, inventory_quantity_added REAL, unit_cost REAL, date TEXT, added_by TEXT,
+    sync_status TEXT DEFAULT 'SYNCED', client_expense_id TEXT UNIQUE, purchase_number TEXT UNIQUE, created_at TEXT
+  );
+  CREATE TABLE sync_queue (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, client_op_id TEXT UNIQUE NOT NULL, entity_type TEXT NOT NULL,
+    action TEXT NOT NULL, payload TEXT NOT NULL, status TEXT DEFAULT 'PENDING', attempts INTEGER DEFAULT 0,
+    last_error TEXT, created_at TEXT, synced_at TEXT
+  );
+`);
+const sc = (sql, params = []) => Number(fixDb.exec(sql, params)?.[0]?.values?.[0]?.[0] || 0);
+const enqueueFix = (operation) => fixDb.run(`
+  INSERT INTO sync_queue (client_op_id, entity_type, action, payload, status, created_at)
+  VALUES (?, ?, ?, ?, 'PENDING', ?)
+`, [operation.clientOpId, operation.entityType, operation.action, JSON.stringify(operation.payload), operation.createdAt]);
+
+// صنف موجود على السيرفر (معرّف Mongo) ورصيده صفر، والواجهة شايلة المعرّف المؤقت
+// القديم (off_inv_...) — الحالة اللي كان التوريد فيها "ينجح" من غير ما يحدّث أي صف.
+const serverZeroItemId = '5f1b2c3d4e5f60718293a4b5';
+fixDb.run(
+  `INSERT INTO inventory (_id, name, quantity, unit, min_limit, cost_price, sync_status, client_inventory_id)
+   VALUES (?, 'سكر أوفلاين', 0, 'KG', 5, 12, 'SYNCED', 'off_inv_legacy_sugar')`,
+  [serverZeroItemId]
+);
+
+const restockByProvisionalId = restockOfflineInventory(fixDb, {
+  id: 'off_inv_legacy_sugar',
+  clientRestockId: 'off_rstk_zero_1',
+  quantity: 20,
+  totalCost: 240,
+  date: '2026-09-26T09:00:00.000Z',
+}, enqueueFix);
+assert(
+  'offline restock with stale UI id updates the server-keyed row (0 → 20)',
+  restockByProvisionalId.success &&
+  sc(`SELECT quantity FROM inventory WHERE _id = ?`, [serverZeroItemId]) === 20 &&
+  sc(`SELECT COUNT(*) FROM inventory`) === 1
+);
+assert(
+  'offline restock ledger keeps the original business date and reaches the queue',
+  sc(`SELECT COUNT(*) FROM expenses WHERE client_expense_id = ? AND date = ?`, ['off_rstk_zero_1', '2026-09-26T09:00:00.000Z']) === 1 &&
+  sc(`SELECT COUNT(*) FROM sync_queue WHERE client_op_id = ?`, ['off_rstk_zero_1']) === 1
+);
+
+const sameNameCreate = createOfflineInventoryItem(fixDb, {
+  clientInventoryId: 'off_inv_duplicate_attempt',
+  name: 'سكر أوفلاين',
+  quantity: 5,
+  unit: 'KG',
+  minLimit: 5,
+  totalCost: 60,
+}, enqueueFix);
+assert(
+  'creating an item with an existing name becomes a restock (no duplicate card)',
+  sameNameCreate.success && sameNameCreate.existing === true &&
+  sc(`SELECT COUNT(*) FROM inventory`) === 1 &&
+  sc(`SELECT quantity FROM inventory WHERE _id = ?`, [serverZeroItemId]) === 25 &&
+  sc(`SELECT COUNT(*) FROM expenses WHERE category = 'inventory'`) === 2
+);
+
+// كاش السيرفر: الصنف بنفس client_inventory_id لازم يندمج في صف واحد (مفيش كارت مكرر)
+const cacheDb = new SQL.Database();
+cacheDb.run(`
+  CREATE TABLE inventory (
+    _id TEXT PRIMARY KEY, name TEXT NOT NULL, quantity REAL NOT NULL, unit TEXT NOT NULL,
+    min_limit REAL DEFAULT 5, cost_price REAL DEFAULT 0, last_restock_total_cost REAL DEFAULT 0,
+    last_restocked TEXT, sync_status TEXT DEFAULT 'SYNCED', client_inventory_id TEXT UNIQUE, updated_at TEXT
+  );
+`);
+const cacheCount = (sql, params = []) => Number(cacheDb.exec(sql, params)?.[0]?.values?.[0]?.[0] || 0);
+cacheDb.run(
+  `INSERT INTO inventory (_id, name, quantity, unit, min_limit, cost_price, sync_status, client_inventory_id)
+   VALUES ('off_inv_cached', 'بن أوفلاين', 10, 'KG', 5, 100, 'SYNCED', 'off_inv_cached')`
+);
+const cachedFinalId = 'aaaabbbbccccddddeeeeffff';
+assert(
+  'server inventory cache merges the provisional row into the final id (single row)',
+  cacheServerInventoryItem(cacheDb, {
+    _id: cachedFinalId,
+    name: 'بن أوفلاين',
+    quantity: 10,
+    unit: 'KG',
+    minLimit: 5,
+    costPrice: 100,
+    clientInventoryId: 'off_inv_cached',
+  }) &&
+  cacheCount(`SELECT COUNT(*) FROM inventory`) === 1 &&
+  cacheCount(`SELECT COUNT(*) FROM inventory WHERE _id = ? AND client_inventory_id = 'off_inv_cached'`, [cachedFinalId]) === 1
+);
+cacheDb.run(
+  `INSERT INTO inventory (_id, name, quantity, unit, min_limit, cost_price, sync_status, client_inventory_id)
+   VALUES ('off_inv_pending', 'حليب أوفلاين', 7, 'LITER', 5, 20, 'PENDING_SYNC', 'off_inv_pending')`
+);
+assert(
+  'server inventory cache never overwrites a locally pending item',
+  cacheServerInventoryItem(cacheDb, {
+    _id: '111122223333444455556666',
+    name: 'حليب أوفلاين',
+    quantity: 99,
+    unit: 'LITER',
+    minLimit: 5,
+    costPrice: 20,
+    clientInventoryId: 'off_inv_pending',
+  }) === false &&
+  cacheCount(`SELECT quantity FROM inventory WHERE _id = 'off_inv_pending'`) === 7
 );
 
 if (failed > 0) {

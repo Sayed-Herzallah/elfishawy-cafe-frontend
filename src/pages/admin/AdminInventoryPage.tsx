@@ -61,6 +61,10 @@ export const AdminInventoryPage: React.FC = () => {
   const [restockTotalCost, setRestockTotalCost] = useState('');
   const [isFormSubmitted, setIsFormSubmitted] = useState(false);
   const [isRestockSubmitted, setIsRestockSubmitted] = useState(false);
+  // 🔑 معرّفات العمليات — ثابتة طول فتحة المودال الواحدة:
+  // إعادة المحاولة/الدبل كليك ما تنشئش توريد أو صنف تاني بنفس العملية.
+  const [restockOperationId, setRestockOperationId] = useState<string>('');
+  const [createOperationId, setCreateOperationId] = useState<string>('');
 
   const [formData, setFormData] = useState({
     name: '',
@@ -146,6 +150,20 @@ export const AdminInventoryPage: React.FC = () => {
     loadInventory();
   }, []);
 
+  // 🔑 توليد معرّف عملية ثابت عند فتح مودال التوريد (يتغير مع كل فتحة جديدة فقط)
+  useEffect(() => {
+    if (isRestockModalOpen) {
+      setRestockOperationId(`off_rstk_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+    }
+  }, [isRestockModalOpen]);
+
+  // 🔑 معرّف ثابت لعملية إنشاء الصنف (نفس السبب: منع صنف مكرر من دبل كليك/إعادة المحاولة)
+  useEffect(() => {
+    if (isAddModalOpen) {
+      setCreateOperationId(`off_inv_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+    }
+  }, [isAddModalOpen]);
+
   // 🔄 تحديث تلقائي فوري عند اكتمال أي مزامنة/سحب بيانات من السيرفر (Desktop) — بدون F5
   useEffect(() => {
     const cleanup = window.electronAPI?.onDataUpdated?.(() => {
@@ -213,6 +231,8 @@ export const AdminInventoryPage: React.FC = () => {
         minLimit: Number(formData.minLimit) || 5,
         // ✅ الإجمالي بيتبعت للباك إند وهو بيحسب سعر تكلفة الوحدة (الإجمالي ÷ الكمية) ويسجل رصيد افتتاحي في المشتريات
         totalCost: totalNum,
+        // 🔑 معرّف ثابت: إعادة الإرسال/الدبل كليك ما تنشئش صنف تاني (والسيرفر idempotent بيه)
+        clientInventoryId: createOperationId || undefined,
       });
 
       if (res.success) {
@@ -265,7 +285,16 @@ export const AdminInventoryPage: React.FC = () => {
         oldQty > 0 && oldCost > 0
           ? Number(((oldQty * oldCost + newTotal) / (oldQty + qtyNum)).toFixed(2))
           : unitCost;
-      const res = await inventoryService.restockItem(selectedItem!._id, qtyNum, weightedCost);
+      // 4) التوريد نفسه: الكمية + متوسط سعر الوحدة المرجّح + **الإجمالي الفعلي للفاتورة**.
+      //    تمرير الإجمالي مهم: بدونه كان السيرفر (والديسكتوب أوفلاين) بيحسبوا القيد من
+      //    متوسط التكلفة × الكمية فتظهر مبالغ/أسعار مشتريات مش مطابقة للفاتورة الحقيقية.
+      const res = await inventoryService.restockItem(
+        selectedItem!._id,
+        qtyNum,
+        weightedCost,
+        newTotal,
+        restockOperationId || undefined
+      );
       if (res.success) {
         // 📓 تسجيل التوريد في اليومية المحلية باسم المستخدم — السيرفر مبيسجلش توريد المدير باسمه
         addRestockJournalEntry({

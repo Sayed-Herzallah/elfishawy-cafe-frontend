@@ -82,6 +82,8 @@ export const AdminExpensesPage: React.FC = () => {
   const [dateTo, setDateTo] = useState<string>('');
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  // 🔑 معرّف ثابت لعملية القيد — إعادة المحاولة أو الدبل كليك ما يسجّلوش مصروف مرتين
+  const [expenseOperationId, setExpenseOperationId] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [formErrors, setFormErrors] = useState<{ description?: string; amount?: string; inventoryQuantityAdded?: string }>({});
 
@@ -151,6 +153,13 @@ export const AdminExpensesPage: React.FC = () => {
     syncAllProductsStock().catch(() => {});
   }, []);
 
+  // 🔑 توليد معرّف العملية مرة واحدة عند فتح مودال تسجيل القيد
+  useEffect(() => {
+    if (isAddModalOpen) {
+      setExpenseOperationId(`off_exp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+    }
+  }, [isAddModalOpen]);
+
   // 🔄 تحديث تلقائي فوري عند اكتمال مزامنة الطابور أو سحب مصروفات جديدة (Desktop)
   useEffect(() => {
     const cleanup = window.electronAPI?.onDataUpdated?.(() => {
@@ -216,6 +225,8 @@ export const AdminExpensesPage: React.FC = () => {
         // إجمالي الفاتورة = المبلغ — الباك إند بيرفع سعر تكلفة الصنف منه
         totalCost: Number(formData.amount),
         date: formData.date ? new Date(formData.date).toISOString() : new Date().toISOString(),
+        // 🔑 هوية ثابتة للعملية — إعادة المحاولة تسجّل نفس القيد مش قيد جديد
+        clientExpenseId: expenseOperationId || undefined,
       });
 
       if (res.success) {

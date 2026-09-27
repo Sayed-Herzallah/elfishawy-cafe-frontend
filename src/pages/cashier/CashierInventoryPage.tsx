@@ -40,6 +40,9 @@ export const CashierInventoryPage: React.FC = () => {
   const [isPurchaseModalOpen, setIsPurchaseModalOpen] = useState<boolean>(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+  // 🔑 معرّف ثابت لعملية الشراء — إعادة المحاولة/الدبل كليك ما تسجّلش قيد شراء تاني
+  // (ولا ترفع رصيد الخام مرتين) لأن السيرفر يعتبر نفس clientExpenseId نفس العملية.
+  const [purchaseOperationId, setPurchaseOperationId] = useState<string>('');
 
   // Add Item Form Data
   const [formData, setFormData] = useState({ name: '', quantity: '10', unit: 'KG', minLimit: '5', totalCost: '' });
@@ -89,6 +92,14 @@ export const CashierInventoryPage: React.FC = () => {
     });
     return () => { cleanup?.(); };
   }, []);
+
+  // 🔑 معرّف ثابت لعملية الشراء: يتولّد مرة واحدة عند فتح مودال الشراء ويفضل ثابت
+  // طول الفتحة → إعادة الإرسال لا تنشئ قيد شراء ثاني ولا ترفع الرصيد مرتين.
+  useEffect(() => {
+    if (isPurchaseModalOpen) {
+      setPurchaseOperationId(`off_exp_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+    }
+  }, [isPurchaseModalOpen]);
 
   /** استخراج اسم المورد من وصف قيد الشراء بصيغة [مورد: ...] — زي صفحة المشتريات */
   const parseSupplier = (desc: string): string => {
@@ -255,6 +266,8 @@ export const CashierInventoryPage: React.FC = () => {
           totalCost: total,
           unitCost: qty > 0 ? Number((total / qty).toFixed(2)) : undefined,
           date: new Date().toISOString(),
+          // 🔑 هوية ثابتة للعملية (نفس المعرّف يُعاد استخدامه لو المستخدم أعاد المحاولة)
+          clientExpenseId: purchaseOperationId || undefined,
         });
 
       if (expRes.success) {

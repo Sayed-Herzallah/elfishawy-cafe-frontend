@@ -22,6 +22,34 @@ const transaction = (db, operation) => {
 
 const newId = (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2, 10)}`;
 
+/**
+ * البحث عن صنف في المخزن المحلي بالمعرّف النهائي (Mongo _id) أو بالمعرّف الأوفلاين
+ * (client_inventory_id). مهم جداً: الواجهة ممكن تكون شايلة معرّف مؤقت بينما الصف
+ * المحفوظ بالمعرّف النهائي (أو العكس) — والبحث بـ `_id` فقط كان بيرجّع "الصنف غير
+ * موجود" أو (في التوريد) مبيحدّثش أي صف أصلاً.
+ */
+const findInventoryRow = (db, id) =>
+    rows(
+        db,
+        'SELECT * FROM inventory WHERE _id = ? OR client_inventory_id = ? LIMIT 1',
+        [String(id || ''), String(id || '')]
+    )[0];
+
+/** تحويل صف المخزن المحلي لشكل واجهة البرمجة (نفس شكل صنف السيرفر) */
+const inventoryRowPayload = (item) => ({
+    _id: item._id,
+    clientInventoryId: item.client_inventory_id || item._id,
+    name: item.name,
+    quantity: Number(item.quantity) || 0,
+    unit: item.unit || 'KG',
+    minLimit: Number(item.min_limit) || 5,
+    costPrice: Number(item.cost_price) || 0,
+    lastRestockTotalCost: Number(item.last_restock_total_cost) || 0,
+    lastRestocked: item.last_restocked,
+    syncStatus: item.sync_status || 'SYNCED',
+    isOffline: (item.sync_status || 'SYNCED') === 'PENDING_SYNC',
+});
+
 const inventoryPayload = (item) => ({
     name: item.name,
     quantity: Number(item.quantity) || 0,
@@ -76,19 +104,7 @@ export function createOfflineInventoryItem(db, itemData, enqueue) {
         return {
             success: true,
             queued,
-            data: {
-                _id: existing._id,
-                clientInventoryId: existing.client_inventory_id || existing._id,
-                name: existing.name,
-                quantity: Number(existing.quantity) || 0,
-                unit: existing.unit || 'KG',
-                minLimit: Number(existing.min_limit) || 5,
-                costPrice: Number(existing.cost_price) || 0,
-                lastRestockTotalCost: Number(existing.last_restock_total_cost) || 0,
-                lastRestocked: existing.last_restocked,
-                syncStatus: existing.sync_status || 'SYNCED',
-                isOffline: pending,
-            },
+            data: inventoryRowPayload(existing),
         };
     }
 
@@ -103,6 +119,44 @@ export function createOfflineInventoryItem(db, itemData, enqueue) {
         : Number(itemData.costPrice) || 0;
     const name = String(itemData.name || '').trim();
     const unit = String(itemData.unit || 'KG');
+
+    // ♻️ منع تكرار الأصناف: لو فيه صنف بنفس الاسم في المخزن المحلي (جاي من السيرفر أو
+    // أنشأه الديسكتوب أوفلاين) فالمطلوب توريد مش إنشاء. الإنشاء القديم كان بيعمل صف
+    // تاني بنفس الاسم → كارت مكرر في المخزن، والسيرفر بيرفضه بعد المزامنة
+    // (409: الاسم موجود) فيفضل صف محلي PENDING_SYNC للأبد ومش بيظهر قيد شراء في المشتريات.
+    const sameNameRow = rows(
+        db,
+        'SELECT * FROM inventory WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1',
+        [name]
+    )[0];
+
+    if (sameNameRow) {
+        if (quantity <= 0) {
+            return {
+                success: true,
+                queued: false,
+                existing: true,
+                message: 'الصنف موجود بالفعل في المخزن — مفيش إنشاء جديد',
+                data: inventoryRowPayload(sameNameRow),
+            };
+        }
+        const restock = restockOfflineInventory(db, {
+            id: sameNameRow._id,
+            // معرّف ثابت مبني على عملية الإنشاء → إعادة المحاولة ما تزوّدش الكمية مرتين
+            clientRestockId: `${clientInventoryId}:existing`,
+            quantity,
+            totalCost,
+            costPrice,
+            date: now,
+            addedBy: itemData.addedBy,
+            description: `توريد مخزون: ${sameNameRow.name} - كمية: ${quantity} ${sameNameRow.unit}`,
+        }, enqueue);
+        return {
+            ...restock,
+            existing: true,
+            message: 'الصنف موجود بالفعل في المخزن — تمت إضافة الكمية كتوريد على نفس الصنف',
+        };
+    }
 
     transaction(db, () => {
         db.run(`
@@ -274,7 +328,7 @@ export function restockOfflineInventory(db, restockData, enqueue) {
     if (priorQueue) {
         let repairedLedger = false;
         if (['PENDING', 'FAILED'].includes(priorQueue.status)) {
-            const item = rows(db, 'SELECT * FROM inventory WHERE _id = ? LIMIT 1', [targetId])[0];
+            const item = findInventoryRow(db, targetId);
             if (item) {
                 const quantity = Number(restockData.quantity) || 0;
                 const totalCost = Number(restockData.totalCost ?? ((Number(restockData.costPrice) || 0) * quantity)) || 0;
@@ -283,15 +337,18 @@ export function restockOfflineInventory(db, restockData, enqueue) {
                 transaction(db, () => db.run(`
           INSERT INTO expenses (_id, description, amount, category, inventory_item_linked, inventory_quantity_added, unit_cost, date, added_by, sync_status, client_expense_id, created_at)
           VALUES (?, ?, ?, 'inventory', ?, ?, ?, ?, ?, 'PENDING_SYNC', ?, ?)
-        `, [clientRestockId, restockData.description || `توريد مخزون: ${item.name} - كمية: ${quantity} ${item.unit}`, totalCost, targetId, quantity, unitCost, now, restockData.addedBy || '', clientRestockId, now]));
+        `, [clientRestockId, restockData.description || `توريد مخزون: ${item.name} - كمية: ${quantity} ${item.unit}`, totalCost, item._id, quantity, unitCost, now, restockData.addedBy || '', clientRestockId, now]));
                 repairedLedger = true;
             }
         }
         return { success: true, duplicate: true, queued: repairedLedger, clientRestockId };
     }
 
-    const item = rows(db, 'SELECT * FROM inventory WHERE _id = ? LIMIT 1', [targetId])[0];
+    const item = findInventoryRow(db, targetId);
     if (!item) return { success: false, message: 'الصنف غير موجود في المخزن المحلي — حدّث البيانات مرة واحدة وهو متصل بالإنترنت' };
+    // الصف بيتحدّث بمعرّفه الحقيقي المحفوظ محلياً (مش بالمعرّف اللي جاي من الواجهة):
+    // الواجهة ممكن تكون شايلة المعرّف المؤقت بينما الصف محفوظ بالمعرّف النهائي أو العكس.
+    const localRowId = String(item._id);
 
     const quantity = Number(restockData.quantity) || 0;
     const totalCost = Number(restockData.totalCost ?? ((Number(restockData.costPrice) || 0) * quantity)) || 0;
@@ -309,18 +366,18 @@ export function restockOfflineInventory(db, restockData, enqueue) {
           updated_at = ?,
           sync_status = 'PENDING_SYNC'
       WHERE _id = ?
-    `, [quantity, unitCost, unitCost, totalCost, now, now, targetId]);
+    `, [quantity, unitCost, unitCost, totalCost, now, now, localRowId]);
 
         db.run(`
       INSERT INTO expenses (_id, description, amount, category, inventory_item_linked, inventory_quantity_added, unit_cost, date, added_by, sync_status, client_expense_id, created_at)
       VALUES (?, ?, ?, 'inventory', ?, ?, ?, ?, ?, 'PENDING_SYNC', ?, ?)
-    `, [clientRestockId, description, totalCost, targetId, quantity, unitCost, now, restockData.addedBy || '', clientRestockId, now]);
+    `, [clientRestockId, description, totalCost, localRowId, quantity, unitCost, now, restockData.addedBy || '', clientRestockId, now]);
 
         enqueue({
             clientOpId: clientRestockId,
             entityType: 'inventory_restock',
             action: 'UPDATE',
-            payload: { ...restockData, id: targetId, totalCost, clientRestockId },
+            payload: { ...restockData, id: localRowId, totalCost, clientRestockId },
             createdAt: now,
         });
     });
@@ -334,7 +391,7 @@ export function restockOfflineInventory(db, restockData, enqueue) {
             description,
             amount: totalCost,
             category: 'inventory',
-            inventoryItemLinked: targetId,
+            inventoryItemLinked: localRowId,
             inventoryQuantityAdded: quantity,
             unitCost,
             date: now,

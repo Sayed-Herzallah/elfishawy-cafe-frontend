@@ -6,6 +6,7 @@ import {
   normalizeCachedOrderRows,
   readOrdersSnapshot,
 } from '../../utils/ordersCache';
+import { dedupeExpenseRows, dedupeInventoryRows } from '../../utils/localMerge';
 
 export const isElectron = (): boolean => {
   return typeof window !== 'undefined' && !!window.electronAPI?.isElectron;
@@ -77,6 +78,11 @@ const writeOrdersToSqlite = async (records: any[]): Promise<void> => {
   }
 };
 
+/**
+ * 🧹 إزالة تكرار قيود المشتريات/المصروفات لنفس العملية.
+ * نفس العملية بصفّين (محلي مؤقت + صف السيرفر) → يُعرض صف السيرفر فقط،
+ * والأوفلاين المعلّق (ماوصلش السيرفر) يفضل ظاهر — التفاصيل في utils/localMerge.ts.
+ */
 export const offlineStore = {
   isDesktop: isElectron,
 
@@ -175,7 +181,7 @@ export const offlineStore = {
     if (!isElectron() || !window.electronAPI?.query) return [];
     try {
       const rows = await window.electronAPI.query(`SELECT * FROM inventory ORDER BY name ASC`);
-      return rows.map((r: any) => ({
+      const mapped = rows.map((r: any) => ({
         _id: r._id,
         name: r.name,
         quantity: r.quantity,
@@ -187,6 +193,8 @@ export const offlineStore = {
         syncStatus: r.sync_status || 'SYNCED',
         clientInventoryId: r.client_inventory_id || undefined,
       }));
+      // 🧹 نفس الصنف ممنوع يظهر مرتين (معرّف مؤقت + معرّف السيرفر) — كارت مكرر برصيد مختلف
+      return dedupeInventoryRows(mapped);
     } catch {
       return [];
     }
@@ -336,7 +344,8 @@ export const offlineStore = {
       }
     }
 
-    return rows;
+    // 🧹 قيد الشراء الواحد يُعرض مرة واحدة فقط (صف محلي مؤقت + صف السيرفر = سجل واحد)
+    return dedupeExpenseRows(rows);
   },
 
   // 3. OFFLINE INVENTORY RESTOCK

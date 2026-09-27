@@ -395,6 +395,9 @@ export async function processSyncQueue(mainWindow) {
               quantity: Number(payload.quantity) || 0,
               totalCost: payload.totalCost !== undefined ? Number(payload.totalCost) : undefined,
               costPrice: payload.costPrice !== undefined ? Number(payload.costPrice) : undefined,
+              // ⏱️ وقت التوريد الأصلي (يوم العملية) مش وقت وصول المزامنة — عشان قيد
+              // الشراء يتحسب في نفس اليوم التجاري على المنصة زي الديسكتوب.
+              date: payload.date || undefined,
               // معرّف العملية الأوفلاين — يمنع رفع الرصيد مرتين عند إعادة الإرسال
               clientRestockId: payload.clientRestockId || clientOpId,
             }),
