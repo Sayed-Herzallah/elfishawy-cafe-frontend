@@ -82,7 +82,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                   
                 </div>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  تقرير مالي منسق جاهز للطباعة المباشرة أو الحفظ كملف PDF
+                  ملخص منسق في صفحة واحدة جاهز للطباعة أو الحفظ كملف PDF
                 </p>
               </div>
             </div>

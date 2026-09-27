@@ -11,7 +11,7 @@ import { ExportModal } from '../../components/ui/ExportModal';
 import { DateRangeFilter, toLocalDateString } from '../../components/ui/DateRangeFilter';
 import { DashboardFilterBar } from '../../components/ui/DashboardFilterBar';
 import { StatCard } from '../../components/ui/StatCard';
-import { exportElementToPdf } from '../../utils/pdfExport';
+import { exportOnePageSummaryToPdf } from '../../utils/pdfExport';
 import { buildCsv, downloadCsv } from '../../utils/csvExport';
 import { formatPrice, formatNumber, formatDate, formatTime, formatStat } from '../../utils/formatters';
 import { ensurePurchaseRestockAndSync } from '../../utils/stockSync';
@@ -388,11 +388,70 @@ export const CashierExpensesPage: React.FC = () => {
   // ─── إعدادات الفلتر المتقدم ──────────────────────────────────────────────────
   // ─── تصدير PDF / CSV ────────────────────────────────────────────────────────
   const handleExportPDF = async () => {
-    if (!contentRef.current) return;
     try {
       setIsExportingPdf(true);
       showToast('جاري تجهيز ملف الـ PDF... ⏳', 'info');
-      await exportElementToPdf(contentRef.current, `تقرير_المشتريات_${new Date().toISOString().slice(0, 10)}`);
+      const supplierTotals = new Map<string, { amount: number; invoices: number }>();
+      filteredExpenses.forEach((expense) => {
+        const supplier = parseSupplier(expense.description || '') || 'بدون اسم مورد';
+        const current = supplierTotals.get(supplier) || { amount: 0, invoices: 0 };
+        current.amount += Number(expense.amount) || 0;
+        current.invoices += 1;
+        supplierTotals.set(supplier, current);
+      });
+      const itemTotals = new Map<string, { amount: number; quantity: number; invoices: number }>();
+      filteredExpenses.forEach((expense) => {
+        const itemName = getLinkedItemName(expense) || cleanDescription(expense.description || '') || 'توريد غير مرتبط';
+        const current = itemTotals.get(itemName) || { amount: 0, quantity: 0, invoices: 0 };
+        current.amount += Number(expense.amount) || 0;
+        current.quantity += Number(expense.inventoryQuantityAdded) || 0;
+        current.invoices += 1;
+        itemTotals.set(itemName, current);
+      });
+      const periodLabels: Record<string, string> = {
+        all: 'كل الفترات', today: 'اليوم', week: 'آخر 7 أيام', month: 'هذا الشهر', year: 'هذه السنة',
+      };
+      const period = hasCustomRange
+        ? `${dateFrom ? formatDate(dateFrom) : 'من البداية'} - ${dateTo ? formatDate(dateTo) : 'حتى اليوم'}`
+        : periodLabels[dateFilter];
+      const today = getBusinessDayKey();
+      await exportOnePageSummaryToPdf({
+        title: 'ملخص مشتريات المخزون',
+        subtitle: 'فواتير التوريد والكميات والموردون',
+        period,
+        metrics: [
+          { label: 'إجمالي المشتريات', value: formatPrice(totalFilteredAmount), detail: 'إجمالي قيمة الفواتير المفلترة', tone: 'blue' },
+          { label: 'عدد فواتير الشراء', value: formatNumber(filteredExpenses.length), detail: 'عدد قيود التوريد في الفترة', tone: 'purple' },
+          { label: 'إجمالي الكميات الموردة', value: `${formatNumber(totalFilteredQty)} وحدة`, detail: `${formatNumber(itemTotals.size)} صنف مخزون`, tone: 'amber' },
+          { label: 'متوسط قيمة الفاتورة', value: formatPrice(filteredExpenses.length ? totalFilteredAmount / filteredExpenses.length : 0), detail: 'إجمالي المشتريات ÷ عدد الفواتير', tone: 'green' },
+        ],
+        sections: [
+          { title: 'المشتريات حسب الصنف', rows: Array.from(itemTotals.entries())
+            .sort((a, b) => b[1].amount - a[1].amount).slice(0, 6).map(([name, data]) => ({
+              label: name,
+              value: formatPrice(data.amount),
+              detail: `${formatNumber(data.quantity)} وحدة · ${data.invoices} فاتورة`,
+            })) },
+          { title: 'أحدث فواتير الشراء', rows: filteredExpenses.slice(0, 6).map((expense) => ({
+            label: cleanDescription(expense.description || '') || 'فاتورة شراء',
+            value: formatPrice(Number(expense.amount) || 0),
+            detail: [parseSupplier(expense.description || ''), parseInvoice(expense.description || '') ? `فاتورة #${parseInvoice(expense.description || '')}` : formatDate(expense.date || expense.createdAt)].filter(Boolean).join(' · '),
+          })) },
+          { title: 'ملخص الموردين', rows: Array.from(supplierTotals.entries())
+            .sort((a, b) => b[1].amount - a[1].amount).slice(0, 6).map(([name, data]) => ({
+              label: name,
+              value: formatPrice(data.amount),
+              detail: `${data.invoices} فاتورة`,
+            })) },
+          { title: 'معلومات الفترة', rows: [
+            { label: 'الفترة المختارة', value: period },
+            { label: 'تاريخ التقرير', value: formatDate(today) },
+            { label: 'الأصناف التي تم توريدها', value: formatNumber(itemTotals.size) },
+            { label: 'كمية التوريد', value: `${formatNumber(totalFilteredQty)} وحدة` },
+          ] },
+        ],
+        footer: 'الملخص يجمع كل الفواتير المطابقة للفلاتر، مع عرض أعلى الأصناف والموردين وأحدث الفواتير.',
+      }, `تقرير_المشتريات_${period.replace(/[\\/:*?"<>|\s]+/g, '_')}`);
       showToast('تم تنزيل ملف الـ PDF بنجاح ✅', 'success');
     } catch (err) {
       showError(err);

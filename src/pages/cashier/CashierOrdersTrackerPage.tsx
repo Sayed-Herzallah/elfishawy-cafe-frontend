@@ -7,9 +7,10 @@ import { useAuth } from '../../contexts/AuthContext';
 import { ReceiptModal } from '../../components/ui/ReceiptModal';
 import { ExportModal } from '../../components/ui/ExportModal';
 import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
-import { exportElementToPdf } from '../../utils/pdfExport';
+import { exportOnePageSummaryToPdf } from '../../utils/pdfExport';
 import { formatPrice, formatNumber, formatTime, formatDate, formatDateTime, isToday } from '../../utils/formatters';
 import { displayOrderNumber } from '../../utils/orderDisplay';
+import { getBusinessDayKey } from '../../utils/businessDay';
 import {
   Clock,
   Printer,
@@ -179,11 +180,64 @@ export const CashierOrdersTrackerPage: React.FC = () => {
 
   // PDF & CSV Export Handlers
   const handleExportPDF = async () => {
-    if (!contentRef.current) return;
     try {
       setIsExportingPdf(true);
       showToast('جاري تجهيز ملف الـ PDF... ⏳', 'info');
-      await exportElementToPdf(contentRef.current, `سجل_طلبات_الكاشير_${new Date().toISOString().slice(0, 10)}`);
+      const productTotals = new Map<string, { quantity: number; amount: number }>();
+      const tableTotals = new Map<number, { orders: number; amount: number }>();
+      filteredOrders.forEach((order) => {
+        (order.items || []).forEach((item) => {
+          const name = getProductName(item);
+          const current = productTotals.get(name) || { quantity: 0, amount: 0 };
+          current.quantity += Number(item.quantity) || 0;
+          current.amount += (Number(item.price) || 0) * (Number(item.quantity) || 0);
+          productTotals.set(name, current);
+        });
+        const table = Number(order.tableNumber) || 1;
+        const current = tableTotals.get(table) || { orders: 0, amount: 0 };
+        current.orders += 1;
+        if (order.status === 'completed') current.amount += Number(order.totalAmount) || 0;
+        tableTotals.set(table, current);
+      });
+      const completed = filteredOrders.filter((order) => order.status === 'completed');
+      const pending = filteredOrders.filter((order) => order.status === 'pending');
+      const dayKey = getBusinessDayKey();
+      await exportOnePageSummaryToPdf({
+        title: 'ملخص سجل الطلبات',
+        subtitle: 'حالة الطلبات والمبيعات والأصناف والطاولات',
+        period: formatDate(dayKey),
+        metrics: [
+          { label: 'إجمالي الطلبات', value: formatNumber(filteredOrders.length), detail: 'حسب الفلاتر الحالية', tone: 'blue' },
+          { label: 'طلبات تم تسليمها', value: formatNumber(completed.length), detail: 'طلبات مكتملة', tone: 'green' },
+          { label: 'طلبات قيد التحضير', value: formatNumber(pending.length), detail: 'لم يتم تسليمها بعد', tone: 'amber' },
+          { label: 'إجمالي المبيعات', value: formatPrice(totalRevenue), detail: 'من الطلبات المكتملة', tone: 'purple' },
+        ],
+        sections: [
+          { title: 'حالة الطلبات', rows: [
+            { label: 'تم التسليم', value: formatNumber(completed.length) },
+            { label: 'قيد التحضير', value: formatNumber(pending.length) },
+            { label: 'متوسط قيمة الطلب المكتمل', value: formatPrice(completed.length ? totalRevenue / completed.length : 0) },
+          ] },
+          { title: 'الأصناف الأكثر طلبًا', rows: Array.from(productTotals.entries())
+            .sort((a, b) => b[1].quantity - a[1].quantity).slice(0, 6).map(([name, data]) => ({
+              label: name,
+              value: `${formatNumber(data.quantity)} وحدة`,
+              detail: formatPrice(data.amount),
+            })) },
+          { title: 'ملخص الطاولات', rows: Array.from(tableTotals.entries())
+            .sort((a, b) => b[1].orders - a[1].orders).slice(0, 6).map(([table, data]) => ({
+              label: `طاولة #${table}`,
+              value: `${formatNumber(data.orders)} طلب`,
+              detail: formatPrice(data.amount),
+            })) },
+          { title: 'أحدث الطلبات', rows: filteredOrders.slice(0, 6).map((order) => ({
+            label: `فاتورة #${displayOrderNumber(order) || '—'} · طاولة #${order.tableNumber || 1}`,
+            value: formatPrice(order.totalAmount),
+            detail: `${formatTime(order.createdAt)} · ${order.status === 'completed' ? 'تم التسليم' : order.status === 'pending' ? 'قيد التحضير' : 'ملغي'}`,
+          })) },
+        ],
+        footer: 'الأرقام تشمل الطلبات المطابقة لحالة البحث والفلاتر الحالية.',
+      }, `ملخص_سجل_طلبات_الكاشير_${dayKey}`);
       showToast('تم تنزيل ملف الـ PDF بنجاح ✅', 'success');
     } catch (err) {
       console.error('PDF export failed', err);

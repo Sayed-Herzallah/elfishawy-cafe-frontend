@@ -15,7 +15,7 @@ import { ComparisonStatCard } from '../../components/ui/ComparisonStatCard';
 import { ExportModal } from '../../components/ui/ExportModal';
 import { DateRangeFilter, DateRange } from '../../components/ui/DateRangeFilter';
 import { isStockLow, isStockOut } from '../../utils/stockStatus';
-import { exportElementToPdf } from '../../utils/pdfExport';
+import { exportOnePageSummaryToPdf } from '../../utils/pdfExport';
 import { buildCsv, downloadCsv } from '../../utils/csvExport';
 import {
   formatPrice,
@@ -749,14 +749,49 @@ export const AdminDashboardPage: React.FC = () => {
 
   // PDF & CSV Export Handlers
   const handleExportPDF = async () => {
-    if (!contentRef.current) return;
     try {
       setIsExportingPdf(true);
       showToast('جاري تجهيز ملف الـ PDF... ⏳', 'info');
       const period = dateRange.from || dateRange.to
         ? `${dateRange.from ? formatDate(dateRange.from) : 'البداية'}_${dateRange.to ? formatDate(dateRange.to) : 'حتى_اليوم'}`
-        : timeRange;
-      await exportElementToPdf(contentRef.current, `تقرير_كافيه_الفيشاوي_${period}`);
+        : ({ today: 'اليوم', week: 'الأسبوع', month: 'الشهر', year: 'السنة' } as const)[timeRange];
+      await exportOnePageSummaryToPdf({
+        title: 'ملخص أداء الكافيه',
+        subtitle: 'المبيعات والمصروفات والأرباح والمخزون',
+        period,
+        metrics: [
+          { label: 'إجمالي المبيعات', value: formatPrice(totalSales), detail: `التغير ${salesChange >= 0 ? '+' : ''}${salesChange}%`, tone: 'blue' },
+          { label: 'إجمالي المصروفات', value: formatPrice(totalExpenses), detail: `التغير ${expensesChange >= 0 ? '+' : ''}${expensesChange}%`, tone: 'red' },
+          { label: 'مشتريات المخزون', value: formatPrice(totalPurchases), detail: `${formatNumber(periodExpenses.filter((expense) => expense.category === 'inventory').reduce((sum, expense) => sum + (Number(expense.inventoryQuantityAdded) || 0), 0))} وحدة موردة`, tone: 'amber' },
+          { label: netProfit < 0 ? 'صافي الخسارة' : 'صافي الربح', value: formatPrice(Math.abs(netProfit)), detail: `التغير ${profitChange >= 0 ? '+' : ''}${profitChange}%`, tone: netProfit < 0 ? 'red' : 'green' },
+          { label: 'عدد الطلبات', value: formatNumber(ordersCount), detail: `التغير ${ordersChange >= 0 ? '+' : ''}${ordersChange}%`, tone: 'purple' },
+          { label: 'قيمة المخزون الحالية', value: formatPrice(inventoryValue), detail: `${formatNumber(allInventory.length)} صنف`, tone: 'neutral' },
+        ],
+        sections: [
+          { title: 'تفصيل الفترة المالية', rows: [
+            { label: 'المصروفات التشغيلية', value: formatPrice(totalOperating) },
+            { label: 'مشتريات المخزون', value: formatPrice(totalPurchases) },
+            { label: 'صافي الربح / الخسارة', value: formatPrice(netProfit) },
+            { label: 'متوسط قيمة الطلب', value: formatPrice(ordersCount ? totalSales / ordersCount : 0) },
+          ] },
+          { title: 'أكثر المنتجات مبيعًا', rows: topProducts.slice(0, 5).map((product) => ({
+            label: product.name,
+            value: formatPrice(product.revenueGenerated),
+            detail: `${formatNumber(product.quantitySold)} وحدة`,
+          })) },
+          { title: 'المشتريات حسب صنف المخزن', rows: purchasesBreakdown.slice(0, 5).map((purchase) => ({
+            label: purchase.name,
+            value: formatPrice(purchase.amount),
+            detail: `${formatNumber(purchase.qty)} وحدة · ${purchase.count} فاتورة`,
+          })) },
+          { title: 'تنبيهات المخزون', rows: lowStockItems.slice(0, 5).map((item) => ({
+            label: item.name,
+            value: isStockOut(item.quantity) ? 'نفد المخزون' : `المتبقي ${formatNumber(item.quantity)}`,
+            detail: isStockOut(item.quantity) ? 'يحتاج توريد' : `حد التنبيه ${formatNumber(item.minLimit)}`,
+          })) },
+        ],
+        footer: 'القيم المالية مبنية على الفترة المحددة، وقيمة المخزون تمثل الرصيد الحالي.',
+      }, `تقرير_كافيه_الفيشاوي_${period}`);
       showToast('تم تنزيل ملف الـ PDF بنجاح ✅', 'success');
     } catch (err) {
       console.error('PDF export failed', err);

@@ -9,7 +9,7 @@ import { FilterConfig } from '../../components/ui/FilterDialog';
 import { FinancialPageSkeleton } from '../../components/ui/FinancialPageSkeleton';
 import { ExportModal } from '../../components/ui/ExportModal';
 import { usePersistentState, readSessionCache, writeSessionCache, isSessionCacheUsable } from '../../hooks/usePersistentState';
-import { exportElementToPdf } from '../../utils/pdfExport';
+import { exportOnePageSummaryToPdf } from '../../utils/pdfExport';
 import { buildCsv, downloadCsv } from '../../utils/csvExport';
 import { useNotification } from '../../contexts/NotificationContext';
 import { BarChart3, TrendingUp, TrendingDown, DollarSign, Download, Award, AlertCircle, Calendar, PieChart, Medal, Info, X, ReceiptText } from 'lucide-react';
@@ -377,11 +377,54 @@ export const AdminReportsPage: React.FC = () => {
     .sort((a, b) => b.amount - a.amount);
 
   const handleExportPDF = async () => {
-    if (!contentRef.current) return;
     try {
       setIsExportingPdf(true);
       showToast('جاري تجهيز ملف الـ PDF... ⏳', 'info');
-      await exportElementToPdf(contentRef.current, `تقرير_مالي_الفيشاوي_${dateRange.preset}`);
+      const presetLabels: Record<string, string> = {
+        today: 'اليوم', yesterday: 'أمس', week: 'آخر 7 أيام', month: 'هذا الشهر',
+        quarter: 'هذا الربع', year: 'هذه السنة', custom: 'كل الفترات',
+      };
+      const periodLabel = dateRange.from || dateRange.to
+        ? `${dateRange.from ? formatDate(dateRange.from) : 'من البداية'} - ${dateRange.to ? formatDate(dateRange.to) : 'حتى اليوم'}`
+        : presetLabels[dateRange.preset] || 'كل الفترات';
+      await exportOnePageSummaryToPdf({
+        title: 'الملخص المالي',
+        subtitle: 'الإيرادات والمصروفات والربحية وأداء المنتجات',
+        period: periodLabel,
+        metrics: [
+          { label: 'إجمالي الإيرادات', value: formatPrice(totalRevenue), detail: `التغير ${salesComparison.changePercent >= 0 ? '+' : ''}${salesComparison.changePercent}%`, tone: 'blue' },
+          { label: 'إجمالي المصروفات', value: formatPrice(totalExpensesFiltered), detail: `التغير ${expensesComparison.changePercent >= 0 ? '+' : ''}${expensesComparison.changePercent}%`, tone: 'red' },
+          { label: 'مشتريات المخزون', value: formatPrice(purchasesFiltered), detail: `${formatNumber(filteredExpenses.filter((expense) => expense.category === 'inventory').length)} فاتورة`, tone: 'amber' },
+          { label: 'المصروفات التشغيلية', value: formatPrice(operatingFiltered), detail: 'بدون مشتريات المخزون', tone: 'purple' },
+          { label: netProfit < 0 ? 'صافي الخسارة' : 'صافي الربح', value: formatPrice(Math.abs(netProfit)), detail: `التغير ${profitComparison.changePercent >= 0 ? '+' : ''}${profitComparison.changePercent}%`, tone: netProfit < 0 ? 'red' : 'green' },
+          { label: 'هامش الربح', value: `%${formatNumber(profitMargin)}`, detail: `${formatNumber(filteredOrders.length)} طلب`, tone: 'neutral' },
+        ],
+        sections: [
+          { title: 'تفصيل المصروفات', rows: [
+            ...expenseCategoryRows.slice(0, 5).map((row) => ({
+              label: EXPENSE_CATEGORY_META[row.cat]?.label || 'أخرى',
+              value: formatPrice(row.amount),
+            })),
+            { label: 'إجمالي المصروفات', value: formatPrice(totalExpensesFiltered) },
+          ] },
+          { title: 'أعلى المنتجات ربحًا', rows: topProducts.slice(0, 5).map((product) => ({
+            label: product.name,
+            value: formatPrice(rankValue(product)),
+            detail: `${formatNumber(product.qty)} وحدة · إيراد ${formatPrice(product.revenue)}`,
+          })) },
+          { title: 'مقارنة بالفترة السابقة', rows: [
+            { label: 'الإيرادات', value: `${salesComparison.changePercent >= 0 ? '+' : ''}${formatNumber(salesComparison.changePercent)}%`, detail: `الحالي ${formatPrice(salesComparison.current)} · السابق ${formatPrice(salesComparison.previous)}` },
+            { label: 'المصروفات', value: `${expensesComparison.changePercent >= 0 ? '+' : ''}${formatNumber(expensesComparison.changePercent)}%`, detail: `الحالي ${formatPrice(expensesComparison.current)} · السابق ${formatPrice(expensesComparison.previous)}` },
+            { label: 'صافي الربح', value: `${profitComparison.changePercent >= 0 ? '+' : ''}${formatNumber(profitComparison.changePercent)}%`, detail: `الحالي ${formatPrice(profitComparison.current)} · السابق ${formatPrice(profitComparison.previous)}` },
+          ] },
+          { title: 'الأقل أداءً', rows: bottomProducts.slice(0, 5).map((product) => ({
+            label: product.name,
+            value: formatPrice(rankValue(product)),
+            detail: `${formatNumber(product.qty)} وحدة`,
+          })) },
+        ],
+        footer: 'صافي الربح = الإيرادات − مشتريات المخزون − المصروفات التشغيلية.',
+      }, `تقرير_مالي_الفيشاوي_${dateRange.preset}`);
       showToast('تم تنزيل ملف PDF بنجاح ✅', 'success');
     } catch (err) {
       showError(err);
