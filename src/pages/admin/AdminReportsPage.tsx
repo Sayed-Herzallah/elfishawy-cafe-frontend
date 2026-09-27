@@ -6,10 +6,11 @@ import { AttaStatCard } from '../../components/ui/AttaStatCard';
 import { ComparisonStatCard } from '../../components/ui/ComparisonStatCard';
 import { DateRangeFilter, DateRange } from '../../components/ui/DateRangeFilter';
 import { FilterConfig } from '../../components/ui/FilterDialog';
-import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
+import { FinancialPageSkeleton } from '../../components/ui/FinancialPageSkeleton';
 import { ExportModal } from '../../components/ui/ExportModal';
 import { usePersistentState, readSessionCache, writeSessionCache, isSessionCacheUsable } from '../../hooks/usePersistentState';
 import { exportElementToPdf } from '../../utils/pdfExport';
+import { buildCsv, downloadCsv } from '../../utils/csvExport';
 import { useNotification } from '../../contexts/NotificationContext';
 import { BarChart3, TrendingUp, TrendingDown, DollarSign, Download, Award, AlertCircle, Calendar, PieChart, Medal, Info, X, ReceiptText } from 'lucide-react';
 import { formatPrice, formatNumber, formatDate } from '../../utils/formatters';
@@ -274,7 +275,7 @@ export const AdminReportsPage: React.FC = () => {
   }, []);
 
   if (isLoading) {
-    return <LoadingSpinner text="جاري تجهيز التقارير المالية..." />;
+    return <FinancialPageSkeleton title="جاري تجهيز التقارير المالية..." />;
   }
 
   // ملاحظة: فلترة التاريخ والفئة (filteredOrders / filteredExpenses) متعرّفة فوق
@@ -406,15 +407,8 @@ export const AdminReportsPage: React.FC = () => {
         ...topProducts.map((p, i) => [`أعلى ربحاً #${i + 1}`, `${p.name} — ${formatPrice(rankValue(p))} (${formatNumber(p.qty)} وحدة)`] as [string, string]),
         ...bottomProducts.map((p, i) => [`الأقل ربحاً #${i + 1}`, `${p.name} — ${formatPrice(rankValue(p))} (${formatNumber(p.qty)} وحدة)`] as [string, string]),
       ];
-      const csvContent = "\uFEFF" + csvRows.map(row => row.map(val => `"${val}"`).join(",")).join("\n");
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.setAttribute("href", url);
-      link.setAttribute("download", `تقرير_مالي_${periodLabel.replace(/[\/\s]/g, '_')}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const csvContent = buildCsv(csvRows);
+      downloadCsv(csvContent, `تقرير_مالي_${periodLabel.replace(/[\\/:\s]/g, '_')}`);
     } catch (err) {
       console.error(err);
     }

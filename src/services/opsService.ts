@@ -159,11 +159,13 @@ const saveOrderAsLocallyPending = async (
 };
 
 export const orderService = {
-  getOrders: async (params?: { status?: string; searchDate?: string; cashierId?: string }): Promise<ApiResponse<Order[]>> => {
+  getOrders: async (params?: { status?: string; searchDate?: string; cashierId?: string; from?: string; to?: string }): Promise<ApiResponse<Order[]>> => {
     const query = new URLSearchParams();
     if (params?.status) query.append('status', params.status);
     if (params?.searchDate) query.append('searchDate', params.searchDate);
     if (params?.cashierId) query.append('cashierId', params.cashierId);
+    if (params?.from) query.append('from', params.from);
+    if (params?.to) query.append('to', params.to);
     const qs = query.toString();
     // الجلب بدون فلاتر = القائمة الكاملة من السيرفر (كل استدعاءات التطبيق كذلك)،
     // وهي اللقطة الصالحة لعرض «كل الفواتير» عند انقطاع الإنترنت.
@@ -440,7 +442,10 @@ export const inventoryService = {
     }
 
     try {
-      const res = await ApiClient.request<InventoryItem[]>(`/inventory${qs ? `?${qs}` : ''}`, { method: 'GET' });
+      const res = await ApiClient.request<InventoryItem[]>(`/inventory${qs ? `?${qs}` : ''}`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(15000),
+      });
       if (res.success && Array.isArray(res.data) && !qs) {
         if (!offlineStore.isDesktop()) {
           try {
@@ -719,10 +724,12 @@ export const inventoryService = {
 };
 
 export const expenseService = {
-  listExpenses: async (params?: { category?: string; searchDate?: string }): Promise<ApiResponse<Expense[]>> => {
+  listExpenses: async (params?: { category?: string; searchDate?: string; from?: string; to?: string }): Promise<ApiResponse<Expense[]>> => {
     const query = new URLSearchParams();
     if (params?.category) query.append('category', params.category);
     if (params?.searchDate) query.append('searchDate', params.searchDate);
+    if (params?.from) query.append('from', params.from);
+    if (params?.to) query.append('to', params.to);
     const qs = query.toString();
 
     // فحص وضع عدم الاتصال في الديسكتوب — عودة فورية من SQLite
@@ -742,7 +749,12 @@ export const expenseService = {
           : localExpenses;
         const merged = params?.searchDate
           ? filtered.filter((e: any) => getBusinessDayKey(String(e.date || e.createdAt || '')) === getBusinessDayKey(params.searchDate!))
-          : filtered;
+          : params?.from || params?.to
+            ? filtered.filter((e: any) => {
+              const day = getBusinessDayKey(String(e.date || e.createdAt || ''));
+              return (!params.from || day >= getBusinessDayKey(params.from)) && (!params.to || day <= getBusinessDayKey(params.to));
+            })
+            : filtered;
         return { success: true, message: 'Loaded from local offline database', data: merged };
       }
     }
@@ -750,7 +762,10 @@ export const expenseService = {
     if (!offlineStore.isDesktop()) await syncBrowserInventoryDrafts();
 
     try {
-      const res = await ApiClient.request<Expense[]>(`/expenses${qs ? `?${qs}` : ''}`, { method: 'GET' });
+      const res = await ApiClient.request<Expense[]>(`/expenses${qs ? `?${qs}` : ''}`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(15000),
+      });
       if (res.success && Array.isArray(res.data)) {
         // رقم فاتورة الشراء هو الهوية النهائية؛ منع تكرار استجابة السيرفر
         // يجعل الويب والديسكتوب والإحصائيات تستخدم نفس مجموعة القيود.
@@ -762,30 +777,31 @@ export const expenseService = {
         if (offlineStore.isDesktop()) {
           // ✅ await: يضمن حفظ كل فواتير السيرفر في SQLite قبل أي انقطاع للشبكة
           await offlineStore.cacheEntities('expenses', serverRows);
-          if (!qs) {
-            const localExpenses = await offlineStore.getOfflineExpenses();
-            // Only add pending operations that have not arrived from the server.
-            // A local row already represented by either its server id or client id
-            // must not inflate the purchases count after reconciliation.
-            const serverIds = new Set<string>();
-            for (const expense of serverRows as any[]) {
-              const serverId = String(expense?._id || '');
-              const clientId = String(expense?.clientExpenseId || expense?.client_expense_id || '');
-              if (serverId) serverIds.add(serverId);
-              if (clientId) serverIds.add(clientId);
-            }
-            const pendingOnly = localExpenses.filter((expense: any) => {
-              const status = String(expense?.syncStatus || expense?.sync_status || '').toUpperCase();
-              const clientId = String(expense?.clientExpenseId || expense?.client_expense_id || '');
-              const localId = String(expense?._id || '');
-              // السيرفر قد يكون رجع لقطة أقدم من عملية تمت للتو؛ خذ الصف المحلي
-              // ما دام لا يوجد له مقابل بهوية السيرفر/العميل، ثم وحّد التكرارات.
-              return (status === 'PENDING_SYNC' || status === 'PENDING' || Boolean(clientId && clientId === localId && !/^[0-9a-fA-F]{24}$/.test(localId))) &&
-                !serverIds.has(clientId) && !serverIds.has(localId);
-            });
-            const merged = mergeExpenseLists(serverRows, pendingOnly);
-            return { ...res, data: merged };
+          const localExpenses = await offlineStore.getOfflineExpenses();
+          // Keep pending desktop purchases visible even for the dashboard's
+          // bounded date query, without duplicating rows already returned by Mongo.
+          const serverIds = new Set<string>();
+          for (const expense of serverRows as any[]) {
+            const serverId = String(expense?._id || '');
+            const clientId = String(expense?.clientExpenseId || expense?.client_expense_id || '');
+            if (serverId) serverIds.add(serverId);
+            if (clientId) serverIds.add(clientId);
           }
+          const pendingOnly = localExpenses.filter((expense: any) => {
+            const status = String(expense?.syncStatus || expense?.sync_status || '').toUpperCase();
+            const clientId = String(expense?.clientExpenseId || expense?.client_expense_id || '');
+            const localId = String(expense?._id || '');
+            const day = getBusinessDayKey(String(expense?.date || expense?.createdAt || ''));
+            const matchesCategory = !params?.category || expense?.category === params.category;
+            const matchesDate = params?.searchDate
+              ? day === getBusinessDayKey(params.searchDate)
+              : (!params?.from || day >= getBusinessDayKey(params.from)) && (!params?.to || day <= getBusinessDayKey(params.to));
+            // السيرفر قد يكون رجع لقطة أقدم؛ احتفظ بالعملية المحلية حتى تصل.
+            return matchesCategory && matchesDate &&
+              (status === 'PENDING_SYNC' || status === 'PENDING' || Boolean(clientId && clientId === localId && !/^[0-9a-fA-F]{24}$/.test(localId))) &&
+              !serverIds.has(clientId) && !serverIds.has(localId);
+          });
+          return { ...res, data: mergeExpenseLists(serverRows, pendingOnly) };
         }
         return { ...res, data: serverRows };
       }
@@ -801,6 +817,12 @@ export const expenseService = {
           filtered = filtered.filter((e: any) =>
             getBusinessDayKey(String(e.date || e.createdAt || '')) === targetDay
           );
+        }
+        if (params?.from || params?.to) {
+          filtered = filtered.filter((e: any) => {
+            const day = getBusinessDayKey(String(e.date || e.createdAt || ''));
+            return (!params.from || day >= getBusinessDayKey(params.from)) && (!params.to || day <= getBusinessDayKey(params.to));
+          });
         }
         return { success: true, message: 'Loaded from local offline database', data: filtered };
       }
@@ -954,7 +976,9 @@ export const analyticsService = {
     if (params?.from) query.append('from', params.from);
     if (params?.to) query.append('to', params.to);
     const qs = query.toString();
-    return ApiClient.request<KPIStats>(`/analytics/stats${qs ? `?${qs}` : ''}`, { method: 'GET' });
+    return ApiClient.request<KPIStats>(`/analytics/stats${qs ? `?${qs}` : ''}`, {
+      method: 'GET', signal: AbortSignal.timeout(15000),
+    });
   },
 
   getCharts: (params?: { from?: string; to?: string }): Promise<ApiResponse<ChartsData>> => {
@@ -962,6 +986,8 @@ export const analyticsService = {
     if (params?.from) query.append('from', params.from);
     if (params?.to) query.append('to', params.to);
     const qs = query.toString();
-    return ApiClient.request<ChartsData>(`/analytics/charts${qs ? `?${qs}` : ''}`, { method: 'GET' });
+    return ApiClient.request<ChartsData>(`/analytics/charts${qs ? `?${qs}` : ''}`, {
+      method: 'GET', signal: AbortSignal.timeout(15000),
+    });
   },
 };

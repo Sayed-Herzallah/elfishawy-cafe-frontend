@@ -8,6 +8,7 @@ import { productService } from '../../services/catalogService';
 import { KPIStats, ChartsData, Order, InventoryItem, Expense, Product } from '../../types';
 import { ReceiptModal } from '../../components/ui/ReceiptModal';
 import { LoadingSkeleton } from '../../components/ui/LoadingSkeleton';
+import { FinancialPageSkeleton } from '../../components/ui/FinancialPageSkeleton';
 import { AttaGlowingChart, ChartDataPoint } from '../../components/ui/AttaGlowingChart';
 import { AttaStatCard } from '../../components/ui/AttaStatCard';
 import { ComparisonStatCard } from '../../components/ui/ComparisonStatCard';
@@ -15,6 +16,7 @@ import { ExportModal } from '../../components/ui/ExportModal';
 import { DateRangeFilter, DateRange } from '../../components/ui/DateRangeFilter';
 import { isStockLow, isStockOut } from '../../utils/stockStatus';
 import { exportElementToPdf } from '../../utils/pdfExport';
+import { buildCsv, downloadCsv } from '../../utils/csvExport';
 import {
   formatPrice,
   formatNumber,
@@ -80,6 +82,7 @@ export const AdminDashboardPage: React.FC = () => {
   const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
   // F7: منع تكرار toast فشل الإحصائيات — مرة واحدة حتى ينجح التحديث من جديد
   const kpisFailStreakRef = useRef(false);
+  const dashboardDataFailStreakRef = useRef(false);
 
   // F2/F6: نطاق الفترة الحالية كأيام تجارية بتوقيت القاهرة (يُرسل للسيرفر كمصدر حقيقة)
   const getPeriodParams = (): { from?: string; to?: string } => {
@@ -101,6 +104,36 @@ export const AdminDashboardPage: React.FC = () => {
     return `${timeRange}:${getBusinessDayKey()}`;
   })();
 
+  // Dashboard comparisons only need the selected period plus its predecessor.
+  // Keep large historical order/expense collections out of every refresh.
+  const getDashboardFetchRange = (): { from?: string; to: string } => {
+    const today = getBusinessDayKey();
+    const dayDistance = (from: string, to: string) => {
+      const [fy, fm, fd] = from.split('-').map(Number);
+      const [ty, tm, td] = to.split('-').map(Number);
+      return Math.max(0, Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000));
+    };
+
+    if (dateRange.from || dateRange.to) {
+      const from = dateRange.from ? orderBusinessDayKey(dateRange.from) : undefined;
+      const to = dateRange.to ? orderBusinessDayKey(dateRange.to) : today;
+      if (!from) return { to };
+      const length = dayDistance(from, to) + 1;
+      return { from: shiftDayKey(from, -length), to };
+    }
+
+    const [year, month] = today.split('-');
+    if (timeRange === 'today') return { from: shiftDayKey(today, -1), to: today };
+    if (timeRange === 'week') return { from: shiftDayKey(today, -13), to: today };
+    if (timeRange === 'month') {
+      const monthNumber = Number(month);
+      const previousMonth = monthNumber === 1 ? 12 : monthNumber - 1;
+      const previousYear = monthNumber === 1 ? Number(year) - 1 : Number(year);
+      return { from: `${previousYear}-${String(previousMonth).padStart(2, '0')}-01`, to: today };
+    }
+    return { from: `${Number(year) - 1}-01-01`, to: today };
+  };
+
 
   const fetchData = async (silent = false) => {
     try {
@@ -109,6 +142,7 @@ export const AdminDashboardPage: React.FC = () => {
       // F2: جلب إحصائيات الفترة الحالية من السيرفر (MongoDB = مصدر الحقيقة عند الاتصال)
       const periodParams = getPeriodParams();
       const periodKeyUsed = currentPeriodKey;
+      const dashboardFetchRange = getDashboardFetchRange();
       let statsPeriodUsed: string | null = null;
 
       const desktopOnline = offlineStore.isDesktop() ? await offlineStore.isOnline() : true;
@@ -131,7 +165,7 @@ export const AdminDashboardPage: React.FC = () => {
         return res;
       }).catch((e) => { console.warn('Charts load error:', e); return null; });
 
-      const ordersPromise = orderService.getOrders().then((res) => {
+      const ordersPromise = orderService.getOrders(dashboardFetchRange).then((res) => {
         if (res.success && res.data) {
           setAllOrders(res.data);
           setRecentOrders(res.data.slice(0, 6));
@@ -147,7 +181,7 @@ export const AdminDashboardPage: React.FC = () => {
         return res;
       }).catch((e) => { console.warn('Inventory load error:', e); return null; });
 
-      const expPromise = expenseService.listExpenses().then((res) => {
+      const expPromise = expenseService.listExpenses(dashboardFetchRange).then((res) => {
         if (res.success && res.data) setExpenses(res.data);
         return res;
       }).catch((e) => { console.warn('Expenses load error:', e); return null; });
@@ -156,14 +190,6 @@ export const AdminDashboardPage: React.FC = () => {
         if (res.success && res.data) setAllProducts(res.data);
         return res;
       }).catch((e) => { console.warn('Products load error:', e); return null; });
-
-      // Faster UI reveal: as soon as primary essentials resolve or settle, release loading indicator
-      Promise.race([
-        Promise.allSettled([statsPromise, invPromise, prodPromise]),
-        new Promise((resolve) => setTimeout(resolve, 1500))
-      ]).finally(() => {
-        if (!silent) setIsLoading(false);
-      });
 
       const [statsRes, chartsRes, ordersRes, invRes, expRes, prodRes] = await Promise.allSettled([
         statsPromise,
@@ -185,6 +211,17 @@ export const AdminDashboardPage: React.FC = () => {
       // F7: عدم ابتلاع فشل تحديث الإحصائيات بصمت — toast واحد حتى ينجح التحديث من جديد
       const statsFailed = statsRes.status === 'rejected' || !statsRes.value?.success;
       const chartsFailed = chartsRes.status === 'rejected' || !chartsRes.value?.success;
+      const unavailableSections: string[] = [];
+      if (ordersRes.status === 'rejected' || !ordersRes.value?.success) unavailableSections.push('الفواتير');
+      if (invRes.status === 'rejected' || !invRes.value?.success) unavailableSections.push('المخزون');
+      if (expRes.status === 'rejected' || !expRes.value?.success) unavailableSections.push('المشتريات والمصروفات');
+      if (prodRes.status === 'rejected' || !prodRes.value?.success) unavailableSections.push('المنتجات');
+      if (unavailableSections.length && !dashboardDataFailStreakRef.current) {
+        dashboardDataFailStreakRef.current = true;
+        showToast(`بيانات لوحة التحكم غير مكتملة: تعذر تحميل ${unavailableSections.join('، ')}.`, 'info');
+      } else if (!unavailableSections.length) {
+        dashboardDataFailStreakRef.current = false;
+      }
       if (statsFailed) {
         setStatsPeriod(null);
       }
@@ -716,7 +753,10 @@ export const AdminDashboardPage: React.FC = () => {
     try {
       setIsExportingPdf(true);
       showToast('جاري تجهيز ملف الـ PDF... ⏳', 'info');
-      await exportElementToPdf(contentRef.current, `تقرير_كافيه_الفيشاوي_${timeRange}`);
+      const period = dateRange.from || dateRange.to
+        ? `${dateRange.from ? formatDate(dateRange.from) : 'البداية'}_${dateRange.to ? formatDate(dateRange.to) : 'حتى_اليوم'}`
+        : timeRange;
+      await exportElementToPdf(contentRef.current, `تقرير_كافيه_الفيشاوي_${period}`);
       showToast('تم تنزيل ملف الـ PDF بنجاح ✅', 'success');
     } catch (err) {
       console.error('PDF export failed', err);
@@ -738,22 +778,18 @@ export const AdminDashboardPage: React.FC = () => {
         ['حجم الطلبات', `${ordersComparison.current.toLocaleString('en-US')} طلب`, `${ordersComparison.previous.toLocaleString('en-US')} طلب`, `${ordersComparison.changePercent >= 0 ? '+' : ''}${ordersComparison.changePercent}%`],
       ];
 
-      const csvContent = '\uFEFF' + csvRows.map((row) => row.map((val) => `"${val}"`).join(',')).join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', `تقرير_كافيه_الفيشاوي_${timeRange}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      const csvContent = buildCsv(csvRows);
+      const period = dateRange.from || dateRange.to
+        ? `${dateRange.from ? formatDate(dateRange.from) : 'البداية'}_${dateRange.to ? formatDate(dateRange.to) : 'حتى_اليوم'}`
+        : timeRange;
+      downloadCsv(csvContent, `تقرير_كافيه_الفيشاوي_${period}`);
       showToast('تم تصدير ملف CSV بنجاح 📊', 'success');
     } catch (err) {
       showError(err);
     }
   };
 
-  return isLoading && !stats ? <LoadingSkeleton type="stat" count={4} /> : (
+  return isLoading && !stats ? <FinancialPageSkeleton title="جاري تحميل إحصائيات لوحة الإدارة..." /> : (
     <div className="space-y-6 text-right font-sans">
       {/* Top Header - RTL Layout */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-gray-200/70">

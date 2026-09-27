@@ -70,7 +70,10 @@ export const productService = {
     }
 
     try {
-      const res = await ApiClient.request<Product[]>(`/products${qs ? `?${qs}` : ''}`, { method: 'GET' });
+      const res = await ApiClient.request<Product[]>(`/products${qs ? `?${qs}` : ''}`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(15000),
+      });
       if (res.success && Array.isArray(res.data) && !qs) {
         offlineStore.cacheEntities('products', res.data);
       }
@@ -131,7 +134,10 @@ export const productService = {
 export const recipeService = {
   listRecipes: async (): Promise<ApiResponse<Recipe[]>> => {
     try {
-      const res = await ApiClient.request<Recipe[]>('/recipes', { method: 'GET' });
+      const res = await ApiClient.request<Recipe[]>('/recipes', {
+        method: 'GET',
+        signal: AbortSignal.timeout(15000),
+      });
       if (res.success && Array.isArray(res.data)) {
         offlineStore.cacheEntities('recipes', res.data);
       }

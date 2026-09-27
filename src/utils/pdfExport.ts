@@ -14,76 +14,59 @@ export const exportElementToPdf = async (
   element: HTMLElement,
   fileName: string
 ): Promise<void> => {
-  let canvas: HTMLCanvasElement;
-  try {
-    // لقطة عالية الدقة للعنصر (2x عشان جودة الطباعة)
-    canvas = await html2canvas(element, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      backgroundColor: '#ffffff',
-      logging: false,
-      // نمرر أبعاد النافذة الحقيقية عشان الـ layout يتحسب صح
-      windowWidth: element.scrollWidth || undefined,
-      windowHeight: element.scrollHeight || undefined,
-    });
-  } catch (err) {
-    console.error('html2canvas capture failed:', err);
-    throw new Error('فشل تحويل التقرير لصورة. جرّب تاني أو استخدم تصدير CSV.');
-  }
-
-  if (!canvas || canvas.width === 0 || canvas.height === 0) {
+  const contentWidth = Math.ceil(element.scrollWidth || element.getBoundingClientRect().width);
+  const contentHeight = Math.ceil(element.scrollHeight || element.getBoundingClientRect().height);
+  if (!contentWidth || !contentHeight) {
     throw new Error('التقرير فاضي أو لم يتم التقاطه بشكل صحيح.');
   }
 
   const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const pageWidth = pdf.internal.pageSize.getWidth(); // 210mm
-  const pageHeight = pdf.internal.pageSize.getHeight(); // 297mm
   const margin = 6;
-  const imageWidth = pageWidth - margin * 2;
-  const fullImageHeight = (canvas.height * imageWidth) / canvas.width;
+  const maxImageWidth = pdf.internal.pageSize.getWidth() - margin * 2;
+  const usablePageHeight = pdf.internal.pageSize.getHeight() - margin * 2;
+  // Capture one printable page at a time. A single giant canvas for a long
+  // dashboard can exceed Chromium's canvas limit and produce empty/clipped PDFs.
+  const maxSliceHeightPx = Math.max(1, Math.floor(contentWidth * usablePageHeight / maxImageWidth));
+  const estimatedPages = Math.ceil(contentHeight / maxSliceHeightPx);
+  const finalPageHeight = contentHeight - (estimatedPages - 1) * maxSliceHeightPx;
+  // Avoid exporting a nearly empty last sheet: spread a tiny remainder across
+  // the existing pages and shrink their width just enough to preserve aspect.
+  const pageCount = estimatedPages > 1 && finalPageHeight < maxSliceHeightPx * 0.12
+    ? estimatedPages - 1
+    : estimatedPages;
+  const sliceHeightPx = Math.ceil(contentHeight / pageCount);
+  const imageWidth = Math.min(maxImageWidth, usablePageHeight * contentWidth / sliceHeightPx);
 
-  // لو المحتوى صفحة واحدة → رسمة مباشرة
-  if (fullImageHeight <= pageHeight - margin * 2) {
-    pdf.addImage(
-      canvas.toDataURL('image/jpeg', 0.95),
-      'JPEG',
-      margin,
-      margin,
-      imageWidth,
-      fullImageHeight
-    );
-  } else {
-    // تقسيم المحتوى الطويل على صفحات A4 متعددة
-    const sliceHeightPx = Math.floor((canvas.width * (pageHeight - margin * 2)) / imageWidth);
+  try {
     let offsetY = 0;
     let pageIndex = 0;
-
-    while (offsetY < canvas.height) {
-      const sliceH = Math.min(sliceHeightPx, canvas.height - offsetY);
-      const slice = document.createElement('canvas');
-      slice.width = canvas.width;
-      slice.height = sliceH;
-
-      const ctx = slice.getContext('2d');
-      if (!ctx) break;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, slice.width, slice.height);
-      ctx.drawImage(canvas, 0, offsetY, canvas.width, sliceH, 0, 0, canvas.width, sliceH);
-
+    while (offsetY < contentHeight) {
+      const pageContentHeight = Math.min(sliceHeightPx, contentHeight - offsetY);
+      const canvas = await html2canvas(element, {
+        x: 0,
+        y: offsetY,
+        width: contentWidth,
+        height: pageContentHeight,
+        scale: 1.5,
+        useCORS: true,
+        allowTaint: false,
+        backgroundColor: '#ffffff',
+        logging: false,
+        windowWidth: contentWidth,
+        windowHeight: contentHeight,
+        scrollX: 0,
+        scrollY: 0,
+      });
+      if (!canvas.width || !canvas.height) throw new Error('تعذر التقاط جزء من التقرير.');
       if (pageIndex > 0) pdf.addPage();
-      pdf.addImage(
-        slice.toDataURL('image/jpeg', 0.95),
-        'JPEG',
-        margin,
-        margin,
-        imageWidth,
-        (sliceH * imageWidth) / canvas.width
-      );
-
-      offsetY += sliceH;
+      const renderedHeight = (canvas.height * imageWidth) / canvas.width;
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', margin, margin, imageWidth, renderedHeight);
+      offsetY += pageContentHeight;
       pageIndex++;
     }
+  } catch (err) {
+    console.error('html2canvas capture failed:', err);
+    throw new Error('فشل تحويل التقرير لملف PDF. جرّب تاني أو استخدم تصدير CSV.');
   }
 
   pdf.save(fileName.endsWith('.pdf') ? fileName : `${fileName}.pdf`);

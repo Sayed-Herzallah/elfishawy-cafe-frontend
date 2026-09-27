@@ -12,6 +12,7 @@ import { DateRangeFilter, toLocalDateString } from '../../components/ui/DateRang
 import { DashboardFilterBar } from '../../components/ui/DashboardFilterBar';
 import { StatCard } from '../../components/ui/StatCard';
 import { exportElementToPdf } from '../../utils/pdfExport';
+import { buildCsv, downloadCsv } from '../../utils/csvExport';
 import { formatPrice, formatNumber, formatDate, formatTime, formatStat } from '../../utils/formatters';
 import { ensurePurchaseRestockAndSync } from '../../utils/stockSync';
 import { playSuccessSound } from '../../utils/soundFeedback';
@@ -417,15 +418,7 @@ export const CashierExpensesPage: React.FC = () => {
         ]),
       ];
 
-      const csvContent = '\uFEFF' + csvRows.map((row) => row.map((val) => `"${val}"`).join(',')).join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.setAttribute('href', url);
-      link.setAttribute('download', `تقرير_المشتريات_${new Date().toISOString().slice(0, 10)}.csv`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      downloadCsv(buildCsv(csvRows), `تقرير_المشتريات_${new Date().toISOString().slice(0, 10)}`);
       showToast('تم تصدير ملف CSV بنجاح 📊', 'success');
     } catch (err) {
       showError(err);

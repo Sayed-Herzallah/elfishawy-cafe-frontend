@@ -18,7 +18,7 @@ export const LoginPage: React.FC = () => {
   // صفحة خاصة بفريق العمل — مستبعدة من الفهرسة
   usePageSEO({ meta: PAGE_SEO.login });
 
-  const { login } = useAuth();
+  const { login, loginError } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -43,7 +43,7 @@ export const LoginPage: React.FC = () => {
         navigate('/admin');
       }
     } else {
-      setErrorMessage('البريد الإلكتروني أو كلمة المرور غير صحيحة، يرجى المحاولة مجدداً');
+      setErrorMessage(loginError || 'لم يكتمل تسجيل الدخول. تحقق من البيانات وحاول مرة أخرى.');
     }
   };
 

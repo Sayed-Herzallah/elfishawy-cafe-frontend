@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { X, FileText, Download, CheckCircle2, FileSpreadsheet, Printer } from 'lucide-react';
 import { Button } from './Button';
 
@@ -25,14 +26,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   const handleConfirm = () => {
     if (selectedFormat === 'pdf') {
-      onExportPDF();
+      onClose();
+      // Let React remove the dialog before html2canvas captures the report.
+      window.setTimeout(() => void onExportPDF(), 100);
     } else {
       onExportCSV();
+      onClose();
     }
-    onClose();
   };
 
-  return (
+  return createPortal((
     <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4">
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/60 backdrop-blur-xs" onClick={onClose} />
@@ -141,5 +144,5 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         </div>
       </div>
     </div>
-  );
+  ), document.body);
 };

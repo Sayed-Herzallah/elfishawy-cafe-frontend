@@ -2,11 +2,19 @@ import { ApiResponse, User } from '../types';
 import { ApiClient, API_BASE_URL } from './api/apiClient';
 
 export const authService = {
-  login: (email: string, password: string): Promise<ApiResponse<User>> => {
-    return ApiClient.request<User>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
+  login: async (email: string, password: string): Promise<ApiResponse<User>> => {
+    try {
+      return await ApiClient.request<User>('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password }),
+      });
+    } catch (err: any) {
+      // A 401 from the login endpoint means rejected credentials, not an expired session.
+      if (err?.status === 401) {
+        throw { ...err, message: 'البريد الإلكتروني أو كلمة المرور غير صحيحة.' };
+      }
+      throw err;
+    }
   },
 
   refreshToken: (refreshToken: string): Promise<ApiResponse<{ accessToken: string }>> => {

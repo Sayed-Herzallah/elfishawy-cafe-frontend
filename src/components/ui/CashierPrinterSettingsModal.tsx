@@ -4,6 +4,8 @@ import {
   getConfiguredCashierPrinters,
   setConfiguredCashierPrinters,
   CashierPrinterInfo,
+  getPrinterStatusLabel,
+  isVirtualPrinter,
 } from '../../utils/printerConfig';
 import { useNotification } from '../../contexts/NotificationContext';
 
@@ -34,7 +36,7 @@ export const CashierPrinterSettingsModal: React.FC<CashierPrinterSettingsModalPr
         setAvailablePrinters(res.printers);
         const currentSaved = getConfiguredCashierPrinters();
         if (currentSaved.length === 0) {
-          const def = res.printers.find((p: any) => p.isDefault);
+          const def = res.printers.find((p: any) => p.isDefault && !isVirtualPrinter(p.name));
           if (def?.name) {
             const initial = [def.name];
             setConfiguredPrinters(initial);
@@ -117,7 +119,9 @@ export const CashierPrinterSettingsModal: React.FC<CashierPrinterSettingsModalPr
             ) : (
               availablePrinters.map((p, idx) => {
                 const isConfigured = configuredPrinters.includes(p.name);
-                const isOnline = p.status === 0 || p.status === undefined;
+                const isVirtual = isVirtualPrinter(p.name);
+                const statusLabel = getPrinterStatusLabel(p.status);
+                const isReady = p.status === 0;
                 return (
                   <div
                     key={p.name}
@@ -136,9 +140,9 @@ export const CashierPrinterSettingsModal: React.FC<CashierPrinterSettingsModalPr
                         className="w-4 h-4 text-[#2e5b9f] rounded cursor-pointer pointer-events-none"
                       />
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        isOnline ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        isReady ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-amber-50 text-amber-700 border border-amber-200'
                       }`}>
-                        {isOnline ? 'متصلة' : 'غير متصلة/مشغولة'}
+                        {isVirtual ? `افتراضية · ${statusLabel}` : statusLabel}
                       </span>
                     </div>
 
@@ -166,7 +170,7 @@ export const CashierPrinterSettingsModal: React.FC<CashierPrinterSettingsModalPr
           <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-2xl text-[11px] text-blue-900 flex items-start gap-2">
             <CheckCircle2 className="w-4 h-4 text-[#2e5b9f] shrink-0 mt-0.5" />
             <p className="leading-relaxed">
-              عند الضغط على "طباعة الفاتورة"، تُرسل الفاتورة مباشرة لجميع الطابعات المحددة أعلاه بدون ظهور أي Dialog. لن تُرسل الفاتورة لأي طابعة غير محددة (مثل OneNote أو Microsoft PDF).
+              الحالة تعرض ما يبلّغ به Windows؛ بعض تعريفات الطابعات لا تكشف فصل الكابل/الشبكة بدقة. الطابعات الافتراضية مثل OneNote وMicrosoft PDF ليست طابعات إيصالات، ولا يتم اختيارها تلقائيًا.
             </p>
           </div>
 

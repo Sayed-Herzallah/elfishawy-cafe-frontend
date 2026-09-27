@@ -34,7 +34,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
       const newToasts = [...prev, { id, message, type }];
       setTimeout(() => {
         setToasts((current) => current.filter((t) => t.id !== id));
-      }, 4000);
+      }, type === 'error' ? 2800 : 4000);
       return newToasts;
     });
   }, []);
@@ -78,7 +78,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
       return 'حدث خطأ في الخادم. حاول مرة أخرى بعد قليل';
     }
 
-    return 'تعذّر تنفيذ العملية. حاول مرة أخرى، وإذا تكررت المشكلة تواصل مع المسؤول';
+    return 'في مشكلة مؤقتة. حاول مرة أخرى.';
   };
 
   const showError = useCallback((error: any) => {
@@ -101,7 +101,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
       {children}
       
       {/* Right Toast Container (all notifications on the right side for RTL) */}
-      <div className="fixed top-5 right-5 z-[9999] flex flex-col gap-2 max-w-sm w-full pointer-events-none text-right font-sans">
+      <div className="fixed top-5 right-5 z-[9999] flex flex-col gap-2 max-w-[min(24rem,calc(100vw-2.5rem))] w-full pointer-events-none text-right font-sans">
         {toasts.map((toast) => (
           <div
             key={toast.id}
@@ -116,7 +116,7 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
             {toast.type === 'success' && <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />}
             {toast.type === 'error' && <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />}
             {toast.type === 'info' && <Info className="w-4 h-4 text-[#2e5b9f] shrink-0 mt-0.5" />}
-            <div className="flex-1 leading-snug">{toast.message}</div>
+            <div className="flex-1 min-w-0 break-words [overflow-wrap:anywhere] leading-snug">{toast.message}</div>
           </div>
         ))}
       </div>

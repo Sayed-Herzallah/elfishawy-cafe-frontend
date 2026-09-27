@@ -7,6 +7,9 @@ coverage/
 .env*
 !.env.example
 release/
+release-*/
+tmp/
+.kilo/
 
 # Databases & local sqlite
 *.db

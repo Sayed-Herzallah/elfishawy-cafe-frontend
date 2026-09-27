@@ -12,6 +12,10 @@ import {
   restockOfflineInventory as persistOfflineRestock,
 } from './offlineInventoryOps.js';
 import crypto from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 // ============================================================
 // اليوم التجاري الموحّد بتوقيت القاهرة (Africa/Cairo)
@@ -800,14 +804,36 @@ export function setupIpcHandlers(mainWindow) {
   ipcMain.handle('print:get-printers', async () => {
     try {
       const printers = await mainWindow.webContents.getPrintersAsync();
-      // نرجّع الاسم والحالة فقط — بدون بيانات تقنية زيادة
+      // Electron 44 no longer exposes a reliable Windows printer status.
+      // Read the actual Windows spooler queue so an installed/offline printer
+      // isn't incorrectly shown as connected just because it exists.
+      let windowsPrinterStates = new Map();
+      try {
+        const { stdout } = await execFileAsync('powershell.exe', [
+          '-NoProfile', '-NonInteractive', '-Command',
+          'Get-CimInstance Win32_Printer | Select-Object Name,PrinterState,WorkOffline | ConvertTo-Json -Compress',
+        ], { windowsHide: true, timeout: 5000, maxBuffer: 1024 * 1024 });
+        const parsed = JSON.parse(stdout.trim() || '[]');
+        const rows = Array.isArray(parsed) ? parsed : [parsed];
+        windowsPrinterStates = new Map(rows.map((row) => [
+          String(row.Name || '').toLowerCase(),
+          row.WorkOffline
+            ? 8
+            : row.PrinterState !== null && row.PrinterState !== '' && Number.isFinite(Number(row.PrinterState))
+              ? Number(row.PrinterState)
+              : null,
+        ]));
+      } catch (statusErr) {
+        console.warn('[print:get-printers] Windows status unavailable:', statusErr.message);
+      }
+
       return {
         ok: true,
         printers: printers.map((p) => ({
           name: p.name,
           displayName: p.displayName || p.name,
           isDefault: p.isDefault,
-          status: p.status,
+          status: windowsPrinterStates.get(String(p.name).toLowerCase()) ?? null,
         })),
       };
     } catch (err) {

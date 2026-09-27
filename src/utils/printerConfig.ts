@@ -14,7 +14,44 @@ export interface CashierPrinterInfo {
   name: string;
   displayName?: string;
   isDefault?: boolean;
-  status?: number;
+  status?: number | null;
+}
+
+/** Electron's PrinterStatus values. A printer being installed isn't proof it is online. */
+export function getPrinterStatusLabel(status?: number | null): string {
+  switch (status) {
+    case 0: return 'جاهزة';
+    case 1: return 'متوقفة مؤقتًا';
+    case 2: return 'خطأ في الطابعة';
+    case 3: return 'جارٍ حذفها';
+    case 4: return 'الورق عالق';
+    case 5: return 'الورق نافد';
+    case 6: return 'تحتاج تغذية يدوية';
+    case 7: return 'مشكلة في الورق';
+    case 8: return 'غير متصلة';
+    case 9:
+    case 11:
+    case 15: return 'جارٍ الطباعة';
+    case 10: return 'مشغولة';
+    case 12: return 'درج الإخراج ممتلئ';
+    case 13: return 'غير متاحة';
+    case 14: return 'في انتظار الطباعة';
+    case 16: return 'جارٍ التشغيل';
+    case 17: return 'جارٍ التسخين';
+    case 18: return 'الحبر على وشك النفاد';
+    case 19: return 'الحبر نافد';
+    case 20: return 'تعذر طباعة الصفحة';
+    case 21: return 'تحتاج إلى تدخل';
+    case 22: return 'ذاكرة الطابعة غير كافية';
+    case 23: return 'غطاء الطابعة مفتوح';
+    case 24: return 'تعذر الاتصال بخادم الطباعة';
+    case 25: return 'موفرة للطاقة';
+    default: return status == null ? 'تعذر التحقق من الاتصال' : 'حالة غير معروفة';
+  }
+}
+
+export function isVirtualPrinter(name: string): boolean {
+  return /onenote|microsoft (print to pdf|xps document writer)|fax|pdf creator|adobe pdf|print to file/i.test(name);
 }
 
 /**

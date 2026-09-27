@@ -11,6 +11,7 @@ interface AuthContextValue {
   isAdmin: boolean;
   isCashier: boolean;
   isLoading: boolean;
+  loginError: string | null;
   login: (email: string, password: string) => Promise<User | null>;
   logout: () => void;
   refreshUserProfile: () => Promise<void>;
@@ -22,6 +23,7 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [loginError, setLoginError] = useState<string | null>(null);
   const { showToast, showError } = useNotification();
   // هل كان فيه جلسة نشطة؟ (عشان رسالة انتهاء الجلسة متتكررش)
   const wasAuthenticatedRef = useRef(false);
@@ -94,7 +96,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     // First try normal online login against the server
     try {
       setIsLoading(true);
-      const res = await authService.login(email, password);
+      setLoginError(null);
+      const res = await authService.login(email.trim().toLowerCase(), password);
       if (res.success && res.tokens) {
         ApiClient.setTokens(res.tokens.accessToken, res.tokens.refreshToken);
         let loggedInUser: User | null = null;
@@ -128,6 +131,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         showToast('تم تسجيل الدخول بنجاح');
         return loggedInUser;
       }
+      setLoginError(res.message || 'لم يقبل الخادم بيانات تسجيل الدخول.');
       return null;
     } catch (err: any) {
       // If server unreachable and in Electron mode, fall back to offline credentials
@@ -144,12 +148,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           showToast('تم تسجيل الدخول بنجاح (وضع غير متصل)');
           return offlineRes.user;
         } else {
-          showToast('لا يمكن تسجيل الدخول بدون إنترنت في أول مرة', 'error');
+          setLoginError(offlineRes?.message || 'لا يمكن تسجيل الدخول بدون إنترنت قبل تسجيل الدخول مرة واحدة على هذا الجهاز.');
           return null;
         }
       }
 
-      showError(err);
+      const serverMessage = typeof err?.message === 'string'
+        ? err.message
+        : typeof err?.error === 'string' ? err.error : '';
+      setLoginError(isNetworkError
+        ? 'تعذر الاتصال بخادم تسجيل الدخول. تحقق من الإنترنت وحاول مرة أخرى.'
+        : serverMessage || 'رفض الخادم بيانات تسجيل الدخول. تحقق من البريد وكلمة المرور أو اطلب من المسؤول مراجعة الحساب.');
       return null;
     } finally {
       setIsLoading(false);
@@ -201,6 +210,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isAdmin,
         isCashier,
         isLoading,
+        loginError,
         login,
         logout,
         refreshUserProfile,
