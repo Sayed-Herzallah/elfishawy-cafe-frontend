@@ -743,9 +743,15 @@ export const expenseService = {
     } catch (err) {
       if (offlineStore.isDesktop()) {
         const localExpenses = await offlineStore.getOfflineExpenses();
-        const filtered = params?.category
+        let filtered = params?.category
           ? localExpenses.filter((e: any) => e.category === params.category)
           : localExpenses;
+        if (params?.searchDate) {
+          const targetDay = getBusinessDayKey(params.searchDate);
+          filtered = filtered.filter((e: any) =>
+            getBusinessDayKey(String(e.date || e.createdAt || '')) === targetDay
+          );
+        }
         return { success: true, message: 'Loaded from local offline database', data: filtered };
       }
       // ✅ المتصفح أوفلاين: كاش localStorage كطبقة أخيرة

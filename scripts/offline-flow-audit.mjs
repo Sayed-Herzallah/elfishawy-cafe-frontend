@@ -301,6 +301,25 @@ assert(
   }) && scalar(`SELECT COUNT(*) FROM expenses WHERE client_expense_id = ?`, [purchasePayload.clientExpenseId]) === 1
 );
 
+// A legacy cache row may have lost its operation ID but still share the
+// server's unique purchase number. Refreshing server history must replace it,
+// not throw a SQLite UNIQUE error or leave two visible copies.
+db.run(`INSERT INTO expenses (_id, description, amount, category, sync_status, client_expense_id, purchase_number, created_at)
+  VALUES ('legacy_purchase_cache_row', 'Stale cached duplicate', 90, 'inventory', 'SYNCED', 'legacy_client_id', 'P-20260927-0007', '2026-09-27T10:00:00.000Z')`);
+assert(
+  'server history collapses a legacy purchase-number cache alias',
+  cacheServerExpense(db, {
+    _id: '567890abcdef123456789012',
+    clientExpenseId: 'new_server_client_id',
+    description: 'Authoritative purchase row',
+    amount: 90,
+    category: 'inventory',
+    purchaseNumber: 'P-20260927-0007',
+  }) &&
+  scalar(`SELECT COUNT(*) FROM expenses WHERE purchase_number = 'P-20260927-0007'`) === 1 &&
+  scalar(`SELECT COUNT(*) FROM expenses WHERE _id = '567890abcdef123456789012'`) === 1
+);
+
 const rollbackDb = new SQL.Database();
 rollbackDb.run(`
   CREATE TABLE inventory (

@@ -123,14 +123,32 @@ export function reconcileExpenseWithServer(db, clientExpenseId, serverExpense) {
 export function cacheServerExpense(db, exp) {
   if (!exp?._id) return false;
   const clientExpenseId = exp.clientExpenseId || exp.client_expense_id || '';
+  const purchaseNumber = exp.purchaseNumber || exp.purchase_number || '';
   const pendingCheck = db.exec(
     `SELECT 1 FROM expenses
      WHERE IFNULL(sync_status, 'SYNCED') = 'PENDING_SYNC'
-       AND (client_expense_id = ? OR client_expense_id = ?)
+       AND (client_expense_id = ? OR client_expense_id = ? OR (? != '' AND purchase_number = ?))
      LIMIT 1`,
-    [exp._id, clientExpenseId]
+    [exp._id, clientExpenseId, purchaseNumber, purchaseNumber]
   );
   if (pendingCheck.length && pendingCheck[0].values.length) return false;
+
+  // Older/local rows can have the same server purchase number or client id
+  // under a temporary SQLite _id. Collapse that alias before the unique-index
+  // upsert so one bad row cannot abort caching every purchase after it.
+  const collisions = db.exec(
+    `SELECT _id FROM expenses
+     WHERE _id != ? AND (
+       (? != '' AND client_expense_id = ?) OR
+       (? != '' AND purchase_number = ?)
+     ) AND IFNULL(sync_status, 'SYNCED') != 'PENDING_SYNC'`,
+    [String(exp._id), String(clientExpenseId), String(clientExpenseId), String(purchaseNumber), String(purchaseNumber)]
+  );
+  if (collisions.length && collisions[0].values.length) {
+    for (const [collisionId] of collisions[0].values) {
+      db.run(`DELETE FROM expenses WHERE _id = ?`, [collisionId]);
+    }
+  }
 
   const linked = typeof exp.inventoryItemLinked === 'object'
     ? (exp.inventoryItemLinked?._id || exp.inventoryItemLinked?.id || null)
@@ -149,7 +167,7 @@ export function cacheServerExpense(db, exp) {
       unit_cost = excluded.unit_cost,
       date = excluded.date,
       added_by = excluded.added_by,
-      purchase_number = excluded.purchase_number,
+      purchase_number = COALESCE(excluded.purchase_number, expenses.purchase_number),
       client_expense_id = excluded.client_expense_id,
       sync_status = 'SYNCED'
     WHERE IFNULL(expenses.sync_status, 'SYNCED') != 'PENDING_SYNC'
@@ -164,7 +182,7 @@ export function cacheServerExpense(db, exp) {
     exp.date || createdAt,
     addedBy,
     clientExpenseId || null,
-    exp.purchaseNumber || exp.purchase_number || null,
+    purchaseNumber || null,
     createdAt,
   ]);
   return true;

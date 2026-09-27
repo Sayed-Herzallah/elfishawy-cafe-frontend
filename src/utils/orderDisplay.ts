@@ -196,6 +196,7 @@ export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] =
   const byKey = new Map<string, any>();
   const cidToKey = new Map<string, string>();
   const idToKey = new Map<string, string>();
+  const invoiceToKey = new Map<string, string>();
 
   const isPending = (o: any): boolean =>
     String(o?.syncStatus || o?.sync_status || '').toUpperCase() === 'PENDING_SYNC';
@@ -206,10 +207,20 @@ export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] =
     return /^\d{1,6}$/.test(raw.replace(/^OFF-/i, '').trim());
   };
 
+  const invoiceKeyOf = (o: any): string => {
+    if (!o || isPending(o) || !hasFinalNumber(o)) return '';
+    const dayKey = String(
+      o?.dayKey || o?.day_key || getCairoDayKey(new Date(String(o?.createdAt || o?.created_at || Date.now())))
+    );
+    const invoiceNumber = String(o?.orderNumber ?? o?.order_number ?? '').trim().replace(/^0+(?=\d)/, '');
+    return `${dayKey}:${invoiceNumber}`;
+  };
+
   const processOrder = (o: any) => {
     if (!o || typeof o !== 'object') return;
     const cid = String(o.clientOrderId || o.client_order_id || '').trim();
     const id = String(o._id || '').trim();
+    const invoiceKey = invoiceKeyOf(o);
 
     // العثور على المفتاح الموجود سواء عبر clientOrderId أو عبر _id
     let existingKey: string | undefined = undefined;
@@ -217,7 +228,12 @@ export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] =
       existingKey = cidToKey.get(cid);
     } else if (id && idToKey.has(id)) {
       existingKey = idToKey.get(id);
+    } else if (invoiceKey && invoiceToKey.has(invoiceKey)) {
+      existingKey = invoiceToKey.get(invoiceKey);
     }
+
+    // The same final invoice may arrive in the server payload and SQLite under
+    // different IDs. Attach the new aliases to that existing row before merge.
 
     if (existingKey && byKey.has(existingKey)) {
       const existing = byKey.get(existingKey);
@@ -243,6 +259,7 @@ export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] =
       byKey.set(existingKey, merged);
       if (cid) cidToKey.set(cid, existingKey);
       if (id) idToKey.set(id, existingKey);
+      if (invoiceKey) invoiceToKey.set(invoiceKey, existingKey);
       return;
     }
 
@@ -253,6 +270,7 @@ export const mergeOrderLists = (primary: any[] = [], extra: any[] = []): any[] =
     byKey.set(newKey, { ...o });
     if (cid) cidToKey.set(cid, newKey);
     if (id) idToKey.set(id, newKey);
+    if (invoiceKey) invoiceToKey.set(invoiceKey, newKey);
   };
 
   // معالجة كلتا القائمتين مع الضمان بعدم التكرار

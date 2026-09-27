@@ -508,7 +508,7 @@ export const CashierPOSPage: React.FC = () => {
           optimisticRaw = {
             ...localRes.data,
             // نحافظ على provisionalNumber من SQLite (هو المصدر الوحيد للرقم المؤقت على الديسكتوب)
-            provisionalNumber: localRes.data.provisionalNumber || localRes.data.provisional_number || '',
+            provisionalNumber: localRes.data.provisionalNumber || localRes.data.provisional_number || allocateProvisionalNumber(),
           };
         } catch (err) {
           showError(err);

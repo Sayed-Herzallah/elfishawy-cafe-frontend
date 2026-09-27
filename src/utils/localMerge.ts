@@ -64,26 +64,32 @@ export const dedupeInventoryRows = <T extends Record<string, any>>(rows: T[]): T
  */
 export const dedupeExpenseRows = <T extends Record<string, any>>(rows: T[]): T[] => {
   const byKey = new Map<string, T>();
+  const identityToKey = new Map<string, string>();
   (rows || []).forEach((row, index) => {
-    const key =
-      String(row?.clientExpenseId || row?.client_expense_id || '').trim() ||
-      String(row?._id || '').trim() ||
-      `__local_${index}`;
+    const clientId = String(row?.clientExpenseId || row?.client_expense_id || '').trim();
+    const purchaseNumber = String(row?.purchaseNumber || row?.purchase_number || '').trim();
+    const id = String(row?._id || '').trim();
+    const identities = [
+      clientId && `client:${clientId}`,
+      purchaseNumber && `purchase:${purchaseNumber}`,
+      id && `id:${id}`,
+    ].filter(Boolean) as string[];
+    const key = identities.map((identity) => identityToKey.get(identity)).find(Boolean) || `__expense_${index}`;
     const prev = byKey.get(key);
     if (!prev) {
       byKey.set(key, row);
-      return;
+    } else {
+      const prevPending = isPendingSyncRow(prev);
+      const rowPending = isPendingSyncRow(row);
+      // الصف المُزامن هو المرجع لأي عملية وصلت السيرفر
+      if (prevPending && !rowPending) {
+        byKey.set(key, { ...prev, ...row });
+      } else if (!(rowPending && !prevPending)) {
+        // الاتنين بنفس الحالة: نفضّل صف السيرفر (المعرّف النهائي)
+        byKey.set(key, isServerObjectId(row?._id) && !isServerObjectId(prev?._id) ? { ...prev, ...row } : { ...row, ...prev });
+      }
     }
-    const prevPending = isPendingSyncRow(prev);
-    const rowPending = isPendingSyncRow(row);
-    // الصف المُزامن هو المرجع لأي عملية وصلت السيرفر
-    if (prevPending && !rowPending) {
-      byKey.set(key, row);
-      return;
-    }
-    if (rowPending && !prevPending) return;
-    // الاتنين بنفس الحالة: نفضّل صف السيرفر (المعرّف النهائي)
-    if (isServerObjectId(row?._id) && !isServerObjectId(prev?._id)) byKey.set(key, row);
+    for (const identity of identities) identityToKey.set(identity, key);
   });
   return Array.from(byKey.values());
 };

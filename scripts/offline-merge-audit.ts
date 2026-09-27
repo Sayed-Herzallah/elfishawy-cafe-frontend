@@ -3,6 +3,7 @@
  * التشغيل: npx tsx scripts/offline-merge-audit.ts
  */
 import { dedupeExpenseRows, dedupeInventoryRows } from '../src/utils/localMerge';
+import { mergeOrderLists } from '../src/utils/orderDisplay';
 
 let failed = 0;
 const assert = (name: string, cond: boolean) => {
@@ -106,6 +107,25 @@ const twoPending = dedupeExpenseRows([
   { _id: 'off_exp_b', clientExpenseId: 'off_exp_b', amount: 20, category: 'inventory', syncStatus: 'PENDING_SYNC' },
 ]);
 assert('two different pending purchases stay visible', twoPending.length === 2);
+
+// 7) Same final invoice from server and SQLite under different IDs still counts once.
+const invoiceMerge = mergeOrderLists(
+  [{ _id: 'server-order-id', orderNumber: 31, dayKey: '2026-09-27', syncStatus: 'SYNCED', totalAmount: 100 }],
+  [{ _id: 'local-order-id', order_number: '31', day_key: '2026-09-27', sync_status: 'SYNCED', totalAmount: 100 }],
+);
+assert('same final invoice with different IDs collapses by business day and number', invoiceMerge.length === 1);
+const differentDays = mergeOrderLists(
+  [{ _id: 'server-order-today', orderNumber: 1, dayKey: '2026-09-27', syncStatus: 'SYNCED' }],
+  [{ _id: 'server-order-yesterday', orderNumber: 1, dayKey: '2026-09-26', syncStatus: 'SYNCED' }],
+);
+assert('same invoice number on different business days remains distinct', differentDays.length === 2);
+
+// 8) Purchase invoice number is a final identity when old rows lost operation IDs.
+const sameInvoicePurchase = dedupeExpenseRows([
+  { _id: 'purchase-old-cache-id', clientExpenseId: 'legacy-client-a', purchaseNumber: 'P-20260927-0007', amount: 80, syncStatus: 'SYNCED' },
+  { _id: SERVER_EXP_ID, client_expense_id: 'server-client-b', purchase_number: 'P-20260927-0007', amount: 80, sync_status: 'SYNCED' },
+]);
+assert('same purchase invoice with different IDs collapses to one record', sameInvoicePurchase.length === 1);
 
 if (failed > 0) {
   console.error(`\n${failed} assertion(s) failed`);

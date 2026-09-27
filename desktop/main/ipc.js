@@ -331,7 +331,7 @@ export function setupIpcHandlers(mainWindow) {
         method: 'GET',
         signal: AbortSignal.timeout(4000),
       }).catch(() => null);
-      return res ? true : false;
+      return Boolean(res?.ok);
     } catch {
       return false;
     }
@@ -340,6 +340,18 @@ export function setupIpcHandlers(mainWindow) {
   // Set Auth Token for Sync
   ipcMain.handle('auth:set-token', async (_event, token) => {
     configureSync({ token });
+    if (token) {
+      // Seed the complete server history into SQLite as soon as the user logs
+      // in, rather than waiting for the first 15-second background interval.
+      setTimeout(async () => {
+        try {
+          await processSyncQueue(mainWindow);
+          await pullServerUpdates(mainWindow);
+        } catch (err) {
+          console.warn('[Sync] Initial authenticated pull failed:', err?.message || err);
+        }
+      }, 0);
+    }
     return { success: true };
   });
 
@@ -700,7 +712,11 @@ export function setupIpcHandlers(mainWindow) {
         }
       } else if (entityType === 'expenses') {
         for (const exp of records) {
-          cacheServerExpense(db, exp);
+          try {
+            cacheServerExpense(db, exp);
+          } catch (expenseErr) {
+            console.warn('Failed to cache server purchase locally:', exp?._id, expenseErr?.message);
+          }
         }
       }
 
