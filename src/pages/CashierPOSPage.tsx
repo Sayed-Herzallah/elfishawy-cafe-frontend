@@ -461,6 +461,7 @@ export const CashierPOSPage: React.FC = () => {
       if (submittingRef.current) return;
       submittingRef.current = true;
       setIsSubmitting(true);
+      try {
 
       const shortagesForThisOrder = new Set<string>();
       cart.forEach((cartItem) => {
@@ -551,15 +552,11 @@ export const CashierPOSPage: React.FC = () => {
         recordOrderShortages(clientOrderId, clientOrderId, shortagesList);
       }
 
-      // 🔒 فك القفل فوراً بعد حفظ الفاتورة محلياً — قبل أي async لاحق
-      submittingRef.current = false;
-      setIsSubmitting(false);
       showToast('تم تأكيد الطلب وحفظ الفاتورة بنجاح!');
       handleClearCart();
 
-      orderService
-        .createOrder({ ...serverPayload, localPrepared: offlineStore.isDesktop() })
-        .then((res) => {
+      try {
+        const res = await orderService.createOrder({ ...serverPayload, localPrepared: offlineStore.isDesktop() });
           if (!res.success || !res.data) return;
           const serverOrder = normalizeOrder(
             {
@@ -581,10 +578,15 @@ export const CashierPOSPage: React.FC = () => {
           });
           saveOrdersSnapshot([res.data]);
           setTimeout(() => loadData(), 500);
-        })
-        .catch(() => {
-          /* الفاتورة محفوظة محلياً — ستُزامَن تلقائياً */
-        });
+      } catch {
+        /* الفاتورة محفوظة محلياً — ستُزامَن تلقائياً */
+      }
+      } finally {
+        // إبقاء القفل بعد الحفظ المحلي يمنع ضغطة سريعة من إنشاء clientOrderId
+        // جديد قبل أن تنتهي محاولة التأكيد/المزامنة للطلب الحالي.
+        submittingRef.current = false;
+        setIsSubmitting(false);
+      }
     })();
   };
 

@@ -252,6 +252,7 @@ export async function processSyncQueue(mainWindow) {
     const token = getAuthToken();
     const rows = res[0].values;
     let syncedCount = 0;
+    const syncedEntities = new Set();
 
     for (const row of rows) {
       const [id, clientOpId, entityType, action, payloadStr, attempts, sequenceId, prevHash, opHash] = row;
@@ -339,10 +340,15 @@ export async function processSyncQueue(mainWindow) {
 
           const data = await orderResponse.json().catch(() => ({}));
           if (orderResponse.ok && data.success) {
-            success = true;
             serverResult = data.data;
-
-            reconcileOrderWithServer(db, clientOpId, serverResult);
+            const finalOrderNumber = String(serverResult?.orderNumber ?? serverResult?.order_number ?? '').trim();
+            if (!/^\d+$/.test(finalOrderNumber)) {
+              throw new Error('Server accepted order without returning its final invoice number; retrying reconciliation');
+            }
+            if (!reconcileOrderWithServer(db, clientOpId, serverResult)) {
+              throw new Error('Server accepted order, but its final invoice number could not be saved locally; retrying reconciliation');
+            }
+            success = true;
           } else {
             const err = new Error(data.message || `Server returned ${orderResponse.status} for order`);
             err.statusCode = orderResponse.status;
@@ -488,6 +494,7 @@ export async function processSyncQueue(mainWindow) {
             [new Date().toISOString(), id]
           );
           syncedCount++;
+          syncedEntities.add(entityType);
         }
       } catch (err) {
         console.error(`Error syncing operation ${clientOpId}:`, err.message);
@@ -515,7 +522,13 @@ export async function processSyncQueue(mainWindow) {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('sync:progress', { status: 'DONE', count: syncedCount });
       if (syncedCount > 0) {
-        mainWindow.webContents.send('sync:data-updated', { entity: 'orders' });
+        const changed = {
+          orders: syncedEntities.has('order'),
+          inventory: syncedEntities.has('inventory_create') || syncedEntities.has('inventory_restock'),
+          expenses: syncedEntities.has('expense') || syncedEntities.has('inventory_create') || syncedEntities.has('inventory_restock'),
+          products: syncedEntities.has('order') || syncedEntities.has('inventory_create') || syncedEntities.has('inventory_restock') || syncedEntities.has('expense'),
+        };
+        mainWindow.webContents.send('sync:data-updated', changed);
       }
     }
     return { success: true, count: syncedCount };

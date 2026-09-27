@@ -728,7 +728,14 @@ export const expenseService = {
     // فحص وضع عدم الاتصال في الديسكتوب — عودة فورية من SQLite
     if (offlineStore.isDesktop()) {
       const isOnline = await offlineStore.isOnline();
-      const localExpenses = await offlineStore.getOfflineExpenses();
+      const sqliteExpenses = await offlineStore.getOfflineExpenses();
+      let snapshotExpenses: Expense[] = [];
+      try {
+        const raw = localStorage.getItem('ef_expenses_cache');
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (Array.isArray(parsed)) snapshotExpenses = parsed;
+      } catch { /* the SQLite cache remains available */ }
+      const localExpenses = dedupeExpenseRows([...snapshotExpenses, ...sqliteExpenses]);
       if (!isOnline) {
         const filtered = params?.category
           ? localExpenses.filter((e: any) => e.category === params.category)
@@ -749,7 +756,7 @@ export const expenseService = {
         // يجعل الويب والديسكتوب والإحصائيات تستخدم نفس مجموعة القيود.
         const serverRows = dedupeExpenseRows(res.data);
         // ✅ كاش المتصفح: حفظ القائمة في localStorage لاستخدامها أوفلاين
-        if (!qs && !offlineStore.isDesktop()) {
+        if (!qs) {
           try { localStorage.setItem('ef_expenses_cache', JSON.stringify(serverRows)); } catch { /* تجاهل */ }
         }
         if (offlineStore.isDesktop()) {
