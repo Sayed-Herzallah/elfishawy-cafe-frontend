@@ -351,6 +351,10 @@ export const CashierExpensesPage: React.FC = () => {
       }
 
       return matchesSearch && matchesDate;
+    }).sort((a, b) => {
+      const aTime = new Date(eCreatedAt(a) || 0).getTime() || 0;
+      const bTime = new Date(eCreatedAt(b) || 0).getTime() || 0;
+      return bTime - aTime;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expenses, searchQuery, searchMode, dateFilter, dateFrom, dateTo, hasCustomRange]);

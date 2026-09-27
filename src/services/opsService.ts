@@ -115,7 +115,7 @@ const mergeInventoryLists = (serverRows: InventoryItem[] = [], localRows: any[] 
 const mergeExpenseLists = (serverRows: Expense[] = [], localRows: any[] = []): Expense[] => {
   return dedupeExpenseRows([...serverRows, ...localRows]).sort(
     (a, b) =>
-      new Date(b.date || b.createdAt || 0).getTime() - new Date(a.date || a.createdAt || 0).getTime()
+      new Date(b.createdAt || b.date || 0).getTime() - new Date(a.createdAt || a.date || 0).getTime()
   );
 };
 
@@ -778,7 +778,10 @@ export const expenseService = {
               const status = String(expense?.syncStatus || expense?.sync_status || '').toUpperCase();
               const clientId = String(expense?.clientExpenseId || expense?.client_expense_id || '');
               const localId = String(expense?._id || '');
-              return status === 'PENDING_SYNC' && !serverIds.has(clientId) && !serverIds.has(localId);
+              // السيرفر قد يكون رجع لقطة أقدم من عملية تمت للتو؛ خذ الصف المحلي
+              // ما دام لا يوجد له مقابل بهوية السيرفر/العميل، ثم وحّد التكرارات.
+              return (status === 'PENDING_SYNC' || status === 'PENDING' || Boolean(clientId && clientId === localId && !/^[0-9a-fA-F]{24}$/.test(localId))) &&
+                !serverIds.has(clientId) && !serverIds.has(localId);
             });
             const merged = mergeExpenseLists(serverRows, pendingOnly);
             return { ...res, data: merged };
