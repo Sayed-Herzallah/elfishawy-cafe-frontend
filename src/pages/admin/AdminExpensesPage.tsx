@@ -204,6 +204,9 @@ export const AdminExpensesPage: React.FC = () => {
 
     try {
       setIsSubmitting(true);
+      if (!expenseOperationId) {
+        throw new Error('تعذّر إنشاء معرّف ثابت لعملية الشراء. أغلق النافذة وافتحها ثم أعد المحاولة.');
+      }
 
       // 🔍 رصيد الخام قبل التسجيل — عشان نتحقق بعدها إن الرصيد زاد فعلاً
       const linkedItem = inventoryItems.find((i) => i._id === formData.inventoryItemLinked);
@@ -226,7 +229,7 @@ export const AdminExpensesPage: React.FC = () => {
         totalCost: Number(formData.amount),
         date: formData.date ? new Date(formData.date).toISOString() : new Date().toISOString(),
         // 🔑 هوية ثابتة للعملية — إعادة المحاولة تسجّل نفس القيد مش قيد جديد
-        clientExpenseId: expenseOperationId || undefined,
+        clientExpenseId: expenseOperationId,
       });
 
       if (res.success) {

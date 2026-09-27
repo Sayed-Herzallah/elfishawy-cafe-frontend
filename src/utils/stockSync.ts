@@ -2,6 +2,7 @@ import { productService, recipeService } from '../services/catalogService';
 import { inventoryService } from '../services/opsService';
 import { isStockOut } from './stockStatus';
 import { repairConsumeQty, toBaseQty } from './recipeUnits';
+import { offlineStore } from '../services/data/offlineStore';
 
 // Helper to convert units to base unit
 export const toBase = (qty: number, unit: string): number => toBaseQty(qty, unit);
@@ -178,7 +179,7 @@ export async function ensurePurchaseRestockAndSync(params: {
         : undefined;
     newQty = fresh ? Number(fresh.quantity) : null;
 
-    if (newQty !== null && qtyBefore !== null && newQty <= qtyBefore) {
+    if (newQty !== null && qtyBefore !== null && newQty <= qtyBefore && !offlineStore.isDesktop()) {
       // ⚠️ الـ Backend مازودش الرصيد من قيد الشراء → restock صريح كخطة بديلة
       const res = await inventoryService.restockItem(itemId, addQty, unitCost, undefined, clientExpenseId);
       if (res.success) {

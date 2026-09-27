@@ -392,6 +392,12 @@ export function setupIpcHandlers(mainWindow) {
         }
       } catch { }
 
+      // Keep the local invoice, stock deductions, and queue entry atomic. A
+      // renderer retry can safely reuse clientOrderId if any step fails.
+      db.run('BEGIN IMMEDIATE');
+      let localOrderCommitted = false;
+      try {
+
       // ─── رقم فاتورة مؤقت تسلسلي يومي (اليوم التجاري بتوقيت القاهرة) ──
       // عدّاد محلي مستقل يبدأ من 1 لكل يوم تجاري جديد — لا علاقة له إطلاقاً
       // بأرقام السيرفر النهائية → لا "زيادة غلط" عند انقطاع الإنترنت.
@@ -495,6 +501,9 @@ export function setupIpcHandlers(mainWindow) {
         createdAt: now,
       });
 
+      db.run('COMMIT');
+      localOrderCommitted = true;
+
       saveDatabase();
 
       // Trigger background sync attempt
@@ -518,6 +527,11 @@ export function setupIpcHandlers(mainWindow) {
           isOffline: true,
         }
       };
+      } finally {
+        if (!localOrderCommitted) {
+          try { db.run('ROLLBACK'); } catch { }
+        }
+      }
     } catch (err) {
       console.error('offline:create-order error:', err);
       return { success: false, message: err.message };

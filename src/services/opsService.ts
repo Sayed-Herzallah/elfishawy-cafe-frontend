@@ -3,6 +3,7 @@ import { ApiResponse, Order, InventoryItem, Expense, KPIStats, ChartsData, Order
 import { offlineStore } from './data/offlineStore';
 import { mergeOrderLists } from '../utils/orderDisplay';
 import { saveOrdersSnapshot, readOrdersSnapshot } from '../utils/ordersCache';
+import { isStockLow } from '../utils/stockStatus';
 import {
   findServerExpenseByClientId,
   findServerInventoryByClientId,
@@ -590,14 +591,12 @@ export const expenseService = {
     // فحص وضع عدم الاتصال في الديسكتوب — عودة فورية من SQLite
     if (offlineStore.isDesktop()) {
       const isOnline = await offlineStore.isOnline();
+      const localExpenses = await offlineStore.getOfflineExpenses();
       if (!isOnline) {
-        let localExpenses = await offlineStore.getOfflineExpenses();
-        if (params?.category) {
-          localExpenses = localExpenses.filter((e: any) => e.category === params.category);
-        }
-        if (localExpenses && localExpenses.length > 0) {
-          return { success: true, message: 'Loaded from local offline database', data: localExpenses };
-        }
+        const filtered = params?.category
+          ? localExpenses.filter((e: any) => e.category === params.category)
+          : localExpenses;
+        return { success: true, message: 'Loaded from local offline database', data: filtered };
       }
     }
 
@@ -613,21 +612,22 @@ export const expenseService = {
           await offlineStore.cacheEntities('expenses', res.data);
           if (!qs) {
             const localExpenses = await offlineStore.getOfflineExpenses();
-            const serverIds = new Set([
-              ...res.data.map((e: any) => String(e._id || '')),
-              ...res.data.map((e: any) => String(e.clientExpenseId || '')),
-            ]);
-            // ✅ فقط السجلات الفعلاً PENDING (لم تتزامن بعد) تُضاف
-            const pendingOnly = localExpenses.filter((le: any) => {
-              const cid = String(le.clientExpenseId || le.client_expense_id || '');
-              const lid = String(le._id || '');
-              return (
-                String(le.syncStatus || le.sync_status || '').toUpperCase() === 'PENDING_SYNC' &&
-                !serverIds.has(cid) &&
-                !serverIds.has(lid)
-              );
+            // Only add pending operations that have not arrived from the server.
+            // A local row already represented by either its server id or client id
+            // must not inflate the purchases count after reconciliation.
+            const serverIds = new Set<string>();
+            for (const expense of res.data as any[]) {
+              const serverId = String(expense?._id || '');
+              const clientId = String(expense?.clientExpenseId || expense?.client_expense_id || '');
+              if (serverId) serverIds.add(serverId);
+              if (clientId) serverIds.add(clientId);
+            }
+            const pendingOnly = localExpenses.filter((expense: any) => {
+              const status = String(expense?.syncStatus || expense?.sync_status || '').toUpperCase();
+              const clientId = String(expense?.clientExpenseId || expense?.client_expense_id || '');
+              const localId = String(expense?._id || '');
+              return status === 'PENDING_SYNC' && !serverIds.has(clientId) && !serverIds.has(localId);
             });
-            // ✅ mergeExpenseLists بدل spread خام — يمنع ظهور نفس القيد مرتين
             const merged = mergeExpenseLists(res.data, pendingOnly);
             return { ...res, data: merged };
           }
@@ -637,9 +637,10 @@ export const expenseService = {
     } catch (err) {
       if (offlineStore.isDesktop()) {
         const localExpenses = await offlineStore.getOfflineExpenses();
-        if (localExpenses && localExpenses.length > 0) {
-          return { success: true, message: 'Loaded from local offline database', data: localExpenses };
-        }
+        const filtered = params?.category
+          ? localExpenses.filter((e: any) => e.category === params.category)
+          : localExpenses;
+        return { success: true, message: 'Loaded from local offline database', data: filtered };
       }
       // ✅ المتصفح أوفلاين: كاش localStorage كطبقة أخيرة
       if (!offlineStore.isDesktop()) {
@@ -719,7 +720,7 @@ export const expenseService = {
           body: JSON.stringify({ ...serverBody, clientExpenseId }),
         });
         if (res.success && res.data) {
-          return applyServerExpense(res.data);
+          return applyServerExpense({ ...res.data, clientExpenseId: (res.data as any).clientExpenseId || clientExpenseId });
         }
         return res;
       } catch (networkErr) {
@@ -746,6 +747,9 @@ export const expenseService = {
         method: 'POST',
         body: JSON.stringify({ ...serverBody, clientExpenseId }),
       });
+      if (res.success && res.data) {
+        return applyServerExpense({ ...res.data, clientExpenseId: (res.data as any).clientExpenseId || clientExpenseId });
+      }
       return res;
     } catch (networkErr) {
       const reconciled = await findServerExpenseByClientId(clientExpenseId);
