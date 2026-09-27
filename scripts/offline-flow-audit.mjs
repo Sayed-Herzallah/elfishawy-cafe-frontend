@@ -11,6 +11,7 @@ import {
 } from '../desktop/main/offlineInventoryOps.js';
 import {
   cacheServerExpense,
+  cacheServerProduct,
   reconcileExpenseWithServer,
   reconcileInventoryWithServer,
   reconcileRestockExpenseWithServer,
@@ -434,6 +435,10 @@ cacheDb.run(`
     min_limit REAL DEFAULT 5, cost_price REAL DEFAULT 0, last_restock_total_cost REAL DEFAULT 0,
     last_restocked TEXT, sync_status TEXT DEFAULT 'SYNCED', client_inventory_id TEXT UNIQUE, updated_at TEXT
   );
+  CREATE TABLE products (
+    _id TEXT PRIMARY KEY, name TEXT, price REAL, description TEXT, image_url TEXT,
+    category_id TEXT, in_stock INTEGER, stock_quantity REAL, updated_at TEXT
+  );
 `);
 const cacheCount = (sql, params = []) => Number(cacheDb.exec(sql, params)?.[0]?.values?.[0]?.[0] || 0);
 cacheDb.run(
@@ -483,6 +488,28 @@ assert(
   'server inventory cache does not overwrite stock while a local sale is pending',
   cacheServerInventoryItem(cacheDb, { _id: 'off_inv_local_sale', name: 'Locally sold material', quantity: 10, unit: 'KG', minLimit: 1 }) === false &&
   cacheCount(`SELECT quantity FROM inventory WHERE _id = 'off_inv_local_sale'`) === 8
+);
+
+cacheDb.run(`INSERT INTO products (_id, name, price, in_stock, stock_quantity) VALUES ('audit-product', 'Offline product', 10, 1, 5)`);
+assert(
+  'server product cache preserves locally adjusted stock while operations are pending',
+  cacheServerProduct(cacheDb, { _id: 'audit-product', name: 'Server product', price: 12, inStock: true, stockQuantity: 40 }) &&
+  cacheCount(`SELECT stock_quantity FROM products WHERE _id = 'audit-product'`) === 5 &&
+  cacheCount(`SELECT price FROM products WHERE _id = 'audit-product'`) === 12
+);
+cacheDb.run(`UPDATE sync_queue SET status = 'COMPLETED' WHERE client_op_id = 'off_order_local_sale'`);
+cacheServerProduct(cacheDb, { _id: 'audit-product', name: 'Server product', price: 12, inStock: true, stockQuantity: 4 });
+assert(
+  'server product stock refresh applies after pending operations are reconciled',
+  cacheCount(`SELECT stock_quantity FROM products WHERE _id = 'audit-product'`) === 4
+);
+
+const reopenedDb = new SQL.Database(fixDb.export());
+assert(
+  'SQLite export/reopen retains offline stock, purchase, and queued operation',
+  Number(reopenedDb.exec(`SELECT quantity FROM inventory WHERE _id = ?`, [serverZeroItemId])[0]?.values?.[0]?.[0]) === 20 &&
+  Number(reopenedDb.exec(`SELECT COUNT(*) FROM expenses WHERE client_expense_id = ?`, ['off_rstk_zero_1'])[0]?.values?.[0]?.[0]) === 1 &&
+  Number(reopenedDb.exec(`SELECT COUNT(*) FROM sync_queue WHERE client_op_id = ? AND status = 'PENDING'`, ['off_rstk_zero_1'])[0]?.values?.[0]?.[0]) === 1
 );
 
 if (failed > 0) {

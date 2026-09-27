@@ -4,6 +4,10 @@ import { decryptSensitiveString, computeOpHash } from './security.js';
 
 let isSyncing = false;
 let syncIntervalTimer = null;
+let isSyncCycleRunning = false;
+let forcePullRequested = false;
+let lastServerPullAt = 0;
+const SERVER_PULL_INTERVAL_MS = 15_000;
 const testMode = process.env.ELECTRON_TEST_MODE === 'true';
 const testApiUrl = process.env.ELECTRON_TEST_API_URL || '';
 if (testMode && !/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(testApiUrl)) {
@@ -188,6 +192,46 @@ export function cacheServerExpense(db, exp) {
   return true;
 }
 
+/** Cache product metadata from the server without overwriting stock changed by
+ * a local sale/purchase that is still waiting in the durable sync queue. */
+export function cacheServerProduct(db, product) {
+  if (!product?._id) return false;
+  const categoryId = typeof product.category === 'object'
+    ? (product.category?._id || '')
+    : (product.category || '');
+  const imageUrl = product.image?.secure_url || product.image?.url || '';
+  db.run(`
+    INSERT INTO products (_id, name, price, description, image_url, category_id, in_stock, stock_quantity, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(_id) DO UPDATE SET
+      name = excluded.name,
+      price = excluded.price,
+      description = excluded.description,
+      image_url = excluded.image_url,
+      category_id = excluded.category_id,
+      in_stock = CASE WHEN EXISTS (
+        SELECT 1 FROM sync_queue WHERE status IN ('PENDING', 'FAILED')
+          AND entity_type IN ('order', 'expense', 'inventory_restock', 'inventory_create')
+      ) THEN products.in_stock ELSE excluded.in_stock END,
+      stock_quantity = CASE WHEN EXISTS (
+        SELECT 1 FROM sync_queue WHERE status IN ('PENDING', 'FAILED')
+          AND entity_type IN ('order', 'expense', 'inventory_restock', 'inventory_create')
+      ) THEN products.stock_quantity ELSE excluded.stock_quantity END,
+      updated_at = excluded.updated_at
+  `, [
+    String(product._id),
+    String(product.name || ''),
+    Number(product.price) || 0,
+    product.description || '',
+    imageUrl,
+    categoryId,
+    product.inStock ? 1 : 0,
+    Number(product.stockQuantity) || 0,
+    product.updatedAt || new Date().toISOString(),
+  ]);
+  return true;
+}
+
 /** تأجيل عملية طابور المزامنة لانتظار تبعية (مثل صنف مخزون لم يُرفع بعد) — بدون FAILED دائم */
 function deferSyncQueueItem(db, queueId, attempts, message) {
   db.run(
@@ -336,6 +380,7 @@ export async function processSyncQueue(mainWindow) {
               // (الرقم المؤقت المحلي للعرض/الطباعة فقط ولا يصلح رقماً نهائياً).
               clientCreatedAt: payload.createdAt,
             }),
+            signal: AbortSignal.timeout(10000),
           });
 
           const data = await orderResponse.json().catch(() => ({}));
@@ -390,6 +435,7 @@ export async function processSyncQueue(mainWindow) {
               date: payload.date || new Date().toISOString(),
               clientExpenseId: clientOpId,
             }),
+            signal: AbortSignal.timeout(10000),
           });
 
           const data = await expenseResponse.json().catch(() => ({}));
@@ -430,6 +476,7 @@ export async function processSyncQueue(mainWindow) {
               // معرّف العملية الأوفلاين — يمنع رفع الرصيد مرتين عند إعادة الإرسال
               clientRestockId: payload.clientRestockId || clientOpId,
             }),
+            signal: AbortSignal.timeout(10000),
           });
 
           const data = await restockResponse.json().catch(() => ({}));
@@ -464,6 +511,7 @@ export async function processSyncQueue(mainWindow) {
               totalCost: payload.totalCost !== undefined ? Number(payload.totalCost) : undefined,
               clientInventoryId: payload.clientInventoryId || clientOpId,
             }),
+            signal: AbortSignal.timeout(10000),
           });
 
           const data = await createResponse.json().catch(() => ({}));
@@ -499,7 +547,7 @@ export async function processSyncQueue(mainWindow) {
       } catch (err) {
         console.error(`Error syncing operation ${clientOpId}:`, err.message);
         const isAuthError = err.statusCode === 401 || err.message?.includes('401') || err.message?.includes('Unauthorized');
-        const isNetworkError = err.name === 'TypeError' || err.message?.includes('fetch failed') || err.message?.includes('NetworkError') || err.message?.includes('ENOTFOUND') || err.message?.includes('ECONNREFUSED');
+        const isNetworkError = err.name === 'TypeError' || err.name === 'AbortError' || err.name === 'TimeoutError' || err.message?.includes('fetch failed') || err.message?.includes('NetworkError') || err.message?.includes('ENOTFOUND') || err.message?.includes('ECONNREFUSED');
 
         // أخطاء الشبكة والتوثيق تظل PENDING ولا يتم تعليمها كـ FAILED
         const newStatus = (isAuthError || isNetworkError) ? 'PENDING' : 'FAILED';
@@ -554,15 +602,25 @@ export async function pullServerUpdates(mainWindow) {
     if (!token) return;
     const db = getDb();
 
-    // 1. سحب الفواتير من السيرفر
-    const ordersRes = await fetch(`${apiBaseUrl}/orders`, {
-      method: 'GET',
-      headers: {
-        'authorization': token,
-      },
-      signal: AbortSignal.timeout(10000),
-    }).catch(() => null);
+    // Pull the whole POS snapshot in parallel. Serial 8–10 second timeouts on
+    // every resource could otherwise starve the queue sync loop for a long time.
+    const authHeaders = { authorization: token };
+    const [ordersRes, invRes, expRes, productsRes, categoriesRes, recipesRes] = await Promise.all(
+      [
+        ['/orders', 10000],
+        ['/inventory', 8000],
+        ['/expenses', 8000],
+        ['/products', 8000],
+        ['/categories', 8000],
+        ['/recipes', 8000],
+      ].map(([route, timeoutMs]) => fetch(`${apiBaseUrl}${route}`, {
+        method: 'GET',
+        headers: authHeaders,
+        signal: AbortSignal.timeout(timeoutMs),
+      }).catch(() => null))
+    );
 
+    // 1. سحب الفواتير من السيرفر
     let hasNewOrders = false;
     if (ordersRes && ordersRes.ok) {
       const ordersData = await ordersRes.json();
@@ -629,14 +687,6 @@ export async function pullServerUpdates(mainWindow) {
     }
 
     // 2. سحب المخزون المحدث من السيرفر (لتحديث أرصدة الخامات بدقة في SQLite)
-    const invRes = await fetch(`${apiBaseUrl}/inventory`, {
-      method: 'GET',
-      headers: {
-        'authorization': token,
-      },
-      signal: AbortSignal.timeout(8000),
-    }).catch(() => null);
-
     let hasNewInventory = false;
     if (invRes && invRes.ok) {
       const invData = await invRes.json();
@@ -687,14 +737,6 @@ export async function pullServerUpdates(mainWindow) {
     }
 
     // 3. سحب المصروفات / المشتريات من السيرفر (لتظهر في سجل المشتريات حتى أوفلاين)
-    const expRes = await fetch(`${apiBaseUrl}/expenses`, {
-      method: 'GET',
-      headers: {
-        'authorization': token,
-      },
-      signal: AbortSignal.timeout(8000),
-    }).catch(() => null);
-
     let hasNewExpenses = false;
     if (expRes && expRes.ok) {
       const expData = await expRes.json();
@@ -710,16 +752,69 @@ export async function pullServerUpdates(mainWindow) {
       }
     }
 
-    if (hasNewOrders || hasNewInventory || hasNewExpenses) {
+    let hasNewProducts = false;
+    if (productsRes?.ok) {
+      const productsData = await productsRes.json().catch(() => null);
+      if (productsData?.success && Array.isArray(productsData.data)) {
+        for (const product of productsData.data) {
+          try {
+            if (cacheServerProduct(db, product)) hasNewProducts = true;
+          } catch (productErr) {
+            console.warn('[Sync] Failed to cache product:', product?._id, productErr?.message);
+          }
+        }
+      }
+    }
+
+    let hasNewCategories = false;
+    if (categoriesRes?.ok) {
+      const categoriesData = await categoriesRes.json().catch(() => null);
+      if (categoriesData?.success && Array.isArray(categoriesData.data)) {
+        for (const category of categoriesData.data) {
+          if (!category?._id) continue;
+          db.run(`
+            INSERT INTO categories (_id, name, description, updated_at) VALUES (?, ?, ?, ?)
+            ON CONFLICT(_id) DO UPDATE SET
+              name = excluded.name, description = excluded.description, updated_at = excluded.updated_at
+          `, [category._id, category.name || '', category.description || '', category.updatedAt || new Date().toISOString()]);
+          hasNewCategories = true;
+        }
+      }
+    }
+
+    let hasNewRecipes = false;
+    if (recipesRes?.ok) {
+      const recipesData = await recipesRes.json().catch(() => null);
+      if (recipesData?.success && Array.isArray(recipesData.data)) {
+        for (const recipe of recipesData.data) {
+          if (!recipe?._id) continue;
+          const productId = typeof recipe.product === 'object' ? recipe.product?._id : recipe.product;
+          if (!productId) continue;
+          db.run(`
+            INSERT INTO recipes (_id, product_id, ingredients, is_active, updated_at) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(_id) DO UPDATE SET
+              product_id = excluded.product_id, ingredients = excluded.ingredients,
+              is_active = excluded.is_active, updated_at = excluded.updated_at
+          `, [recipe._id, productId, JSON.stringify(recipe.ingredients || []), recipe.isActive ? 1 : 0, recipe.updatedAt || new Date().toISOString()]);
+          hasNewRecipes = true;
+        }
+      }
+    }
+
+    if (hasNewOrders || hasNewInventory || hasNewExpenses || hasNewProducts || hasNewCategories || hasNewRecipes) {
       saveDatabase();
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sync:data-updated', {
           orders: hasNewOrders,
           inventory: hasNewInventory,
           expenses: hasNewExpenses,
+          products: hasNewProducts,
+          categories: hasNewCategories,
+          recipes: hasNewRecipes,
         });
       }
     }
+    lastServerPullAt = Date.now();
   } catch (pullErr) {
     console.warn('[Sync] Pull updates warning:', pullErr.message);
   } finally {
@@ -727,20 +822,38 @@ export async function pullServerUpdates(mainWindow) {
   }
 }
 
-export function startBackgroundSync(mainWindow, intervalMs = 15000) {
+/** One coordinator for timer, login, reconnect and manual sync requests. */
+export async function runSyncCycle(mainWindow, { forcePull = false } = {}) {
+  if (isSyncCycleRunning) {
+    if (forcePull) forcePullRequested = true;
+    return { success: false, message: 'Sync cycle already in progress' };
+  }
+  isSyncCycleRunning = true;
+  try {
+    forcePull = forcePull || forcePullRequested;
+    forcePullRequested = false;
+    if (!getAuthToken()) return { success: false, message: 'No authenticated session' };
+    const health = await fetch(`${apiBaseUrl}/`, {
+      method: 'GET',
+      signal: AbortSignal.timeout(3000),
+    }).catch(() => null);
+    if (!health?.ok) return { success: false, message: 'Server unavailable' };
+
+    const upload = await processSyncQueue(mainWindow);
+    const pullIsDue = forcePull || Date.now() - lastServerPullAt >= SERVER_PULL_INTERVAL_MS;
+    if (pullIsDue) await pullServerUpdates(mainWindow);
+    return upload;
+  } finally {
+    isSyncCycleRunning = false;
+  }
+}
+
+export function startBackgroundSync(mainWindow, intervalMs = 1000) {
   if (syncIntervalTimer) clearInterval(syncIntervalTimer);
 
-  syncIntervalTimer = setInterval(async () => {
-    try {
-      const res = await fetch(`${apiBaseUrl}/`, { method: 'GET' }).catch(() => null);
-      if (res && res.ok) {
-        // 1. رفع العمليات المعلقة المحلية
-        await processSyncQueue(mainWindow);
-        // 2. سحب أي فواتير أو تغييرات جديدة من المنصة
-        await pullServerUpdates(mainWindow);
-      }
-    } catch {
-      // Offline, continue waiting
-    }
+  syncIntervalTimer = setInterval(() => {
+    void runSyncCycle(mainWindow).catch((err) => {
+      console.warn('[Sync] Background cycle failed:', err?.message || err);
+    });
   }, intervalMs);
 }

@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initDatabase } from './db.js';
 import { setupIpcHandlers } from './ipc.js';
-import { startBackgroundSync, processSyncQueue, pullServerUpdates } from './sync.js';
+import { startBackgroundSync } from './sync.js';
 import { frontendUpdater } from './frontendUpdater.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -107,31 +107,6 @@ async function createWindow() {
           // Run continuous background checks every 30 seconds
           setInterval(runUpdateCheck, 30 * 1000);
 
-          // فحص فوري بمجرد عودة الاتصال بالإنترنت
-          let lastOnlineState = false;
-          setInterval(async () => {
-            try {
-              const healthUrl = process.env.ELECTRON_TEST_MODE === 'true'
-                ? `${process.env.ELECTRON_TEST_API_URL}/`
-                : 'https://elfishawy-cafe-server.vercel.app/';
-              const res = await fetch(healthUrl, {
-                method: 'GET',
-                signal: AbortSignal.timeout(3000),
-              }).catch(() => null);
-              const isNowOnline = Boolean(res && res.ok);
-              if (isNowOnline && !lastOnlineState) {
-                console.log('[Network] Internet returned! Triggering instant sync and update check...');
-                runUpdateCheck();
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                  processSyncQueue(mainWindow).catch(() => {});
-                  pullServerUpdates(mainWindow).catch(() => {});
-                }
-              }
-              lastOnlineState = isNowOnline;
-            } catch {
-              lastOnlineState = false;
-            }
-          }, 10 * 1000);
         }
       }
     }, 700);

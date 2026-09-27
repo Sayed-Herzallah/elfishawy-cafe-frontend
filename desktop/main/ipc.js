@@ -1,7 +1,7 @@
 // desktop/main/ipc.js
 import { ipcMain, BrowserWindow } from 'electron';
 import { getDb, saveDatabase, getMasterKey } from './db.js';
-import { cacheServerExpense, processSyncQueue, configureSync, pullServerUpdates, reconcileOrderWithServer } from './sync.js';
+import { cacheServerExpense, cacheServerProduct, runSyncCycle, configureSync, reconcileOrderWithServer } from './sync.js';
 import { cacheServerInventoryItem } from './inventoryCache.js';
 import { frontendUpdater } from './frontendUpdater.js';
 import { encryptSensitiveString, decryptSensitiveString, computeOpHash } from './security.js';
@@ -341,16 +341,11 @@ export function setupIpcHandlers(mainWindow) {
   ipcMain.handle('auth:set-token', async (_event, token) => {
     configureSync({ token });
     if (token) {
-      // Seed the complete server history into SQLite as soon as the user logs
-      // in, rather than waiting for the first 15-second background interval.
-      setTimeout(async () => {
-        try {
-          await processSyncQueue(mainWindow);
-          await pullServerUpdates(mainWindow);
-        } catch (err) {
-          console.warn('[Sync] Initial authenticated pull failed:', err?.message || err);
-        }
-      }, 0);
+      // Force the initial authenticated upload/pull through the same guarded
+      // coordinator used by the timer and manual Sync.
+      setTimeout(() => void runSyncCycle(mainWindow, { forcePull: true }).catch((err) => {
+        console.warn('[Sync] Initial authenticated cycle failed:', err?.message || err);
+      }), 0);
     }
     return { success: true };
   });
@@ -592,7 +587,7 @@ export function setupIpcHandlers(mainWindow) {
       const result = persistOfflineExpense(db, expenseData, (operation) => enqueueSecureOperation(db, operation));
       if (result.queued) {
         saveDatabase();
-        setTimeout(() => processSyncQueue(mainWindow), 100);
+        setTimeout(() => void runSyncCycle(mainWindow), 100);
       }
       if (result.success && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sync:data-updated', { expenses: true, inventory: true });
@@ -622,7 +617,7 @@ export function setupIpcHandlers(mainWindow) {
       const result = persistOfflineRestock(db, restockData, (operation) => enqueueSecureOperation(db, operation));
       if (result.queued) {
         saveDatabase();
-        setTimeout(() => processSyncQueue(mainWindow), 100);
+        setTimeout(() => void runSyncCycle(mainWindow), 100);
       }
       if (result.success && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sync:data-updated', { expenses: true, inventory: true });
@@ -641,7 +636,7 @@ export function setupIpcHandlers(mainWindow) {
       const result = persistOfflineInventoryItem(db, itemData, (operation) => enqueueSecureOperation(db, operation));
       if (result.queued) {
         saveDatabase();
-        setTimeout(() => processSyncQueue(mainWindow), 100);
+        setTimeout(() => void runSyncCycle(mainWindow), 100);
       }
       if (result.success && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('sync:data-updated', { inventory: true, expenses: true });
@@ -660,22 +655,7 @@ export function setupIpcHandlers(mainWindow) {
       const db = getDb();
 
       if (entityType === 'products') {
-        for (const p of records) {
-          db.run(`
-            INSERT OR REPLACE INTO products (_id, name, price, description, image_url, category_id, in_stock, stock_quantity, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `, [
-            p._id,
-            p.name,
-            p.price,
-            p.description || '',
-            p.image?.secure_url || '',
-            typeof p.category === 'object' ? p.category?._id : p.category,
-            p.inStock ? 1 : 0,
-            p.stockQuantity || 0,
-            p.updatedAt || new Date().toISOString()
-          ]);
-        }
+        for (const p of records) cacheServerProduct(db, p);
       } else if (entityType === 'categories') {
         for (const c of records) {
           db.run(`
@@ -731,15 +711,7 @@ export function setupIpcHandlers(mainWindow) {
 
   // Sync controls
   ipcMain.handle('sync:trigger', async () => {
-    const result = await processSyncQueue(mainWindow);
-    // عودة الاتصال = رفع + سحب معاً بدون أي تدخل يدوي:
-    // بعد رفع العمليات المحلية (فواتير/مصروفات/مخزون) نسحب أحدث بيانات السيرفر فوراً.
-    try {
-      await pullServerUpdates(mainWindow);
-    } catch {
-      /* فشل السحب لا يُفشل المزامنة */
-    }
-    return result;
+    return runSyncCycle(mainWindow, { forcePull: true });
   });
 
   ipcMain.handle('sync:get-queue', async () => {
