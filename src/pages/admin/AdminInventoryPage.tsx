@@ -92,6 +92,14 @@ export const AdminInventoryPage: React.FC = () => {
   // 🧾 قيود الشراء والتوريد المرتبطة بالأصناف — لعرضها في تفاصيل الصنف مع "بواسطة مين"
   const [purchaseLogs, setPurchaseLogs] = useState<Expense[]>([]);
 
+  // استخدم أحدث توريد من سجل المشتريات أو اليومية المحلية حتى لا تتأخر
+  // أولوية الصنف لو لقطة المخزون القادمة من الشبكة لسه بتاريخ أقدم.
+  const latestRestockTimeByItem = new Map(items.map((item) => {
+    const itemTime = new Date(item.lastRestocked || 0).getTime() || 0;
+    const historyTime = mergeRestockHistory(item._id, purchaseLogs)[0]?.dateMs || 0;
+    return [item._id, Math.max(itemTime, historyTime)] as const;
+  }));
+
   /** اسم اللي قام بآخر توريد للصنف — من بيانات الصنف أولاً ثم من آخر توريد معروف (سيرفر أو اليومية المحلية) */
   const resolveRestockerName = (item: InventoryItem): string => {
     const rb = item.lastRestockedBy;
@@ -469,7 +477,7 @@ export const AdminInventoryPage: React.FC = () => {
 
     // ✅ نطاق التاريخ المخصص — على آخر توريد / تحديث للصنف
     if (dateFrom || dateTo) {
-      const itemDate = new Date(item.lastRestocked || item.updatedAt || item.createdAt || '');
+      const itemDate = new Date(latestRestockTimeByItem.get(item._id) || item.updatedAt || item.createdAt || '');
       if (!itemDate || isNaN(itemDate.getTime())) return false;
       if (dateFrom && itemDate < new Date(`${dateFrom}T00:00:00`)) return false;
       if (dateTo && itemDate > new Date(`${dateTo}T23:59:59.999`)) return false;
@@ -479,8 +487,8 @@ export const AdminInventoryPage: React.FC = () => {
     if (filterMode === 'out') return isStockOut(item.quantity);
     return true;
   }).sort((a, b) => {
-    const timeA = new Date(a.lastRestocked || a.updatedAt || a.createdAt || 0).getTime() || 0;
-    const timeB = new Date(b.lastRestocked || b.updatedAt || b.createdAt || 0).getTime() || 0;
+    const timeA = latestRestockTimeByItem.get(a._id) || new Date(a.updatedAt || a.createdAt || 0).getTime() || 0;
+    const timeB = latestRestockTimeByItem.get(b._id) || new Date(b.updatedAt || b.createdAt || 0).getTime() || 0;
     return timeB - timeA;
   });
 
@@ -696,11 +704,11 @@ export const AdminInventoryPage: React.FC = () => {
                            </div>
                            <div className="min-w-0">
                              <h4 className="font-bold text-gray-900 text-sm truncate">{item.name}</h4>
-                             {item.lastRestocked && (
+                             {latestRestockTimeByItem.get(item._id) ? (
                                <p className="text-[10px] text-gray-400 font-mono truncate">
-                                 آخر تحديث: {formatDate(item.lastRestocked)}{restockerName ? ` • ${restockerName}` : ''}
+                                 آخر توريد: {formatDate(new Date(latestRestockTimeByItem.get(item._id)!))}{restockerName ? ` • ${restockerName}` : ''}
                                </p>
-                             )}
+                             ) : null}
                            </div>
                          </div>
                          <Badge
@@ -829,12 +837,12 @@ export const AdminInventoryPage: React.FC = () => {
                         >
                           <td className="py-3.5 px-3">
                             <span className="font-bold text-gray-900 block">{item.name}</span>
-                            {item.lastRestocked && (
+                            {latestRestockTimeByItem.get(item._id) ? (
                               <span className="text-[10px] text-gray-400 font-mono whitespace-nowrap">
-                                {formatDate(item.lastRestocked)}
+                                {formatDate(new Date(latestRestockTimeByItem.get(item._id)!))}
                                 {restockerName ? ` • ${restockerName}` : ''}
                               </span>
-                            )}
+                            ) : null}
                           </td>
 
                           <td className="py-3.5 px-3 font-mono text-xs text-gray-700 whitespace-nowrap">
@@ -850,7 +858,9 @@ export const AdminInventoryPage: React.FC = () => {
                           </td>
 
                           <td className="py-3.5 px-3 font-mono text-gray-500 text-[11px] whitespace-nowrap">
-                            {formatDate(item.lastRestocked) || '—'}
+                            {latestRestockTimeByItem.get(item._id)
+                              ? formatDate(new Date(latestRestockTimeByItem.get(item._id)!))
+                              : '—'}
                           </td>
 
                           <td className="py-3.5 px-3">

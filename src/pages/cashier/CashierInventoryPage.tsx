@@ -5,7 +5,7 @@ import { useNotification } from '../../contexts/NotificationContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { ensurePurchaseRestockAndSync } from '../../utils/stockSync';
 import { playSuccessSound } from '../../utils/soundFeedback';
-import { addRestockJournalEntry, purchaseSummary } from '../../utils/restockJournal';
+import { addRestockJournalEntry, mergeRestockHistory, purchaseSummary } from '../../utils/restockJournal';
 import { Modal } from '../../components/ui/Modal';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
@@ -343,14 +343,22 @@ export const CashierInventoryPage: React.FC = () => {
     return { total, unit, hasPurchases: p.total > 0, count: p.count };
   };
 
+  // بعض مصادر التوريد تحدّث سجل الشراء قبل تحديث lastRestocked في لقطة المخزون؛
+  // استخدم أحدث تاريخ من السجلين حتى يظهر الصنف المورّد أولاً أونلاين وأوفلاين.
+  const latestRestockTimeByItem = new Map(items.map((item) => {
+    const itemTime = new Date(item.lastRestocked || 0).getTime() || 0;
+    const historyTime = mergeRestockHistory(item._id, purchaseLogs)[0]?.dateMs || 0;
+    return [item._id, Math.max(itemTime, historyTime)] as const;
+  }));
+
   const filteredItems = items.filter((item) => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.trim().toLowerCase());
     if (filterMode === 'low') return matchesSearch && isStockLow(item.quantity, item.minLimit);
     if (filterMode === 'out') return matchesSearch && isStockOut(item.quantity);
     return matchesSearch;
   }).sort((a, b) => {
-    const timeA = new Date(a.lastRestocked || a.updatedAt || a.createdAt || 0).getTime() || 0;
-    const timeB = new Date(b.lastRestocked || b.updatedAt || b.createdAt || 0).getTime() || 0;
+    const timeA = latestRestockTimeByItem.get(a._id) || new Date(a.updatedAt || a.createdAt || 0).getTime() || 0;
+    const timeB = latestRestockTimeByItem.get(b._id) || new Date(b.updatedAt || b.createdAt || 0).getTime() || 0;
     return timeB - timeA;
   });
 
@@ -564,7 +572,9 @@ export const CashierInventoryPage: React.FC = () => {
                       <div className="min-w-0">
                         <h4 className="font-bold text-gray-900 text-sm truncate">{item.name}</h4>
                         <p className="text-[10px] text-gray-400 font-mono truncate mt-0.5">
-                          {item.lastRestocked ? `آخر توريد: ${formatDate(item.lastRestocked)}` : 'لم يتم التوريد بعد'}
+                          {latestRestockTimeByItem.get(item._id)
+                            ? `آخر توريد: ${formatDate(new Date(latestRestockTimeByItem.get(item._id)!))}`
+                            : 'لم يتم التوريد بعد'}
                           {supplier ? ` • مورد: ${supplier}` : ''}
                         </p>
                       </div>
@@ -673,7 +683,9 @@ export const CashierInventoryPage: React.FC = () => {
                       </td>
 
                       <td className="py-3 px-3 font-mono text-xs text-gray-500 whitespace-nowrap">
-                        {formatDate(item.lastRestocked) || '—'}
+                        {latestRestockTimeByItem.get(item._id)
+                          ? formatDate(new Date(latestRestockTimeByItem.get(item._id)!))
+                          : '—'}
                       </td>
 
                       <td className="py-3 px-3">
