@@ -1,0 +1,38 @@
+name: Build Windows 7 32-bit desktop
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install project dependencies
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+
+      - name: Build renderer for Electron 22 (Chromium 108)
+        run: npm run build:electron
+
+      - name: Package Windows 7 32-bit installer
+        run: npx electron-builder --win nsis --ia32 --config.electronVersion=22.3.27 --config.win.artifactName=ElFishawy-Cafe-Setup-Win7-32bit.exe --publish never
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ElFishawy-Cafe-Win7-32bit
+          path: release/ElFishawy-Cafe-Setup-Win7-32bit.exe
+          if-no-files-found: error

@@ -13,7 +13,7 @@
     "lint": "tsc --noEmit",
     "electron:start": "electron .",
     "desktop:dev": "concurrently --kill-others --names \"VITE,ELECTRON\" --prefix-colors \"cyan,magenta\" \"npm run dev\" \"wait-on tcp:3000 && cross-env ELECTRON_DEV=true npm run electron:start\"",
-    "dist:win": "npm run build:electron && electron-builder --win nsis"
+    "dist:win": "npm run build:electron && electron-builder --win nsis --ia32 --config.electronVersion=22.3.27 --config.win.artifactName=ElFishawy-Cafe-Setup-Win7-32bit.exe"
   },
   "build": {
     "appId": "com.elfishawy.cafe",
@@ -72,7 +72,7 @@
     "autoprefixer": "^10.4.21",
     "concurrently": "^10.0.5",
     "cross-env": "^10.1.0",
-    "electron": "^44.3.0",
+    "electron": "43.3.0",
     "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0",
     "ico-endec": "^0.1.6",

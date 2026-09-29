@@ -18,6 +18,8 @@ export default defineConfig(() => {
     },
     build: {
       outDir: 'dist',
+      // Electron 22 ships Chromium 108; preserve Windows 7-compatible output.
+      target: isElectronBuild ? 'chrome108' : undefined,
       // Exclude desktop folder from renderer bundle
       rollupOptions: {
         external: [],
@@ -86,4 +88,3 @@ export default defineConfig(() => {
     },
   };
 });
-
