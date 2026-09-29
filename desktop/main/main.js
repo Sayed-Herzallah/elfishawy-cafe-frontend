@@ -1,5 +1,6 @@
 // desktop/main/main.js
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initDatabase } from './db.js';
@@ -7,8 +8,9 @@ import { setupIpcHandlers } from './ipc.js';
 import { startBackgroundSync } from './sync.js';
 import { frontendUpdater } from './frontendUpdater.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const __dirname = app.isPackaged
+  ? path.join(process.resourcesPath, 'app.asar', 'desktop', 'main')
+  : path.dirname(fileURLToPath(import.meta.url));
 
 if (process.env.ELECTRON_TEST_MODE === 'true') {
   const testUserDataDir = process.env.ELECTRON_TEST_USER_DATA_DIR;
@@ -16,6 +18,16 @@ if (process.env.ELECTRON_TEST_MODE === 'true') {
     throw new Error('Electron test mode requires ELECTRON_TEST_USER_DATA_DIR');
   }
   app.setPath('userData', path.resolve(testUserDataDir));
+}
+
+function logStartup(message) {
+  const line = `[${new Date().toISOString()}] ${message}\n`;
+  console.log(message);
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'startup.log'), line, 'utf8');
+  } catch (error) {
+    console.error('[Desktop] Could not write startup log:', error);
+  }
 }
 
 let mainWindow = null;
@@ -69,9 +81,32 @@ async function createWindow() {
     autoHideMenuBar: !isDev, // في dev: اظهر menu bar للـ DevTools shortcuts
   });
 
+  // Surface failures in the packaged app instead of leaving the splash screen
+  // showing "Ready" forever while the hidden window never becomes available.
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, url) => {
+    logStartup(`Renderer failed to load (${errorCode}): ${errorDescription} — ${url}`);
+  });
+  mainWindow.webContents.on('did-finish-load', () => logStartup('Renderer finished loading.'));
+  mainWindow.webContents.on('dom-ready', () => logStartup('Renderer DOM is ready.'));
+  mainWindow.on('ready-to-show', () => logStartup('Main window is ready to show.'));
+  const compatibilityCssPath = path.join(__dirname, '../electron-compat.css');
+  if (app.isPackaged && fs.existsSync(compatibilityCssPath)) {
+    const compatibilityCss = fs.readFileSync(compatibilityCssPath, 'utf8');
+    mainWindow.webContents.on('dom-ready', () => {
+      mainWindow.webContents.insertCSS(compatibilityCss).catch((error) => {
+        logStartup(`Could not apply Chromium compatibility styles: ${error?.message || error}`);
+      });
+    });
+  }
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    logStartup(`Renderer process exited: ${JSON.stringify(details)}`);
+  });
+
   // Initialize SQLite in userData path
   const userDataPath = app.getPath('userData');
+  logStartup('Initializing local database…');
   await initDatabase(userDataPath);
+  logStartup('Local database ready.');
 
   // Setup IPC & Sync
   setupIpcHandlers(mainWindow);
@@ -128,7 +163,17 @@ async function createWindow() {
     });
   } else {
     const frontendIndexPath = frontendUpdater.getFrontendIndexPath();
-    mainWindow.loadFile(frontendIndexPath);
+    logStartup(`Loading frontend: ${frontendIndexPath}`);
+    mainWindow.loadFile(frontendIndexPath).catch((error) => {
+      logStartup(`Failed to load frontend: ${error?.stack || error}`);
+      if (splashWindow && !splashWindow.isDestroyed()) {
+        splashWindow.close();
+        splashWindow = null;
+      }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.show();
+      }
+    });
   }
 
   // Setup Auto-Updater safely preserving userData SQLite
@@ -148,7 +193,18 @@ async function createWindow() {
   });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(createWindow).catch((error) => {
+  logStartup(`Startup failed: ${error?.stack || error}`);
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+    splashWindow = null;
+  }
+  dialog.showErrorBox(
+    'تعذر تشغيل كافيه الفيشاوي',
+    `فشل تهيئة التطبيق. أعد المحاولة، وإذا استمرت المشكلة أرسل هذه الرسالة للدعم:\n\n${error?.stack || error}`,
+  );
+  app.quit();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {

@@ -425,26 +425,12 @@ export const inventoryService = {
     const qs = query.toString();
     if (!qs) await syncBrowserInventoryDrafts();
 
-    // 1) فحص وضع عدم الاتصال في الديسكتوب — عودة فورية من SQLite بدون انتظار timeout
-    if (offlineStore.isDesktop()) {
-      const isOnline = await offlineStore.isOnline();
-      if (!isOnline) {
-        let cached = await offlineStore.getCachedInventory();
-        if (params?.search) {
-          const q = params.search.toLowerCase();
-          cached = cached.filter((i: any) => i.name?.toLowerCase().includes(q));
-        }
-        if (params?.lowStock) {
-          cached = cached.filter((i: any) => isStockLow(i.quantity, i.minLimit));
-        }
-        return { success: true, message: 'Loaded from local offline database', data: cached };
-      }
-    }
-
     try {
       const res = await ApiClient.request<InventoryItem[]>(`/inventory${qs ? `?${qs}` : ''}`, {
         method: 'GET',
-        signal: AbortSignal.timeout(15000),
+        // Try the live API first in Desktop too. The separate connectivity probe
+        // can report offline even while the authenticated API is reachable.
+        signal: AbortSignal.timeout(10000),
       });
       if (res.success && Array.isArray(res.data) && !qs) {
         if (!offlineStore.isDesktop()) {

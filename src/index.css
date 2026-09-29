@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+/* Electron 22 uses Chromium 108, which does not support the `in oklab`
+   interpolation syntax Tailwind v4 adds to gradient directions. Keep the
+   gradient colors, but use the widely supported direction-only syntax. */
+.bg-gradient-to-t { --tw-gradient-position: to top; }
+.bg-gradient-to-r { --tw-gradient-position: to right; }
+.bg-gradient-to-l { --tw-gradient-position: to left; }
+.bg-gradient-to-br { --tw-gradient-position: to bottom right; }
+
 @layer base {
   :root {
     --font-cairo: 'Cairo', system-ui, -apple-system, sans-serif;

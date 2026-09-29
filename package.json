@@ -3,17 +3,18 @@
   "private": true,
   "version": "1.3.8",
   "type": "module",
-  "main": "desktop/main/main.js",
+  "main": "desktop/main/bootstrap.cjs",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build && node scripts/generate-frontend-manifest.js",
-    "build:electron": "cross-env ELECTRON_BUILD=true vite build && node scripts/generate-frontend-manifest.js",
+    "build:electron": "cross-env ELECTRON_BUILD=true vite build && node scripts/generate-electron-compat.js && node scripts/generate-frontend-manifest.js",
+    "build:electron-main": "esbuild desktop/main/main.js --bundle --platform=node --format=cjs --external:electron --external:electron-updater --outfile=desktop/main/main.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "electron:start": "electron .",
     "desktop:dev": "concurrently --kill-others --names \"VITE,ELECTRON\" --prefix-colors \"cyan,magenta\" \"npm run dev\" \"wait-on tcp:3000 && cross-env ELECTRON_DEV=true npm run electron:start\"",
-    "dist:win": "npm run build:electron && electron-builder --win nsis --ia32 --config.electronVersion=22.3.27 --config.win.artifactName=ElFishawy-Cafe-Setup-Win7-32bit.exe"
+    "dist:win": "npm run build:electron && npm run build:electron-main && node scripts/dist-win.js"
   },
   "build": {
     "appId": "com.elfishawy.cafe",
@@ -26,6 +27,9 @@
       "dist/**/*",
       "desktop/**/*",
       "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
     ],
     "win": {
       "target": "nsis",

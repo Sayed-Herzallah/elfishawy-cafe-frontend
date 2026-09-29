@@ -1,6 +1,7 @@
 // desktop/main/db.js
 import fs from 'fs';
 import path from 'path';
+import { app } from 'electron';
 import initSqlJs from 'sql.js';
 import { getOrCreateMasterKey, encryptBuffer, decryptBuffer, encryptSensitiveString } from './security.js';
 
@@ -16,7 +17,13 @@ export async function initDatabase(userDataPath) {
   dbFilePath = path.join(userDataPath, 'elfishawy_offline.sqlite');
   masterKey = getOrCreateMasterKey(userDataPath);
 
-  const SQL = await initSqlJs();
+  const SQL = await initSqlJs({
+    // In production sql.js runs from app.asar, while electron-builder unpacks
+    // the WASM binary beside it under app.asar.unpacked.
+    locateFile: (file) => app.isPackaged
+      ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'sql.js', 'dist', file)
+      : path.join(app.getAppPath(), 'node_modules', 'sql.js', 'dist', file),
+  });
   let fileBuffer = null;
 
   if (fs.existsSync(dbFilePath)) {

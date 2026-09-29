@@ -11,6 +11,15 @@ export default defineConfig(() => {
     // Base path: './' for Electron (file:// protocol), '/' for web
     base: isElectronBuild ? './' : '/',
     plugins: [react(), tailwindcss()],
+    // Tailwind CSS v4 emits OKLCH theme colors. Electron 22's Chromium 108
+    // cannot parse them, so downlevel the desktop stylesheet to compatible
+    // color values while keeping the web build on its normal modern pipeline.
+    css: isElectronBuild
+      ? {
+          transformer: 'lightningcss',
+          lightningcss: { targets: { chrome: 108 << 16 } },
+        }
+      : undefined,
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

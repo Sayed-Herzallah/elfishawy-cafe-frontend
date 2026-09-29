@@ -335,7 +335,10 @@ export function setupIpcHandlers(mainWindow) {
         method: 'GET',
         signal: AbortSignal.timeout(4000),
       }).catch(() => null);
-      return Boolean(res?.ok);
+      // The API has no public route at `/`, so it can correctly answer 404
+      // while the server is reachable. Any HTTP response (including 401/404/5xx)
+      // means the desktop is online; only a network failure means offline.
+      return Boolean(res);
     } catch {
       return false;
     }
