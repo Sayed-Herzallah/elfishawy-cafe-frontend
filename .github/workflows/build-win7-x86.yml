@@ -42,6 +42,17 @@ jobs:
       - name: Package Windows 7 32-bit installer
         run: npx electron-builder --win nsis --ia32 --config.electronVersion=22.3.27 --config.win.artifactName=ElFishawy-Cafe-Setup-Win7-32bit.exe --publish never
 
+      - name: Verify packaged executable is 32-bit
+        shell: pwsh
+        run: |
+          $exePath = 'release/win-unpacked/ElFishawy Cafe.exe'
+          if (-not (Test-Path $exePath)) { throw "Packaged executable not found: $exePath" }
+          $bytes = [System.IO.File]::ReadAllBytes($exePath)
+          $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
+          $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
+          if ($machine -ne 0x014c) { throw ('Expected x86 PE 0x014c; found 0x{0:X4}' -f $machine) }
+          Write-Output 'Verified IA32 PE machine type 0x014c.'
+
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
