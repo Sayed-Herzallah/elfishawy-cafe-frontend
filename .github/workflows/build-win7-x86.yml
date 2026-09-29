@@ -2,6 +2,18 @@ name: Build Windows 7 32-bit desktop
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/build-win7-x86.yml'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - 'desktop/**'
+      - 'src/**'
+      - 'index.html'
+      - 'public/**'
 
 permissions:
   contents: read
