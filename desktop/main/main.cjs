@@ -3115,12 +3115,12 @@ async function processSyncQueue(mainWindow2) {
 }
 var isPulling = false;
 async function pullServerUpdates(mainWindow2) {
-  if (isPulling) return;
+  if (isPulling) return { success: false, message: "\u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629 \u062C\u0627\u0631\u064A\u0629 \u0628\u0627\u0644\u0641\u0639\u0644" };
   isPulling = true;
   lastServerPullAt = Date.now();
   try {
     const token = getAuthToken();
-    if (!token) return;
+    if (!token) return { success: false, message: "\u0644\u0627 \u062A\u0648\u062C\u062F \u062C\u0644\u0633\u0629 \u062F\u062E\u0648\u0644 \u0635\u0627\u0644\u062D\u0629 \u0644\u0644\u0645\u0632\u0627\u0645\u0646\u0629" };
     const db = getDb();
     const authHeaders = { authorization: token };
     const [ordersRes, invRes, expRes, productsRes, categoriesRes, recipesRes] = await Promise.all(
@@ -3137,6 +3137,15 @@ async function pullServerUpdates(mainWindow2) {
         signal: AbortSignal.timeout(timeoutMs)
       }).catch(() => null))
     );
+    if (!invRes) {
+      throw new Error("\u062A\u0639\u0630\u0631 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0628\u062E\u062F\u0645\u0629 \u0627\u0644\u0645\u062E\u0632\u0648\u0646 \u2014 \u062A\u062D\u0642\u0642 \u0645\u0646 \u0627\u0644\u0625\u0646\u062A\u0631\u0646\u062A \u0648\u062D\u0627\u0648\u0644 \u0645\u0631\u0629 \u0623\u062E\u0631\u0649");
+    }
+    if (invRes.status === 401 || invRes.status === 403) {
+      throw new Error("\u0627\u0646\u062A\u0647\u062A \u0635\u0644\u0627\u062D\u064A\u0629 \u0627\u0644\u062C\u0644\u0633\u0629 \u0623\u0648 \u0644\u0627 \u062A\u0648\u062C\u062F \u0635\u0644\u0627\u062D\u064A\u0629 \u0644\u0642\u0631\u0627\u0621\u0629 \u0627\u0644\u0645\u062E\u0632\u0648\u0646 \u2014 \u0633\u062C\u0651\u0644 \u0627\u0644\u062F\u062E\u0648\u0644 \u0645\u0646 \u062C\u062F\u064A\u062F");
+    }
+    if (!invRes.ok) {
+      throw new Error(`\u0641\u0634\u0644 \u062A\u062D\u0645\u064A\u0644 \u0627\u0644\u0645\u062E\u0632\u0648\u0646 \u0645\u0646 \u0627\u0644\u0633\u064A\u0631\u0641\u0631 (HTTP ${invRes.status})`);
+    }
     let hasNewOrders = false;
     if (ordersRes && ordersRes.ok) {
       const ordersData = await ordersRes.json();
@@ -3313,8 +3322,10 @@ async function pullServerUpdates(mainWindow2) {
       }
     }
     lastServerPullAt = Date.now();
+    return { success: true, inventoryUpdated: hasNewInventory };
   } catch (pullErr) {
     console.warn("[Sync] Pull updates warning:", pullErr.message);
+    return { success: false, message: pullErr.message || "\u062A\u0639\u0630\u0631 \u0645\u0632\u0627\u0645\u0646\u0629 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0645\u062E\u0632\u0648\u0646" };
   } finally {
     isPulling = false;
   }
@@ -3323,7 +3334,12 @@ async function runSyncCycle(mainWindow2, { forcePull = false } = {}) {
   if (!getAuthToken()) return { success: false, message: "No authenticated session" };
   const upload = await processSyncQueue(mainWindow2);
   const pullIsDue = forcePull || Date.now() - lastServerPullAt >= SERVER_PULL_INTERVAL_MS;
-  if (pullIsDue && !isPulling) {
+  if (forcePull) {
+    if (isPulling) return { ...upload, success: false, message: "\u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629 \u062C\u0627\u0631\u064A\u0629 \u0628\u0627\u0644\u0641\u0639\u0644" };
+    const pull = await pullServerUpdates(mainWindow2);
+    if (!pull?.success) return pull || { success: false, message: "\u0641\u0634\u0644\u062A \u0645\u0632\u0627\u0645\u0646\u0629 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0633\u064A\u0631\u0641\u0631" };
+    return { ...upload, success: true, inventoryUpdated: pull.inventoryUpdated };
+  } else if (pullIsDue && !isPulling) {
     void pullServerUpdates(mainWindow2).catch((err) => {
       console.warn("[Sync] Background pull failed:", err?.message || err);
     });

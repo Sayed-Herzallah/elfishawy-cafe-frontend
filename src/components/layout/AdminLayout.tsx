@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
+import { offlineStore } from "../../services/data/offlineStore";
 import {
   LayoutDashboard,
   Coffee,
@@ -28,6 +29,15 @@ export const AdminLayout: React.FC = () => {
     if (isCheckingUpdate) return;
     setIsCheckingUpdate(true);
     try {
+      // Pull server inventory/orders before reloading the current admin page.
+      // The previous handler only checked the frontend bundle and silently
+      // reloaded, despite the button promising an immediate data sync.
+      if (window.electronAPI?.isElectron) {
+        const syncResult = await offlineStore.triggerSync();
+        if (syncResult?.success === false) {
+          throw new Error(syncResult.message || syncResult.error || 'فشلت مزامنة بيانات السيرفر');
+        }
+      }
       if (window.electronAPI?.checkFrontendUpdate) {
         const res = await window.electronAPI.checkFrontendUpdate();
         if (res && res.hasUpdate && res.ready) {
@@ -38,8 +48,10 @@ export const AdminLayout: React.FC = () => {
       } else {
         window.location.reload();
       }
-    } catch {
-      window.location.reload();
+    } catch (error) {
+      console.error('Manual inventory/data sync failed:', error);
+      const message = error instanceof Error ? error.message : 'فشلت مزامنة البيانات';
+      window.alert(message);
     } finally {
       setIsCheckingUpdate(false);
     }

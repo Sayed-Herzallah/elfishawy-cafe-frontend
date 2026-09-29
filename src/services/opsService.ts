@@ -432,6 +432,9 @@ export const inventoryService = {
         // can report offline even while the authenticated API is reachable.
         signal: AbortSignal.timeout(10000),
       });
+      if (res.success && !Array.isArray(res.data)) {
+        throw new Error('استجابة المخزون من السيرفر غير صحيحة — أعد تسجيل الدخول وحاول مرة أخرى');
+      }
       if (res.success && Array.isArray(res.data) && !qs) {
         if (!offlineStore.isDesktop()) {
           try {

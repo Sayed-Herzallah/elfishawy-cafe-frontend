@@ -601,14 +601,14 @@ export async function processSyncQueue(mainWindow) {
  */
 let isPulling = false;
 export async function pullServerUpdates(mainWindow) {
-  if (isPulling) return;
+  if (isPulling) return { success: false, message: 'المزامنة جارية بالفعل' };
   isPulling = true;
   // Start the interval from request launch, so a slow server pull cannot keep
   // the one-second coordinator trying to launch another full snapshot.
   lastServerPullAt = Date.now();
   try {
     const token = getAuthToken();
-    if (!token) return;
+    if (!token) return { success: false, message: 'لا توجد جلسة دخول صالحة للمزامنة' };
     const db = getDb();
 
     // Pull the whole POS snapshot in parallel. Serial 8–10 second timeouts on
@@ -628,6 +628,15 @@ export async function pullServerUpdates(mainWindow) {
         signal: AbortSignal.timeout(timeoutMs),
       }).catch(() => null))
     );
+    if (!invRes) {
+      throw new Error('تعذر الاتصال بخدمة المخزون — تحقق من الإنترنت وحاول مرة أخرى');
+    }
+    if (invRes.status === 401 || invRes.status === 403) {
+      throw new Error('انتهت صلاحية الجلسة أو لا توجد صلاحية لقراءة المخزون — سجّل الدخول من جديد');
+    }
+    if (!invRes.ok) {
+      throw new Error(`فشل تحميل المخزون من السيرفر (HTTP ${invRes.status})`);
+    }
 
     // 1. سحب الفواتير من السيرفر
     let hasNewOrders = false;
@@ -824,8 +833,10 @@ export async function pullServerUpdates(mainWindow) {
       }
     }
     lastServerPullAt = Date.now();
+    return { success: true, inventoryUpdated: hasNewInventory };
   } catch (pullErr) {
     console.warn('[Sync] Pull updates warning:', pullErr.message);
+    return { success: false, message: pullErr.message || 'تعذر مزامنة بيانات المخزون' };
   } finally {
     isPulling = false;
   }
@@ -842,7 +853,14 @@ export async function runSyncCycle(mainWindow, { forcePull = false } = {}) {
   // Pulling six full resources is slower and independent from uploading. Run
   // it in the background so it can never hold up local invoices/purchases.
   const pullIsDue = forcePull || Date.now() - lastServerPullAt >= SERVER_PULL_INTERVAL_MS;
-  if (pullIsDue && !isPulling) {
+  if (forcePull) {
+    // Explicit user refresh must wait for the pull to finish before the renderer
+    // reloads; otherwise it can reopen the inventory page before SQLite updates.
+    if (isPulling) return { ...upload, success: false, message: 'المزامنة جارية بالفعل' };
+    const pull = await pullServerUpdates(mainWindow);
+    if (!pull?.success) return pull || { success: false, message: 'فشلت مزامنة بيانات السيرفر' };
+    return { ...upload, success: true, inventoryUpdated: pull.inventoryUpdated };
+  } else if (pullIsDue && !isPulling) {
     void pullServerUpdates(mainWindow).catch((err) => {
       console.warn('[Sync] Background pull failed:', err?.message || err);
     });
