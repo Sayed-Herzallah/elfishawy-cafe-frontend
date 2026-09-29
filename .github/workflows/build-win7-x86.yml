@@ -45,9 +45,9 @@ jobs:
       - name: Verify packaged executable is 32-bit
         shell: pwsh
         run: |
-          $exePath = 'release/win-unpacked/ElFishawy Cafe.exe'
-          if (-not (Test-Path $exePath)) { throw "Packaged executable not found: $exePath" }
-          $bytes = [System.IO.File]::ReadAllBytes($exePath)
+          $exe = Get-ChildItem 'release' -Filter 'ElFishawy Cafe.exe' -Recurse -File | Select-Object -First 1
+          if (-not $exe) { throw 'Packaged executable not found under release.' }
+          $bytes = [System.IO.File]::ReadAllBytes($exe.FullName)
           $peOffset = [BitConverter]::ToInt32($bytes, 0x3c)
           $machine = [BitConverter]::ToUInt16($bytes, $peOffset + 4)
           if ($machine -ne 0x014c) { throw ('Expected x86 PE 0x014c; found 0x{0:X4}' -f $machine) }
