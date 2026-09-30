@@ -3,6 +3,7 @@ import { getDb, saveDatabase, getMasterKey } from './db.js';
 import { decryptSensitiveString, computeOpHash } from './security.js';
 
 let isSyncing = false;
+let isRunningSyncCycle = false;
 let syncIntervalTimer = null;
 let lastServerPullAt = 0;
 const SERVER_PULL_INTERVAL_MS = 15_000;
@@ -844,28 +845,37 @@ export async function pullServerUpdates(mainWindow) {
 
 /** One coordinator for timer, login, reconnect and manual sync requests. */
 export async function runSyncCycle(mainWindow, { forcePull = false } = {}) {
-  if (!getAuthToken()) return { success: false, message: 'No authenticated session' };
+  // The one-second timer and manual/login triggers share one coordinator.
+  // Do not start a second upload/pull while the previous full cycle is active.
+  if (isRunningSyncCycle) return { success: false, message: 'المزامنة جارية بالفعل' };
+  isRunningSyncCycle = true;
+  try {
+    if (!getAuthToken()) return { success: false, message: 'No authenticated session' };
 
-  // Push local business operations first. The authenticated POST is the actual
-  // connectivity check; do not gate it on a separate root health request.
-  const upload = await processSyncQueue(mainWindow);
+    // Push local business operations first. The authenticated POST is the actual
+    // connectivity check; do not gate it on a separate root health request.
+    const upload = await processSyncQueue(mainWindow);
 
-  // Pulling six full resources is slower and independent from uploading. Run
-  // it in the background so it can never hold up local invoices/purchases.
-  const pullIsDue = forcePull || Date.now() - lastServerPullAt >= SERVER_PULL_INTERVAL_MS;
-  if (forcePull) {
-    // Explicit user refresh must wait for the pull to finish before the renderer
-    // reloads; otherwise it can reopen the inventory page before SQLite updates.
-    if (isPulling) return { ...upload, success: false, message: 'المزامنة جارية بالفعل' };
-    const pull = await pullServerUpdates(mainWindow);
-    if (!pull?.success) return pull || { success: false, message: 'فشلت مزامنة بيانات السيرفر' };
-    return { ...upload, success: true, inventoryUpdated: pull.inventoryUpdated };
-  } else if (pullIsDue && !isPulling) {
-    void pullServerUpdates(mainWindow).catch((err) => {
-      console.warn('[Sync] Background pull failed:', err?.message || err);
-    });
+    // Pulling six full resources is slower and independent from uploading. Run
+    // it in the background so it can never hold up local invoices/purchases.
+    const pullIsDue = forcePull || Date.now() - lastServerPullAt >= SERVER_PULL_INTERVAL_MS;
+    if (forcePull) {
+      if (isPulling) return { ...upload, success: false, message: 'المزامنة جارية بالفعل' };
+      // Return as soon as local operations reach the server; a full historical
+      // snapshot is independent and must not make the user's sync button wait.
+      void pullServerUpdates(mainWindow).catch((err) => {
+        console.warn('[Sync] Background pull failed:', err?.message || err);
+      });
+      return upload;
+    } else if (pullIsDue && !isPulling) {
+      void pullServerUpdates(mainWindow).catch((err) => {
+        console.warn('[Sync] Background pull failed:', err?.message || err);
+      });
+    }
+    return upload;
+  } finally {
+    isRunningSyncCycle = false;
   }
-  return upload;
 }
 
 export function startBackgroundSync(mainWindow, intervalMs = 1000) {
