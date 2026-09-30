@@ -23,7 +23,6 @@ export const useInventorySync = (pollInterval = 30000) => {
 
   const { showToast } = useNotification();
   const notifiedLowStock = useRef<Set<string>>(new Set());
-  const notifiedOutOfStock = useRef<Set<string>>(new Set());
 
   const fetchInventory = useCallback(async () => {
     try {
@@ -50,28 +49,13 @@ export const useInventorySync = (pollInterval = 30000) => {
           }
         });
 
-        // Check for new out of stock alerts
-        outOfStock.forEach(item => {
-          if (!notifiedOutOfStock.current.has(item._id)) {
-            notifiedOutOfStock.current.add(item._id);
-            playAlertSound('out');
-            showToast(`🚫 نفذ المخزون: ${item.name} - يحتاج توريد فوري`, 'error');
-          }
-        });
-
-        // Reset notifications: لما صنف يتوّرد ويرجع رصيده فوق حد التنبيه — يُسمح بتنبيهه مرة تانية لو نفد تاني
+        // Reset low-stock notification after restocking above the safety threshold.
         lowStock.forEach(item => {
           if (!isStockLow(item.quantity, item.minLimit)) notifiedLowStock.current.delete(item._id);
-        });
-        outOfStock.forEach(item => {
-          if (!isStockOut(item.quantity)) notifiedOutOfStock.current.delete(item._id);
         });
         const currentIds = new Set(items.map(i => i._id));
         notifiedLowStock.current.forEach(id => {
           if (!currentIds.has(id)) notifiedLowStock.current.delete(id);
-        });
-        notifiedOutOfStock.current.forEach(id => {
-          if (!currentIds.has(id)) notifiedOutOfStock.current.delete(id);
         });
 
       }

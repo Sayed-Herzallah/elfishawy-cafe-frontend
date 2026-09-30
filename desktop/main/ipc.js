@@ -1,5 +1,6 @@
 // desktop/main/ipc.js
 import { ipcMain, BrowserWindow } from 'electron';
+import { httpFetch } from './httpClient.js';
 import { getDb, saveDatabase, getMasterKey } from './db.js';
 import { cacheServerExpense, cacheServerProduct, runSyncCycle, configureSync, reconcileOrderWithServer } from './sync.js';
 import { cacheServerInventoryItem } from './inventoryCache.js';
@@ -331,7 +332,7 @@ export function setupIpcHandlers(mainWindow) {
       const healthUrl = process.env.ELECTRON_TEST_MODE === 'true'
         ? `${process.env.ELECTRON_TEST_API_URL}/`
         : 'https://elfishawy-cafe-server.vercel.app/';
-      const res = await fetch(healthUrl, {
+      const res = await httpFetch(healthUrl, {
         method: 'GET',
         signal: AbortSignal.timeout(4000),
       }).catch(() => null);

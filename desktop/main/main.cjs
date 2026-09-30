@@ -2598,6 +2598,59 @@ function getMasterKey() {
 // desktop/main/ipc.js
 var import_electron3 = require("electron");
 
+// desktop/main/httpClient.js
+var import_http = __toESM(require("http"), 1);
+var import_https = __toESM(require("https"), 1);
+function httpFetch(input, options = {}) {
+  return new Promise((resolve, reject) => {
+    let url;
+    try {
+      url = new URL(String(input));
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    const transport = url.protocol === "https:" ? import_https.default : url.protocol === "http:" ? import_http.default : null;
+    if (!transport) {
+      reject(new Error(`Unsupported protocol: ${url.protocol}`));
+      return;
+    }
+    if (options.signal?.aborted) {
+      const error = new Error("The operation was aborted");
+      error.name = "AbortError";
+      reject(error);
+      return;
+    }
+    const request = transport.request(url, {
+      method: options.method || "GET",
+      headers: options.headers || {}
+    }, (response) => {
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(Buffer.from(chunk)));
+      response.on("error", reject);
+      response.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        resolve({
+          ok: (response.statusCode || 0) >= 200 && (response.statusCode || 0) < 300,
+          status: response.statusCode || 0,
+          text: async () => body,
+          json: async () => JSON.parse(body)
+        });
+      });
+    });
+    const abortRequest = () => {
+      const error = new Error("The operation was aborted");
+      error.name = "AbortError";
+      request.destroy(error);
+    };
+    options.signal?.addEventListener("abort", abortRequest, { once: true });
+    request.on("error", reject);
+    request.on("close", () => options.signal?.removeEventListener("abort", abortRequest));
+    if (options.body !== void 0 && options.body !== null) request.write(options.body);
+    request.end();
+  });
+}
+
 // desktop/main/sync.js
 var isSyncing = false;
 var isRunningSyncCycle = false;
@@ -2911,7 +2964,7 @@ async function processSyncQueue(mainWindow2) {
         let serverResult = null;
         if (entityType === "order") {
           const rawItems = Array.isArray(payload.items) ? payload.items : [];
-          const orderResponse = await fetch(`${apiBaseUrl}/orders`, {
+          const orderResponse = await httpFetch(`${apiBaseUrl}/orders`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -2959,7 +3012,7 @@ async function processSyncQueue(mainWindow2) {
               continue;
             }
           }
-          const expenseResponse = await fetch(`${apiBaseUrl}/expenses`, {
+          const expenseResponse = await httpFetch(`${apiBaseUrl}/expenses`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -2997,7 +3050,7 @@ async function processSyncQueue(mainWindow2) {
             deferSyncQueueItem(db, id, attempts, "Waiting for inventory item to sync");
             continue;
           }
-          const restockResponse = await fetch(`${apiBaseUrl}/inventory/${restockItemId}/restock`, {
+          const restockResponse = await httpFetch(`${apiBaseUrl}/inventory/${restockItemId}/restock`, {
             method: "PATCH",
             headers: {
               "Content-Type": "application/json",
@@ -3034,7 +3087,7 @@ async function processSyncQueue(mainWindow2) {
             throw err;
           }
         } else if (entityType === "inventory_create") {
-          const createResponse = await fetch(`${apiBaseUrl}/inventory`, {
+          const createResponse = await httpFetch(`${apiBaseUrl}/inventory`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -3149,7 +3202,7 @@ async function pullServerUpdates(mainWindow2) {
         ["/products", 8e3],
         ["/categories", 8e3],
         ["/recipes", 8e3]
-      ].map(([route, timeoutMs]) => fetch(`${apiBaseUrl}${route}`, {
+      ].map(([route, timeoutMs]) => httpFetch(`${apiBaseUrl}${route}`, {
         method: "GET",
         headers: authHeaders,
         signal: AbortSignal.timeout(timeoutMs)
@@ -3455,13 +3508,13 @@ function cacheServerInventoryItem(db, inv) {
 // desktop/main/frontendUpdater.js
 var import_fs3 = __toESM(require("fs"), 1);
 var import_path3 = __toESM(require("path"), 1);
-var import_https = __toESM(require("https"), 1);
+var import_https2 = __toESM(require("https"), 1);
 var import_electron2 = require("electron");
 var TRUSTED_ORIGIN = "https://fishawy.vercel.app";
 var MANIFEST_URL = `${TRUSTED_ORIGIN}/frontend-version.json`;
 function fetchBuffer(url) {
   return new Promise((resolve, reject) => {
-    const req = import_https.default.get(url, { headers: { "Cache-Control": "no-cache", "User-Agent": "ElFishawyDesktop" } }, (res) => {
+    const req = import_https2.default.get(url, { headers: { "Cache-Control": "no-cache", "User-Agent": "ElFishawyDesktop" } }, (res) => {
       if (res.statusCode && (res.statusCode < 200 || res.statusCode >= 300)) {
         return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
       }
@@ -4339,7 +4392,7 @@ function setupIpcHandlers(mainWindow2) {
   import_electron3.ipcMain.handle("app:check-online", async () => {
     try {
       const healthUrl = process.env.ELECTRON_TEST_MODE === "true" ? `${process.env.ELECTRON_TEST_API_URL}/` : "https://elfishawy-cafe-server.vercel.app/";
-      const res = await fetch(healthUrl, {
+      const res = await httpFetch(healthUrl, {
         method: "GET",
         signal: AbortSignal.timeout(4e3)
       }).catch(() => null);

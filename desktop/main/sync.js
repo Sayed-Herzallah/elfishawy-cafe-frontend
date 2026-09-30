@@ -1,6 +1,7 @@
 // desktop/main/sync.js
 import { getDb, saveDatabase, getMasterKey } from './db.js';
 import { decryptSensitiveString, computeOpHash } from './security.js';
+import { httpFetch } from './httpClient.js';
 
 let isSyncing = false;
 let isRunningSyncCycle = false;
@@ -365,7 +366,7 @@ export async function processSyncQueue(mainWindow) {
         // 1. ORDERS SYNC
         if (entityType === 'order') {
           const rawItems = Array.isArray(payload.items) ? payload.items : [];
-          const orderResponse = await fetch(`${apiBaseUrl}/orders`, {
+          const orderResponse = await httpFetch(`${apiBaseUrl}/orders`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -422,7 +423,7 @@ export async function processSyncQueue(mainWindow) {
             }
           }
 
-          const expenseResponse = await fetch(`${apiBaseUrl}/expenses`, {
+          const expenseResponse = await httpFetch(`${apiBaseUrl}/expenses`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -464,7 +465,7 @@ export async function processSyncQueue(mainWindow) {
             deferSyncQueueItem(db, id, attempts, 'Waiting for inventory item to sync');
             continue;
           }
-          const restockResponse = await fetch(`${apiBaseUrl}/inventory/${restockItemId}/restock`, {
+          const restockResponse = await httpFetch(`${apiBaseUrl}/inventory/${restockItemId}/restock`, {
             method: 'PATCH',
             headers: {
               'Content-Type': 'application/json',
@@ -506,7 +507,7 @@ export async function processSyncQueue(mainWindow) {
         }
         // 4. INVENTORY CREATE SYNC (صنف مخزون جديد أُنشئ أوفلاين)
         else if (entityType === 'inventory_create') {
-          const createResponse = await fetch(`${apiBaseUrl}/inventory`, {
+          const createResponse = await httpFetch(`${apiBaseUrl}/inventory`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -642,7 +643,7 @@ export async function pullServerUpdates(mainWindow) {
         ['/products', 8000],
         ['/categories', 8000],
         ['/recipes', 8000],
-      ].map(([route, timeoutMs]) => fetch(`${apiBaseUrl}${route}`, {
+      ].map(([route, timeoutMs]) => httpFetch(`${apiBaseUrl}${route}`, {
         method: 'GET',
         headers: authHeaders,
         signal: AbortSignal.timeout(timeoutMs),
