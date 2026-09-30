@@ -2600,6 +2600,7 @@ var import_electron3 = require("electron");
 
 // desktop/main/sync.js
 var isSyncing = false;
+var isRunningSyncCycle = false;
 var syncIntervalTimer = null;
 var lastServerPullAt = 0;
 var SERVER_PULL_INTERVAL_MS = 15e3;
@@ -3331,20 +3332,27 @@ async function pullServerUpdates(mainWindow2) {
   }
 }
 async function runSyncCycle(mainWindow2, { forcePull = false } = {}) {
-  if (!getAuthToken()) return { success: false, message: "No authenticated session" };
-  const upload = await processSyncQueue(mainWindow2);
-  const pullIsDue = forcePull || Date.now() - lastServerPullAt >= SERVER_PULL_INTERVAL_MS;
-  if (forcePull) {
-    if (isPulling) return { ...upload, success: false, message: "\u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629 \u062C\u0627\u0631\u064A\u0629 \u0628\u0627\u0644\u0641\u0639\u0644" };
-    const pull = await pullServerUpdates(mainWindow2);
-    if (!pull?.success) return pull || { success: false, message: "\u0641\u0634\u0644\u062A \u0645\u0632\u0627\u0645\u0646\u0629 \u0628\u064A\u0627\u0646\u0627\u062A \u0627\u0644\u0633\u064A\u0631\u0641\u0631" };
-    return { ...upload, success: true, inventoryUpdated: pull.inventoryUpdated };
-  } else if (pullIsDue && !isPulling) {
-    void pullServerUpdates(mainWindow2).catch((err) => {
-      console.warn("[Sync] Background pull failed:", err?.message || err);
-    });
+  if (isRunningSyncCycle) return { success: false, message: "\u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629 \u062C\u0627\u0631\u064A\u0629 \u0628\u0627\u0644\u0641\u0639\u0644" };
+  isRunningSyncCycle = true;
+  try {
+    if (!getAuthToken()) return { success: false, message: "No authenticated session" };
+    const upload = await processSyncQueue(mainWindow2);
+    const pullIsDue = forcePull || Date.now() - lastServerPullAt >= SERVER_PULL_INTERVAL_MS;
+    if (forcePull) {
+      if (isPulling) return { ...upload, success: false, message: "\u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629 \u062C\u0627\u0631\u064A\u0629 \u0628\u0627\u0644\u0641\u0639\u0644" };
+      void pullServerUpdates(mainWindow2).catch((err) => {
+        console.warn("[Sync] Background pull failed:", err?.message || err);
+      });
+      return upload;
+    } else if (pullIsDue && !isPulling) {
+      void pullServerUpdates(mainWindow2).catch((err) => {
+        console.warn("[Sync] Background pull failed:", err?.message || err);
+      });
+    }
+    return upload;
+  } finally {
+    isRunningSyncCycle = false;
   }
-  return upload;
 }
 function startBackgroundSync(mainWindow2, intervalMs = 1e3) {
   if (syncIntervalTimer) clearInterval(syncIntervalTimer);
