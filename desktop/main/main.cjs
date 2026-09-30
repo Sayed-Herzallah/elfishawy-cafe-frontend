@@ -2837,7 +2837,7 @@ function reconcileOrderWithServer(db, clientOrderId, serverResult) {
   }
 }
 async function processSyncQueue(mainWindow2) {
-  if (isSyncing) return { success: false, message: "Sync already in progress" };
+  if (isSyncing) return { success: false, busy: true, message: "\u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629 \u062C\u0627\u0631\u064A\u0629 \u0628\u0627\u0644\u0641\u0639\u0644" };
   isSyncing = true;
   try {
     const token = getAuthToken();
@@ -2847,6 +2847,9 @@ async function processSyncQueue(mainWindow2) {
       SELECT id, client_op_id, entity_type, action, payload, attempts, sequence_id, prev_hash, op_hash
       FROM sync_queue
       WHERE status IN ('PENDING', 'FAILED')
+        AND (entity_type != 'order' OR EXISTS (
+          SELECT 1 FROM orders WHERE orders.client_order_id = sync_queue.client_op_id
+        ))
       ORDER BY id ASC
     `);
     if (!res.length || !res[0].values.length) {
@@ -3106,7 +3109,21 @@ async function processSyncQueue(mainWindow2) {
         mainWindow2.webContents.send("sync:data-updated", changed);
       }
     }
-    return { success: true, count: syncedCount };
+    const pendingRes = db.exec(`
+      SELECT COUNT(*) FROM sync_queue WHERE status IN ('PENDING', 'FAILED')
+    `);
+    const pendingCount = Number(pendingRes?.[0]?.values?.[0]?.[0]) || 0;
+    const failedRes = db.exec(`
+      SELECT entity_type, last_error FROM sync_queue
+      WHERE status = 'FAILED' ORDER BY id ASC LIMIT 1
+    `);
+    const failedRow = failedRes?.[0]?.values?.[0];
+    return {
+      success: pendingCount === 0,
+      count: syncedCount,
+      pendingCount,
+      message: pendingCount === 0 ? syncedCount > 0 ? `\u062A\u0645 \u0631\u0641\u0639 ${syncedCount} \u0639\u0645\u0644\u064A\u0629 \u0628\u0646\u062C\u0627\u062D` : "\u0644\u0627 \u062A\u0648\u062C\u062F \u0639\u0645\u0644\u064A\u0627\u062A \u0645\u0639\u0644\u0642\u0629 \u0644\u0644\u0645\u0632\u0627\u0645\u0646\u0629" : failedRow?.[1] || `\u062A\u0639\u0630\u0631 \u0631\u0641\u0639 ${pendingCount} \u0639\u0645\u0644\u064A\u0629 \u2014 \u0631\u0627\u062C\u0639 \u0627\u0644\u0627\u062A\u0635\u0627\u0644 \u0623\u0648 \u0635\u0644\u0627\u062D\u064A\u0629 \u0627\u0644\u062D\u0633\u0627\u0628`
+    };
   } catch (error) {
     console.error("Sync queue execution error:", error);
     return { success: false, error: error.message };
@@ -3332,14 +3349,17 @@ async function pullServerUpdates(mainWindow2) {
   }
 }
 async function runSyncCycle(mainWindow2, { forcePull = false } = {}) {
-  if (isRunningSyncCycle) return { success: false, message: "\u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629 \u062C\u0627\u0631\u064A\u0629 \u0628\u0627\u0644\u0641\u0639\u0644" };
+  if (isRunningSyncCycle) {
+    if (forcePull) return processSyncQueue(mainWindow2);
+    return { success: false, busy: true, message: "\u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629 \u062C\u0627\u0631\u064A\u0629 \u0628\u0627\u0644\u0641\u0639\u0644" };
+  }
   isRunningSyncCycle = true;
   try {
     if (!getAuthToken()) return { success: false, message: "No authenticated session" };
     const upload = await processSyncQueue(mainWindow2);
     const pullIsDue = forcePull || Date.now() - lastServerPullAt >= SERVER_PULL_INTERVAL_MS;
     if (forcePull) {
-      if (isPulling) return { ...upload, success: false, message: "\u0627\u0644\u0645\u0632\u0627\u0645\u0646\u0629 \u062C\u0627\u0631\u064A\u0629 \u0628\u0627\u0644\u0641\u0639\u0644" };
+      if (isPulling) return upload;
       void pullServerUpdates(mainWindow2).catch((err) => {
         console.warn("[Sync] Background pull failed:", err?.message || err);
       });

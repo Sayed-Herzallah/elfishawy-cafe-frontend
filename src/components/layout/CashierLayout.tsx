@@ -14,6 +14,7 @@ import {
   Printer,
 } from 'lucide-react';
 import { CashierPrinterSettingsModal } from '../ui/CashierPrinterSettingsModal';
+import { offlineStore } from '../../services/data/offlineStore';
 
 export const CashierLayout: React.FC = () => {
   const { logout, isAdmin } = useAuth();
@@ -38,19 +39,25 @@ export const CashierLayout: React.FC = () => {
     if (isCheckingUpdate) return;
     setIsCheckingUpdate(true);
     try {
+      let syncResult: any = null;
+      if (isElectron) {
+        syncResult = await offlineStore.triggerSync();
+        if (syncResult?.success === false) {
+          throw new Error(syncResult.message || syncResult.error || 'فشلت مزامنة البيانات');
+        }
+      }
+      let updateReady = false;
       if (window.electronAPI?.checkFrontendUpdate) {
         const res = await window.electronAPI.checkFrontendUpdate();
-        if (res && res.hasUpdate && res.ready) {
-          window.location.reload();
-        } else {
-          // If no update or already current, reload window to ensure latest assets
-          window.location.reload();
-        }
-      } else {
-        window.location.reload();
+        updateReady = Boolean(res && res.hasUpdate && res.ready);
       }
-    } catch {
-      window.location.reload();
+      if (syncResult) {
+        window.alert(`${syncResult.message || `تم رفع ${syncResult.count || 0} عملية`}${updateReady ? '\nيوجد تحديث جاهز وسيُعاد تشغيل الواجهة.' : ''}`);
+      }
+      if (updateReady) window.location.reload();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'فشلت مزامنة البيانات';
+      window.alert(message);
     } finally {
       setIsCheckingUpdate(false);
     }

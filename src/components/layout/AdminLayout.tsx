@@ -32,22 +32,22 @@ export const AdminLayout: React.FC = () => {
       // Pull server inventory/orders before reloading the current admin page.
       // The previous handler only checked the frontend bundle and silently
       // reloaded, despite the button promising an immediate data sync.
+      let syncResult: any = null;
       if (window.electronAPI?.isElectron) {
-        const syncResult = await offlineStore.triggerSync();
+        syncResult = await offlineStore.triggerSync();
         if (syncResult?.success === false) {
           throw new Error(syncResult.message || syncResult.error || 'فشلت مزامنة بيانات السيرفر');
         }
       }
+      let updateReady = false;
       if (window.electronAPI?.checkFrontendUpdate) {
         const res = await window.electronAPI.checkFrontendUpdate();
-        if (res && res.hasUpdate && res.ready) {
-          window.location.reload();
-        } else {
-          window.location.reload();
-        }
-      } else {
-        window.location.reload();
+        updateReady = Boolean(res && res.hasUpdate && res.ready);
       }
+      if (syncResult) {
+        window.alert(`${syncResult.message || `تم رفع ${syncResult.count || 0} عملية`}${updateReady ? '\nيوجد تحديث جاهز وسيُعاد تشغيل الواجهة.' : ''}`);
+      }
+      if (updateReady) window.location.reload();
     } catch (error) {
       console.error('Manual inventory/data sync failed:', error);
       const message = error instanceof Error ? error.message : 'فشلت مزامنة البيانات';

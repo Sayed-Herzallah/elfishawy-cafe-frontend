@@ -276,16 +276,6 @@ export const orderService = {
     };
 
     if (offlineStore.isDesktop()) {
-      const isOnline = await offlineStore.isOnline();
-
-      if (!localPrepared && !isOnline) {
-        return finishLocalPending('تم حفظ الطلب محلياً بنجاح (وضع غير متصل)');
-      }
-
-      if (localPrepared && !isOnline) {
-        return finishLocalPending('تم حفظ الطلب محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت');
-      }
-
       // Desktop orders are already committed to SQLite and the durable sync
       // queue by the POS before this service is called. Never POST them again
       // from the renderer: the queue is the single network writer for this ID.
@@ -293,20 +283,15 @@ export const orderService = {
       // concurrently sends the same sale to /orders.
       if (localPrepared) {
         try {
-          await offlineStore.triggerSync();
-          const [localOrder, serverOrders] = await Promise.all([
-            offlineStore.getLocalOrderByClientId(clientOrderId),
-            orderService.getOrders(),
-          ]);
-          const confirmed = serverOrders.data?.find((order: any) =>
-            String(order?.clientOrderId || order?.client_order_id || '') === clientOrderId
-          );
-          if (confirmed) return applyServerOrder(confirmed);
+          const syncResult = await offlineStore.triggerSync();
+          const localOrder = await offlineStore.getLocalOrderByClientId(clientOrderId);
           if (localOrder) {
             saveOrdersSnapshot([localOrder]);
             return {
               success: true,
-              message: 'تم حفظ الطلب محلياً وسيتم مزامنته تلقائياً عند عودة الإنترنت',
+              message: syncResult?.success
+                ? 'تم حفظ الفاتورة ومزامنتها مع السيرفر'
+                : 'تم حفظ الفاتورة محلياً وستُعاد محاولة مزامنتها تلقائياً',
               data: localOrder as Order,
             };
           }

@@ -275,7 +275,7 @@ export function reconcileOrderWithServer(db, clientOrderId, serverResult) {
 }
 
 export async function processSyncQueue(mainWindow) {
-  if (isSyncing) return { success: false, message: 'Sync already in progress' };
+  if (isSyncing) return { success: false, busy: true, message: 'المزامنة جارية بالفعل' };
   isSyncing = true;
 
   try {
@@ -287,6 +287,9 @@ export async function processSyncQueue(mainWindow) {
       SELECT id, client_op_id, entity_type, action, payload, attempts, sequence_id, prev_hash, op_hash
       FROM sync_queue
       WHERE status IN ('PENDING', 'FAILED')
+        AND (entity_type != 'order' OR EXISTS (
+          SELECT 1 FROM orders WHERE orders.client_order_id = sync_queue.client_op_id
+        ))
       ORDER BY id ASC
     `);
 
@@ -586,7 +589,23 @@ export async function processSyncQueue(mainWindow) {
         mainWindow.webContents.send('sync:data-updated', changed);
       }
     }
-    return { success: true, count: syncedCount };
+    const pendingRes = db.exec(`
+      SELECT COUNT(*) FROM sync_queue WHERE status IN ('PENDING', 'FAILED')
+    `);
+    const pendingCount = Number(pendingRes?.[0]?.values?.[0]?.[0]) || 0;
+    const failedRes = db.exec(`
+      SELECT entity_type, last_error FROM sync_queue
+      WHERE status = 'FAILED' ORDER BY id ASC LIMIT 1
+    `);
+    const failedRow = failedRes?.[0]?.values?.[0];
+    return {
+      success: pendingCount === 0,
+      count: syncedCount,
+      pendingCount,
+      message: pendingCount === 0
+        ? (syncedCount > 0 ? `تم رفع ${syncedCount} عملية بنجاح` : 'لا توجد عمليات معلقة للمزامنة')
+        : (failedRow?.[1] || `تعذر رفع ${pendingCount} عملية — راجع الاتصال أو صلاحية الحساب`),
+    };
   } catch (error) {
     console.error('Sync queue execution error:', error);
     return { success: false, error: error.message };
@@ -847,7 +866,10 @@ export async function pullServerUpdates(mainWindow) {
 export async function runSyncCycle(mainWindow, { forcePull = false } = {}) {
   // The one-second timer and manual/login triggers share one coordinator.
   // Do not start a second upload/pull while the previous full cycle is active.
-  if (isRunningSyncCycle) return { success: false, message: 'المزامنة جارية بالفعل' };
+  if (isRunningSyncCycle) {
+    if (forcePull) return processSyncQueue(mainWindow);
+    return { success: false, busy: true, message: 'المزامنة جارية بالفعل' };
+  }
   isRunningSyncCycle = true;
   try {
     if (!getAuthToken()) return { success: false, message: 'No authenticated session' };
@@ -860,7 +882,7 @@ export async function runSyncCycle(mainWindow, { forcePull = false } = {}) {
     // it in the background so it can never hold up local invoices/purchases.
     const pullIsDue = forcePull || Date.now() - lastServerPullAt >= SERVER_PULL_INTERVAL_MS;
     if (forcePull) {
-      if (isPulling) return { ...upload, success: false, message: 'المزامنة جارية بالفعل' };
+      if (isPulling) return upload;
       // Return as soon as local operations reach the server; a full historical
       // snapshot is independent and must not make the user's sync button wait.
       void pullServerUpdates(mainWindow).catch((err) => {
