@@ -15,10 +15,12 @@ import {
 } from 'lucide-react';
 import { CashierPrinterSettingsModal } from '../ui/CashierPrinterSettingsModal';
 import { offlineStore } from '../../services/data/offlineStore';
+import { useNotification } from '../../contexts/NotificationContext';
 
 export const CashierLayout: React.FC = () => {
   const { logout, isAdmin } = useAuth();
   const navigate = useNavigate();
+  const { showToast, showError } = useNotification();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<{ version: string; message: string } | null>(null);
@@ -52,12 +54,14 @@ export const CashierLayout: React.FC = () => {
         updateReady = Boolean(res && res.hasUpdate && res.ready);
       }
       if (syncResult) {
-        window.alert(`${syncResult.message || `تم رفع ${syncResult.count || 0} عملية`}${updateReady ? '\nيوجد تحديث جاهز وسيُعاد تشغيل الواجهة.' : ''}`);
+        const message = syncResult.count > 0
+          ? `تمت مزامنة ${syncResult.count} عملية بنجاح`
+          : 'المزامنة مكتملة، لا توجد عمليات معلقة للرفع';
+        showToast(updateReady ? `${message} — يوجد تحديث جاهز` : message, 'success');
       }
-      if (updateReady) window.location.reload();
+      if (updateReady) setTimeout(() => window.location.reload(), 1200);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'فشلت مزامنة البيانات';
-      window.alert(message);
+      showError(error);
     } finally {
       setIsCheckingUpdate(false);
     }

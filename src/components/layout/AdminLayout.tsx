@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { offlineStore } from "../../services/data/offlineStore";
+import { useNotification } from "../../contexts/NotificationContext";
 import {
   LayoutDashboard,
   Coffee,
@@ -21,6 +22,7 @@ export const AdminLayout: React.FC = () => {
   const { logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const { showToast, showError } = useNotification();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
@@ -45,13 +47,15 @@ export const AdminLayout: React.FC = () => {
         updateReady = Boolean(res && res.hasUpdate && res.ready);
       }
       if (syncResult) {
-        window.alert(`${syncResult.message || `تم رفع ${syncResult.count || 0} عملية`}${updateReady ? '\nيوجد تحديث جاهز وسيُعاد تشغيل الواجهة.' : ''}`);
+        const message = syncResult.count > 0
+          ? `تمت مزامنة ${syncResult.count} عملية بنجاح`
+          : 'المزامنة مكتملة، لا توجد عمليات معلقة للرفع';
+        showToast(updateReady ? `${message} — يوجد تحديث جاهز` : message, 'success');
       }
-      if (updateReady) window.location.reload();
+      if (updateReady) setTimeout(() => window.location.reload(), 1200);
     } catch (error) {
       console.error('Manual inventory/data sync failed:', error);
-      const message = error instanceof Error ? error.message : 'فشلت مزامنة البيانات';
-      window.alert(message);
+      showError(error);
     } finally {
       setIsCheckingUpdate(false);
     }
